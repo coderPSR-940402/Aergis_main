@@ -1,3 +1,6 @@
+import java.net.URL
+import java.security.MessageDigest
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -41,11 +44,11 @@ tasks.register("prepareGestureModel") {
         gestureModelFile.parentFile.mkdirs()
         if (!gestureModelFile.exists() || gestureModelFile.length() == 0L) {
             logger.lifecycle("Downloading the exact MediaPipe gesture model used by the 0.10.0-preview APK")
-            java.net.URL(gestureModelUrl).openStream().use { input ->
+            URL(gestureModelUrl).openStream().use { input ->
                 gestureModelFile.outputStream().use { output -> input.copyTo(output) }
             }
         }
-        val digest = java.security.MessageDigest.getInstance("SHA-256")
+        val digest = MessageDigest.getInstance("SHA-256")
         gestureModelFile.inputStream().use { input ->
             val buffer = ByteArray(1024 * 1024)
             while (true) {
@@ -54,7 +57,9 @@ tasks.register("prepareGestureModel") {
                 digest.update(buffer, 0, read)
             }
         }
-        val actual = digest.digest().joinToString("") { "%02x".format(it) }
+        val actual = digest.digest().joinToString("") { byte ->
+            "%02x".format(byte.toInt() and 0xff)
+        }
         check(actual == gestureModelSha256) {
             "gesture_recognizer.task SHA-256 mismatch: expected $gestureModelSha256, got $actual"
         }
