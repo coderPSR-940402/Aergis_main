@@ -12,15 +12,22 @@ import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.LifecycleRegistry
 import java.util.concurrent.Executors
 
 class GestureCaptureService : Service() {
     private val executor = Executors.newSingleThreadExecutor()
     private var cameraProvider: ProcessCameraProvider? = null
 
+    private val serviceLifecycleOwner = object : LifecycleOwner {
+        override val lifecycle = LifecycleRegistry(this@GestureCaptureService)
+    }
+
     override fun onCreate() {
         super.onCreate()
+        serviceLifecycleOwner.lifecycle.currentState = Lifecycle.State.RESUMED
         createChannel()
         startForeground(NOTIFICATION_ID, notification())
         AirRuntime.running = true
@@ -38,26 +45,21 @@ class GestureCaptureService : Service() {
             runCatching {
                 val provider = future.get()
                 cameraProvider = provider
-                val analysis = ImageAnalysis.Builder().setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST).build()
+                val analysis = ImageAnalysis.Builder()
+                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                    .build()
                 analysis.setAnalyzer(executor) { image -> image.close() }
                 provider.unbindAll()
-                provider.bindToLifecycle(
-                    serviceLifecycleOwner,
-                    CameraSelector.DEFAULT_FRONT_CAMERA,
-                    analysis
-                )
+                provider.bindToLifecycle(serviceLifecycleOwner, CameraSelector.DEFAULT_FRONT_CAMERA, analysis)
                 AirRuntime.cameraReady = true
             }.onFailure { AirRuntime.cameraReady = false }
         }, ContextCompat.getMainExecutor(this))
     }
 
-    private val serviceLifecycleOwner = object : LifecycleOwner {
-        override val lifecycle = androidx.lifecycle.LifecycleRegistry(this@GestureCaptureService)
-    }
-
     override fun onDestroy() {
         cameraProvider?.unbindAll()
         executor.shutdownNow()
+        serviceLifecycleOwner.lifecycle.currentState = Lifecycle.State.DESTROYED
         AirRuntime.cameraReady = false
         AirRuntime.running = false
         super.onDestroy()
@@ -66,8 +68,9 @@ class GestureCaptureService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     private fun createChannel() {
-        val manager = getSystemService(NotificationManager::class.java)
-        manager.createNotificationChannel(NotificationChannel(CHANNEL_ID, "Aergis", NotificationManager.IMPORTANCE_LOW))
+        getSystemService(NotificationManager::class.java).createNotificationChannel(
+            NotificationChannel(CHANNEL_ID, "Aergis", NotificationManager.IMPORTANCE_LOW)
+        )
     }
 
     private fun notification(): Notification = Notification.Builder(this, CHANNEL_ID)
