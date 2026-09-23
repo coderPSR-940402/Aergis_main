@@ -31,6 +31,41 @@ android {
     }
 }
 
+val gestureModelUrl = "https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task"
+val gestureModelSha256 = "97952348cf6a6a4915c2ea1496b4b37ebabc50cbbf80571435643c455f2b0482"
+val gestureModelFile = layout.projectDirectory.file("src/main/assets/gesture_recognizer.task").asFile
+
+tasks.register("prepareGestureModel") {
+    outputs.file(gestureModelFile)
+    doLast {
+        gestureModelFile.parentFile.mkdirs()
+        if (!gestureModelFile.exists() || gestureModelFile.length() == 0L) {
+            logger.lifecycle("Downloading the exact MediaPipe gesture model used by the 0.10.0-preview APK")
+            java.net.URL(gestureModelUrl).openStream().use { input ->
+                gestureModelFile.outputStream().use { output -> input.copyTo(output) }
+            }
+        }
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+        gestureModelFile.inputStream().use { input ->
+            val buffer = ByteArray(1024 * 1024)
+            while (true) {
+                val read = input.read(buffer)
+                if (read < 0) break
+                digest.update(buffer, 0, read)
+            }
+        }
+        val actual = digest.digest().joinToString("") { "%02x".format(it) }
+        check(actual == gestureModelSha256) {
+            "gesture_recognizer.task SHA-256 mismatch: expected $gestureModelSha256, got $actual"
+        }
+        check(gestureModelFile.length() == 8_373_440L) {
+            "gesture_recognizer.task size mismatch: expected 8373440 bytes, got ${gestureModelFile.length()}"
+        }
+    }
+}
+
+tasks.named("preBuild").configure { dependsOn("prepareGestureModel") }
+
 dependencies {
     implementation(platform("androidx.compose:compose-bom:2025.06.01"))
     implementation("androidx.activity:activity-compose:1.10.1")

@@ -20,6 +20,7 @@ import java.util.concurrent.Executors
 class GestureCaptureService : Service(), LifecycleOwner {
     private val executor = Executors.newSingleThreadExecutor()
     private var cameraProvider: ProcessCameraProvider? = null
+    private var visionEngine: GestureRecognitionEngine? = null
     private val lifecycleRegistry = LifecycleRegistry.createUnsafe(this)
 
     override val lifecycle: Lifecycle
@@ -32,6 +33,11 @@ class GestureCaptureService : Service(), LifecycleOwner {
         startForeground(NOTIFICATION_ID, notification())
         AirRuntime.running = true
         AirRuntime.pointerEnabled = ActionMappingStore(this).pointerEnabled()
+        runCatching { visionEngine = GestureRecognitionEngine(this) }
+            .onFailure {
+                AirRuntime.visionReady = false
+                AirRuntime.visionError = it.message ?: it.javaClass.simpleName
+            }
         setupCamera()
     }
 
@@ -48,20 +54,34 @@ class GestureCaptureService : Service(), LifecycleOwner {
                 val analysis = ImageAnalysis.Builder()
                     .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                     .build()
-                analysis.setAnalyzer(executor) { image -> image.close() }
+                analysis.setAnalyzer(executor) { image ->
+                    try {
+                        visionEngine?.analyze(image)
+                    } finally {
+                        image.close()
+                    }
+                }
                 provider.unbindAll()
                 provider.bindToLifecycle(this, CameraSelector.DEFAULT_FRONT_CAMERA, analysis)
                 AirRuntime.cameraReady = true
-            }.onFailure { AirRuntime.cameraReady = false }
+            }.onFailure {
+                AirRuntime.cameraReady = false
+                AirRuntime.visionError = it.message ?: it.javaClass.simpleName
+            }
         }, ContextCompat.getMainExecutor(this))
     }
 
     override fun onDestroy() {
         cameraProvider?.unbindAll()
+        visionEngine?.close()
+        visionEngine = null
         executor.shutdownNow()
         lifecycleRegistry.currentState = Lifecycle.State.DESTROYED
         AirRuntime.cameraReady = false
         AirRuntime.running = false
+        AirRuntime.handsDetected = 0
+        AirRuntime.lastGesture = "None"
+        AirRuntime.pointerTracking = false
         super.onDestroy()
     }
 
@@ -75,7 +95,7 @@ class GestureCaptureService : Service(), LifecycleOwner {
 
     private fun notification(): Notification = Notification.Builder(this, CHANNEL_ID)
         .setContentTitle("Aergis active")
-        .setContentText("Gesture capture is running")
+        .setContentText("Gesture capture and recognition are running")
         .setSmallIcon(android.R.drawable.ic_menu_view)
         .setOngoing(true)
         .build()
