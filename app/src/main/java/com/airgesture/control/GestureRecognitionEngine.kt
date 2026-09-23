@@ -146,5 +146,6 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         private const val MODEL_ASSET = "gesture_recognizer.task"
         private const val MIN_GESTURE_SCORE = 0.65f
         private const val ACTION_COOLDOWN_MS = 700L
+        private const val POINTER_LOSS_GRACE_MS = 250L
     }
 }
