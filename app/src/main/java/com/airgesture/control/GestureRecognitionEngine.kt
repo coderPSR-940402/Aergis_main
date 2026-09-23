@@ -21,6 +21,10 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
     private val interpreter = GestureInterpreter(mappings)
     private var lastActionAt = 0L
     private var lastGestureName = "None"
+    private var filteredPointerX = 0f
+    private var filteredPointerY = 0f
+    private var pointerInitialized = false
+    private var lastPointerAt = 0L
 
     init {
         val options = GestureRecognizerOptions.builder()
@@ -72,17 +76,39 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         val indexTip = landmarks.firstOrNull()?.getOrNull(8)
         val pointerActive = mappings.pointerEnabled()
         AirRuntime.pointerEnabled = pointerActive
+        val now = SystemClock.uptimeMillis()
         if (pointerActive && indexTip != null) {
-            AirRuntime.pointerX = indexTip.x().coerceIn(0f, 1f)
-            AirRuntime.pointerY = indexTip.y().coerceIn(0f, 1f)
+            val rawX = indexTip.x().coerceIn(0f, 1f)
+            val rawY = indexTip.y().coerceIn(0f, 1f)
+            if (!pointerInitialized) {
+                filteredPointerX = rawX
+                filteredPointerY = rawY
+                pointerInitialized = true
+            } else {
+                val delta = kotlin.math.hypot(rawX - filteredPointerX, rawY - filteredPointerY)
+                val alpha = (0.18f + delta * 5f).coerceIn(0.18f, 0.75f)
+                filteredPointerX += (rawX - filteredPointerX) * alpha
+                filteredPointerY += (rawY - filteredPointerY) * alpha
+            }
+            lastPointerAt = now
+            AirRuntime.pointerX = filteredPointerX
+            AirRuntime.pointerY = filteredPointerY
             AirRuntime.pointerTracking = true
             AirAccessibilityService.instance?.updatePointer(
-                AirRuntime.pointerX,
-                AirRuntime.pointerY,
+                filteredPointerX,
+                filteredPointerY,
+                true
+            )
+        } else if (pointerActive && pointerInitialized && now - lastPointerAt <= POINTER_LOSS_GRACE_MS) {
+            AirRuntime.pointerTracking = true
+            AirAccessibilityService.instance?.updatePointer(
+                filteredPointerX,
+                filteredPointerY,
                 true
             )
         } else {
             AirRuntime.pointerTracking = false
+            pointerInitialized = false
             AirAccessibilityService.instance?.updatePointer(0f, 0f, false)
         }
 
