@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.item
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -40,6 +42,7 @@ class MainActivity : ComponentActivity() {
     private var visionError by mutableStateOf<String?>(null)
     private var accessibilityEnabled by mutableStateOf(false)
     private var mappingsVersion by mutableStateOf(0)
+
     private val cameraPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) refresh()
     }
@@ -52,7 +55,10 @@ class MainActivity : ComponentActivity() {
         setContent { AirGestureScreen() }
     }
 
-    override fun onResume() { super.onResume(); refresh() }
+    override fun onResume() {
+        super.onResume()
+        refresh()
+    }
 
     private fun refresh() {
         val mappings = ActionMappingStore(this)
@@ -93,8 +99,8 @@ class MainActivity : ComponentActivity() {
         val options = AirAction.entries.filter { it != AirAction.NONE }
         val store = ActionMappingStore(this)
         val current = store.mapping(source)
-        val next = options[(options.indexOf(current).coerceAtLeast(0) + 1) % options.size]
-        store.setMapping(source, next)
+        val index = options.indexOf(current).coerceAtLeast(0)
+        store.setMapping(source, options[(index + 1) % options.size])
         mappingsVersion++
     }
 
@@ -111,52 +117,108 @@ class MainActivity : ComponentActivity() {
                 delay(250)
             }
         }
+
         MaterialTheme {
             Surface(modifier = Modifier.fillMaxSize()) {
-                Column(modifier = Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                    Text("Aergis", style = MaterialTheme.typography.headlineLarge)
-                    Text("Air gesture control • 0.10.0-preview")
-                    Text(if (running) "Session: ACTIVE" else "Session: STOPPED")
-
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Column { Text("Pointer mode"); Text("Enable pointer tracking") }
-                        Switch(checked = pointerEnabled, onCheckedChange = {
-                            pointerEnabled = it
-                            ActionMappingStore(this@MainActivity).setPointerEnabled(it)
-                            AirRuntime.pointerEnabled = it
-                            AirAccessibilityService.instance?.updatePointer(0f, 0f, it && AirRuntime.pointerTracking)
-                        })
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    item {
+                        Column(
+                            modifier = Modifier.fillMaxWidth().padding(top = 24.dp, bottom = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text("Aergis", style = MaterialTheme.typography.headlineLarge)
+                            Text("Air gesture control • 0.10.0-preview")
+                        }
                     }
 
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Column { Text("Gesture actions"); Text("Enable gesture-triggered actions") }
-                        Switch(checked = gesturesEnabled, onCheckedChange = {
-                            gesturesEnabled = it
-                            ActionMappingStore(this@MainActivity).setGesturesEnabled(it)
-                            AirRuntime.gesturesEnabled = it
-                        })
+                    item { Text(if (running) "Session: ACTIVE" else "Session: STOPPED") }
+
+                    item {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column {
+                                Text("Pointer mode")
+                                Text("Enable pointer tracking")
+                            }
+                            Switch(checked = pointerEnabled, onCheckedChange = {
+                                pointerEnabled = it
+                                ActionMappingStore(this@MainActivity).setPointerEnabled(it)
+                                AirRuntime.pointerEnabled = it
+                                AirAccessibilityService.instance?.updatePointer(
+                                    AirRuntime.pointerX,
+                                    AirRuntime.pointerY,
+                                    it && AirRuntime.pointerTracking
+                                )
+                            })
+                        }
                     }
 
-                    Text("Accessibility: ${if (accessibilityEnabled) "ENABLED" else "NOT ENABLED"}")
-                    Text("Vision: ${if (visionReady) "READY" else "NOT READY"}")
-                    Text("Hands detected: $handsDetected")
-                    Text("Gesture: $lastGesture")
-                    Text("Pointer tracking: ${if (pointerTracking) "TRACKING" else "NO HAND"}")
-                    visionError?.let { Text("Vision error: $it") }
-
-                    Text("Gesture mappings", style = MaterialTheme.typography.titleMedium)
-                    MappingRow("Thumb up →", AirAction.TAP)
-                    MappingRow("Victory / peace →", AirAction.BACK)
-                    MappingRow("Open palm →", AirAction.HOME)
-                    MappingRow("Fist →", AirAction.RECENTS)
-                    MappingRow("Pointing up →", AirAction.DOUBLE_TAP)
-
-                    Button(onClick = { if (running) stopSession() else startSession() }, modifier = Modifier.fillMaxWidth()) {
-                        Text(if (running) "Stop capture" else "Start capture")
+                    item {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column {
+                                Text("Gesture actions")
+                                Text("Enable gesture-triggered actions")
+                            }
+                            Switch(checked = gesturesEnabled, onCheckedChange = {
+                                gesturesEnabled = it
+                                ActionMappingStore(this@MainActivity).setGesturesEnabled(it)
+                                AirRuntime.gesturesEnabled = it
+                            })
+                        }
                     }
-                    Button(onClick = { openAccessibilitySettings() }, modifier = Modifier.fillMaxWidth()) { Text("Accessibility settings") }
-                    Button(onClick = { openAppDetails() }, modifier = Modifier.fillMaxWidth()) { Text("App settings") }
-                    Text("Camera: ${if (AirRuntime.cameraReady) "ready" else "not active"}")
+
+                    item { Text("Accessibility: ${if (accessibilityEnabled) "ENABLED" else "NOT ENABLED"}") }
+                    item { Text("Vision: ${if (visionReady) "READY" else "NOT READY"}") }
+                    item { Text("Hands detected: $handsDetected") }
+                    item { Text("Gesture: $lastGesture") }
+                    item { Text("Pointer tracking: ${if (pointerTracking) "TRACKING" else "NO HAND"}") }
+                    visionError?.let { error -> item { Text("Vision error: $error") } }
+
+                    item {
+                        Text(
+                            "Gesture mappings",
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.padding(top = 8.dp)
+                        )
+                    }
+                    item { MappingRow("Thumb up →", AirAction.TAP) }
+                    item { MappingRow("Victory / peace →", AirAction.BACK) }
+                    item { MappingRow("Open palm →", AirAction.HOME) }
+                    item { MappingRow("Fist →", AirAction.RECENTS) }
+                    item { MappingRow("Pointing up →", AirAction.DOUBLE_TAP) }
+
+                    item {
+                        Button(
+                            onClick = { if (running) stopSession() else startSession() },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(if (running) "Stop capture" else "Start capture")
+                        }
+                    }
+                    item {
+                        Button(onClick = { openAccessibilitySettings() }, modifier = Modifier.fillMaxWidth()) {
+                            Text("Accessibility settings")
+                        }
+                    }
+                    item {
+                        Button(onClick = { openAppDetails() }, modifier = Modifier.fillMaxWidth()) {
+                            Text("App settings")
+                        }
+                    }
+                    item {
+                        Text(
+                            "Camera: ${if (AirRuntime.cameraReady) "ready" else "not active"}",
+                            modifier = Modifier.padding(bottom = 24.dp)
+                        )
+                    }
                 }
             }
         }
@@ -164,8 +226,11 @@ class MainActivity : ComponentActivity() {
 
     @androidx.compose.runtime.Composable
     private fun MappingRow(label: String, source: AirAction) {
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(label)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(label, modifier = Modifier.padding(top = 12.dp))
             Button(onClick = { cycleMapping(source) }) {
                 Text(mapping(source).name.replace('_', ' '))
             }
