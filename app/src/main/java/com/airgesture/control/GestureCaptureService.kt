@@ -17,17 +17,17 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
 import java.util.concurrent.Executors
 
-class GestureCaptureService : Service() {
+class GestureCaptureService : Service(), LifecycleOwner {
     private val executor = Executors.newSingleThreadExecutor()
     private var cameraProvider: ProcessCameraProvider? = null
+    private val lifecycleRegistry = LifecycleRegistry.createUnsafe(this)
 
-    private val serviceLifecycleOwner = object : LifecycleOwner {
-        override val lifecycle = LifecycleRegistry(this@GestureCaptureService)
-    }
+    override val lifecycle: Lifecycle
+        get() = lifecycleRegistry
 
     override fun onCreate() {
         super.onCreate()
-        serviceLifecycleOwner.lifecycle.currentState = Lifecycle.State.RESUMED
+        lifecycleRegistry.currentState = Lifecycle.State.RESUMED
         createChannel()
         startForeground(NOTIFICATION_ID, notification())
         AirRuntime.running = true
@@ -50,7 +50,7 @@ class GestureCaptureService : Service() {
                     .build()
                 analysis.setAnalyzer(executor) { image -> image.close() }
                 provider.unbindAll()
-                provider.bindToLifecycle(serviceLifecycleOwner, CameraSelector.DEFAULT_FRONT_CAMERA, analysis)
+                provider.bindToLifecycle(this, CameraSelector.DEFAULT_FRONT_CAMERA, analysis)
                 AirRuntime.cameraReady = true
             }.onFailure { AirRuntime.cameraReady = false }
         }, ContextCompat.getMainExecutor(this))
@@ -59,7 +59,7 @@ class GestureCaptureService : Service() {
     override fun onDestroy() {
         cameraProvider?.unbindAll()
         executor.shutdownNow()
-        serviceLifecycleOwner.lifecycle.currentState = Lifecycle.State.DESTROYED
+        lifecycleRegistry.currentState = Lifecycle.State.DESTROYED
         AirRuntime.cameraReady = false
         AirRuntime.running = false
         super.onDestroy()
