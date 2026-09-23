@@ -1,0 +1,86 @@
+package com.airgesture.control
+
+import android.Manifest
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.Service
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.IBinder
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageAnalysis
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.LifecycleOwner
+import java.util.concurrent.Executors
+
+class GestureCaptureService : Service() {
+    private val executor = Executors.newSingleThreadExecutor()
+    private var cameraProvider: ProcessCameraProvider? = null
+
+    override fun onCreate() {
+        super.onCreate()
+        createChannel()
+        startForeground(NOTIFICATION_ID, notification())
+        AirRuntime.running = true
+        AirRuntime.pointerEnabled = ActionMappingStore(this).pointerEnabled()
+        setupCamera()
+    }
+
+    private fun setupCamera() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            AirRuntime.cameraReady = false
+            return
+        }
+        val future = ProcessCameraProvider.getInstance(this)
+        future.addListener({
+            runCatching {
+                val provider = future.get()
+                cameraProvider = provider
+                val analysis = ImageAnalysis.Builder().setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST).build()
+                analysis.setAnalyzer(executor) { image -> image.close() }
+                provider.unbindAll()
+                provider.bindToLifecycle(
+                    serviceLifecycleOwner,
+                    CameraSelector.DEFAULT_FRONT_CAMERA,
+                    analysis
+                )
+                AirRuntime.cameraReady = true
+            }.onFailure { AirRuntime.cameraReady = false }
+        }, ContextCompat.getMainExecutor(this))
+    }
+
+    private val serviceLifecycleOwner = object : LifecycleOwner {
+        override val lifecycle = androidx.lifecycle.LifecycleRegistry(this@GestureCaptureService)
+    }
+
+    override fun onDestroy() {
+        cameraProvider?.unbindAll()
+        executor.shutdownNow()
+        AirRuntime.cameraReady = false
+        AirRuntime.running = false
+        super.onDestroy()
+    }
+
+    override fun onBind(intent: Intent?): IBinder? = null
+
+    private fun createChannel() {
+        val manager = getSystemService(NotificationManager::class.java)
+        manager.createNotificationChannel(NotificationChannel(CHANNEL_ID, "Aergis", NotificationManager.IMPORTANCE_LOW))
+    }
+
+    private fun notification(): Notification = Notification.Builder(this, CHANNEL_ID)
+        .setContentTitle("Aergis active")
+        .setContentText("Gesture capture is running")
+        .setSmallIcon(android.R.drawable.ic_menu_view)
+        .setOngoing(true)
+        .build()
+
+    companion object {
+        const val ACTION_START = "com.airgesture.control.START"
+        const val ACTION_STOP = "com.airgesture.control.STOP"
+        private const val CHANNEL_ID = "aergis_capture"
+        private const val NOTIFICATION_ID = 1001
+    }
+}
