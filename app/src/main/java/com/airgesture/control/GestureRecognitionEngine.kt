@@ -13,16 +13,14 @@ import com.google.mediapipe.tasks.vision.gesturerecognizer.GestureRecognizer.Ges
 import com.google.mediapipe.tasks.vision.gesturerecognizer.GestureRecognizerResult
 import java.util.concurrent.atomic.AtomicBoolean
 
-/**
- * On-device MediaPipe gesture and hand-landmark inference.
- *
- * The model identity is pinned to the exact bundle found in the known-good
- * 0.10.0-preview APK: 8,373,440 bytes, SHA-256
- * 97952348cf6a6a4915c2ea1496b4b37ebabc50cbbf80571435643c455f2b0482.
- */
-class GestureRecognitionEngine(context: Context) : AutoCloseable {
+/** On-device MediaPipe gesture and hand-landmark inference. */
+class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
     private val closed = AtomicBoolean(false)
     private val recognizer: GestureRecognizer
+    private val mappings = ActionMappingStore(context)
+    private val interpreter = GestureInterpreter(mappings)
+    private var lastActionAt = 0L
+    private var lastGestureName = "None"
 
     init {
         val options = GestureRecognizerOptions.builder()
@@ -63,21 +61,42 @@ class GestureRecognitionEngine(context: Context) : AutoCloseable {
     private fun publish(result: GestureRecognizerResult) {
         val landmarks = result.landmarks()
         AirRuntime.handsDetected = landmarks.size
-        AirRuntime.lastGesture = result.gestures()
+
+        val gesture = result.gestures()
             .firstOrNull()
             ?.firstOrNull()
-            ?.categoryName()
-            ?.takeIf { it.isNotBlank() }
-            ?: "None"
+        val gestureName = gesture?.categoryName()?.takeIf { it.isNotBlank() } ?: "None"
+        val gestureScore = gesture?.score() ?: 0f
+        AirRuntime.lastGesture = gestureName
 
         val indexTip = landmarks.firstOrNull()?.getOrNull(8)
-        if (indexTip != null) {
+        val pointerActive = mappings.pointerEnabled()
+        AirRuntime.pointerEnabled = pointerActive
+        if (pointerActive && indexTip != null) {
             AirRuntime.pointerX = indexTip.x().coerceIn(0f, 1f)
             AirRuntime.pointerY = indexTip.y().coerceIn(0f, 1f)
             AirRuntime.pointerTracking = true
+            AirAccessibilityService.instance?.updatePointer(
+                AirRuntime.pointerX,
+                AirRuntime.pointerY,
+                true
+            )
         } else {
             AirRuntime.pointerTracking = false
+            AirAccessibilityService.instance?.updatePointer(0f, 0f, false)
         }
+
+        AirRuntime.gesturesEnabled = mappings.gesturesEnabled()
+        if (AirRuntime.gesturesEnabled && gestureName != "None" && gestureScore >= MIN_GESTURE_SCORE) {
+            if (gestureName != lastGestureName || SystemClock.uptimeMillis() - lastActionAt >= ACTION_COOLDOWN_MS) {
+                val decision = interpreter.interpret(GestureSignal(gestureName, gestureScore))
+                if (decision.action != AirAction.NONE) {
+                    AirAccessibilityService.instance?.dispatch(decision.action)
+                    lastActionAt = SystemClock.uptimeMillis()
+                }
+            }
+        }
+        lastGestureName = gestureName
         AirRuntime.visionError = null
         AirRuntime.visionReady = true
     }
@@ -93,10 +112,13 @@ class GestureRecognitionEngine(context: Context) : AutoCloseable {
             recognizer.close()
             AirRuntime.visionReady = false
             AirRuntime.pointerTracking = false
+            AirAccessibilityService.instance?.updatePointer(0f, 0f, false)
         }
     }
 
     companion object {
         private const val MODEL_ASSET = "gesture_recognizer.task"
+        private const val MIN_GESTURE_SCORE = 0.65f
+        private const val ACTION_COOLDOWN_MS = 700L
     }
 }
