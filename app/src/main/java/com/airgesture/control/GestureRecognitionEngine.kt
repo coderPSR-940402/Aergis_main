@@ -85,10 +85,23 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 filteredPointerY = rawY
                 pointerInitialized = true
             } else {
-                val delta = kotlin.math.hypot(rawX - filteredPointerX, rawY - filteredPointerY)
-                val alpha = (0.18f + delta * 5f).coerceIn(0.18f, 0.75f)
-                filteredPointerX += (rawX - filteredPointerX) * alpha
-                filteredPointerY += (rawY - filteredPointerY) * alpha
+                val dx = rawX - filteredPointerX
+                val dy = rawY - filteredPointerY
+                val distance = kotlin.math.hypot(dx, dy)
+                if (distance <= POINTER_DEADBAND) {
+                    // Ignore sub-pixel landmark noise while the finger is effectively still.
+                } else {
+                    val alpha = when {
+                        distance <= SLOW_MOVEMENT_THRESHOLD -> STATIONARY_ALPHA
+                        distance >= FAST_MOVEMENT_THRESHOLD -> FAST_ALPHA
+                        else -> STATIONARY_ALPHA +
+                            (FAST_ALPHA - STATIONARY_ALPHA) *
+                            ((distance - SLOW_MOVEMENT_THRESHOLD) /
+                                (FAST_MOVEMENT_THRESHOLD - SLOW_MOVEMENT_THRESHOLD))
+                    }
+                    filteredPointerX += dx * alpha
+                    filteredPointerY += dy * alpha
+                }
             }
             lastPointerAt = now
             AirRuntime.pointerX = filteredPointerX
@@ -147,5 +160,10 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         private const val MIN_GESTURE_SCORE = 0.65f
         private const val ACTION_COOLDOWN_MS = 700L
         private const val POINTER_LOSS_GRACE_MS = 250L
+        private const val POINTER_DEADBAND = 0.004f
+        private const val SLOW_MOVEMENT_THRESHOLD = 0.025f
+        private const val FAST_MOVEMENT_THRESHOLD = 0.12f
+        private const val STATIONARY_ALPHA = 0.12f
+        private const val FAST_ALPHA = 0.65f
     }
 }
