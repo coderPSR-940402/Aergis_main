@@ -32,7 +32,9 @@ class GestureCaptureService : Service(), LifecycleOwner {
         createChannel()
         startForeground(NOTIFICATION_ID, notification())
         AirRuntime.running = true
-        AirRuntime.pointerEnabled = ActionMappingStore(this).pointerEnabled()
+        val mappings = ActionMappingStore(this)
+        AirRuntime.pointerEnabled = mappings.pointerEnabled()
+        AirRuntime.gesturesEnabled = mappings.gesturesEnabled()
         runCatching { visionEngine = GestureRecognitionEngine(this) }
             .onFailure {
                 AirRuntime.visionReady = false
@@ -82,6 +84,8 @@ class GestureCaptureService : Service(), LifecycleOwner {
         AirRuntime.handsDetected = 0
         AirRuntime.lastGesture = "None"
         AirRuntime.pointerTracking = false
+        AirRuntime.gesturesEnabled = false
+        AirAccessibilityService.instance?.updatePointer(0f, 0f, false)
         super.onDestroy()
     }
 
