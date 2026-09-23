@@ -8,14 +8,19 @@ class ActionMappingStore(context: Context) {
     fun pointerEnabled(): Boolean = prefs.getBoolean(KEY_POINTER, true)
     fun setPointerEnabled(enabled: Boolean) = prefs.edit().putBoolean(KEY_POINTER, enabled).apply()
 
+    fun gesturesEnabled(): Boolean = prefs.getBoolean(KEY_GESTURES, true)
+    fun setGesturesEnabled(enabled: Boolean) = prefs.edit().putBoolean(KEY_GESTURES, enabled).apply()
+
     fun mapping(action: AirAction): AirAction = runCatching {
         AirAction.valueOf(prefs.getString("map_${action.name}", action.name) ?: action.name)
     }.getOrDefault(action)
 
-    fun setMapping(source: AirAction, target: AirAction) = prefs.edit().putString("map_${source.name}", target.name).apply()
+    fun setMapping(source: AirAction, target: AirAction) =
+        prefs.edit().putString("map_${source.name}", target.name).apply()
 
     companion object {
         private const val KEY_POINTER = "pointer_enabled"
+        private const val KEY_GESTURES = "gestures_enabled"
     }
 }
 
