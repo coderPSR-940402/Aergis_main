@@ -6,6 +6,7 @@ object AirRuntime {
     @Volatile var running: Boolean = false
     @Volatile var cameraReady: Boolean = false
     @Volatile var pointerEnabled: Boolean = true
+    @Volatile var gesturesEnabled: Boolean = true
     @Volatile var visionReady: Boolean = false
     @Volatile var visionError: String? = null
     @Volatile var handsDetected: Int = 0
