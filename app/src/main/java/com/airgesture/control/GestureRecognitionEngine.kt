@@ -15,6 +15,7 @@ import com.google.mediapipe.tasks.vision.gesturerecognizer.GestureRecognizer.Ges
 import com.google.mediapipe.tasks.vision.gesturerecognizer.GestureRecognizerResult
 import com.google.mediapipe.tasks.components.containers.NormalizedLandmark
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.math.hypot
 
 /** On-device MediaPipe gesture and hand-landmark inference. */
 class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
@@ -28,6 +29,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
     private var pointerInitialized = false
     private var lastPointerAt = 0L
     private var trackedPhysicalHand: String? = null
+    private var referencePalmScale = 0f
 
     init {
         val pointerOnly = mappings.pointerEnabled() && !mappings.gesturesEnabled()
@@ -39,9 +41,9 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             )
             .setRunningMode(RunningMode.VIDEO)
             .setNumHands(if (pointerOnly) 1 else 2)
-            .setMinHandDetectionConfidence(0.5f)
-            .setMinHandPresenceConfidence(0.5f)
-            .setMinTrackingConfidence(0.5f)
+            .setMinHandDetectionConfidence(0.45f)
+            .setMinHandPresenceConfidence(0.4f)
+            .setMinTrackingConfidence(0.4f)
             .build()
         recognizer = GestureRecognizer.createFromOptions(context, options)
         AirRuntime.visionReady = true
@@ -88,9 +90,15 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         val pointerActive = mappings.pointerEnabled()
         AirRuntime.pointerEnabled = pointerActive
         val selectedIndex = selectPointerHandIndex(landmarks, physicalHandedness, pointerActive)
-        val indexTip = landmarks.getOrNull(selectedIndex)?.getOrNull(8)
-        if (pointerActive && indexTip != null) {
-            val smoothed = pointerSmoother.filter(indexTip, timestamp)
+        val selectedHand = landmarks.getOrNull(selectedIndex)
+        val indexTip = selectedHand?.getOrNull(INDEX_TIP)
+        val wrist = selectedHand?.getOrNull(WRIST)
+        val middleMcp = selectedHand?.getOrNull(MIDDLE_MCP)
+
+        if (pointerActive && indexTip != null && wrist != null && middleMcp != null) {
+            val pointerPoint = depthCompensatedTip(indexTip, wrist, middleMcp)
+            val mapped = mapActiveRegion(pointerPoint.x, pointerPoint.y)
+            val smoothed = pointerSmoother.filter(mapped.x, mapped.y, timestamp)
             pointerInitialized = true
             lastPointerAt = timestamp
             AirRuntime.pointerX = smoothed.x.coerceIn(0f, 1f)
@@ -112,6 +120,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             AirRuntime.pointerTracking = false
             pointerInitialized = false
             trackedPhysicalHand = null
+            referencePalmScale = 0f
             pointerSmoother.reset()
             AirAccessibilityService.instance?.updatePointer(0f, 0f, false)
         }
@@ -131,6 +140,24 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         AirRuntime.visionReady = true
     }
 
+    private fun depthCompensatedTip(
+        tip: NormalizedLandmark,
+        wrist: NormalizedLandmark,
+        middleMcp: NormalizedLandmark
+    ): LandmarkPoint {
+        val palmScale = distance(wrist, middleMcp).coerceAtLeast(MIN_PALM_SCALE)
+        if (referencePalmScale <= 0f) referencePalmScale = palmScale
+        val scaleRatio = (referencePalmScale / palmScale).coerceIn(0.65f, 1.55f)
+        val x = wrist.x() + (tip.x() - wrist.x()) * scaleRatio
+        val y = wrist.y() + (tip.y() - wrist.y()) * scaleRatio
+        return LandmarkPoint(x.coerceIn(0f, 1f), y.coerceIn(0f, 1f))
+    }
+
+    private fun mapActiveRegion(x: Float, y: Float): LandmarkPoint = LandmarkPoint(
+        ((x - ACTIVE_LEFT) / (ACTIVE_RIGHT - ACTIVE_LEFT)).coerceIn(0f, 1f),
+        ((y - ACTIVE_TOP) / (ACTIVE_BOTTOM - ACTIVE_TOP)).coerceIn(0f, 1f)
+    )
+
     private fun selectPointerHandIndex(
         landmarks: List<List<NormalizedLandmark>>,
         physicalHandedness: List<String>,
@@ -148,6 +175,9 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         return selected
     }
 
+    private fun distance(a: NormalizedLandmark, b: NormalizedLandmark): Float =
+        hypot(a.x() - b.x(), a.y() - b.y())
+
     private fun rotate(source: Bitmap, degrees: Int): Bitmap {
         if (degrees == 0) return source
         val matrix = Matrix().apply { postRotate(degrees.toFloat()) }
@@ -159,11 +189,14 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             recognizer.close()
             pointerSmoother.reset()
             trackedPhysicalHand = null
+            referencePalmScale = 0f
             AirRuntime.visionReady = false
             AirRuntime.pointerTracking = false
             AirAccessibilityService.instance?.updatePointer(0f, 0f, false)
         }
     }
+
+    private data class LandmarkPoint(val x: Float, val y: Float)
 
     companion object {
         private const val TAG = "GestureRecognitionEngine"
@@ -171,5 +204,13 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         private const val MIN_GESTURE_SCORE = 0.65f
         private const val ACTION_COOLDOWN_MS = 700L
         private const val POINTER_LOSS_GRACE_MS = 250L
+        private const val ACTIVE_LEFT = 0.08f
+        private const val ACTIVE_RIGHT = 0.92f
+        private const val ACTIVE_TOP = 0.08f
+        private const val ACTIVE_BOTTOM = 0.92f
+        private const val MIN_PALM_SCALE = 0.001f
+        private const val WRIST = 0
+        private const val INDEX_TIP = 8
+        private const val MIDDLE_MCP = 9
     }
 }

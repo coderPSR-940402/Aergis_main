@@ -8,6 +8,7 @@ import android.app.Service
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.IBinder
+import android.util.Size
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.lifecycle.ProcessCameraProvider
@@ -54,6 +55,7 @@ class GestureCaptureService : Service(), LifecycleOwner {
                 val provider = future.get()
                 cameraProvider = provider
                 val analysis = ImageAnalysis.Builder()
+                    .setTargetResolution(Size(1280, 720))
                     .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                     .build()
                 analysis.setAnalyzer(executor) { image ->

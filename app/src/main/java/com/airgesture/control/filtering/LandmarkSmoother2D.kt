@@ -5,8 +5,8 @@ import com.google.mediapipe.tasks.components.containers.NormalizedLandmark
 
 /** 2D 1 Euro smoothing for normalized MediaPipe landmark coordinates. */
 class LandmarkSmoother2D(
-    minCutoff: Float = 1.0f,
-    beta: Float = 0.05f,
+    minCutoff: Float = 1.8f,
+    beta: Float = 0.15f,
     dCutoff: Float = 1.0f
 ) {
     private val filterX = OneEuroFilter(minCutoff, beta, dCutoff)
@@ -18,6 +18,15 @@ class LandmarkSmoother2D(
     ): Point2D = Point2D(
         filterX.filter(landmark.x(), timestampMs),
         filterY.filter(landmark.y(), timestampMs)
+    )
+
+    fun filter(
+        x: Float,
+        y: Float,
+        timestampMs: Long = SystemClock.uptimeMillis()
+    ): Point2D = Point2D(
+        filterX.filter(x, timestampMs),
+        filterY.filter(y, timestampMs)
     )
 
     fun reset() {
