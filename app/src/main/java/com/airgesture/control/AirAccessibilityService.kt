@@ -3,6 +3,7 @@ package com.airgesture.control
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.graphics.Path
+import android.util.DisplayMetrics
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 
@@ -35,27 +36,29 @@ class AirAccessibilityService : AccessibilityService() {
     }
 
     fun dispatch(action: AirAction): ActionResult = when (action) {
-        AirAction.BACK -> {
-            ActionResult(action, performGlobalAction(GLOBAL_ACTION_BACK))
-        }
-        AirAction.HOME -> {
-            ActionResult(action, performGlobalAction(GLOBAL_ACTION_HOME))
-        }
-        AirAction.RECENTS -> {
-            ActionResult(action, performGlobalAction(GLOBAL_ACTION_RECENTS))
-        }
+        AirAction.BACK -> ActionResult(action, performGlobalAction(GLOBAL_ACTION_BACK))
+        AirAction.HOME -> ActionResult(action, performGlobalAction(GLOBAL_ACTION_HOME))
+        AirAction.RECENTS -> ActionResult(action, performGlobalAction(GLOBAL_ACTION_RECENTS))
         AirAction.TAP, AirAction.DOUBLE_TAP, AirAction.LONG_PRESS ->
             dispatchPointerTap(action == AirAction.DOUBLE_TAP, action == AirAction.LONG_PRESS)
-        AirAction.SCROLL_UP -> dispatchSwipe(0.5f, 0.75f, 0.5f, 0.25f)
-        AirAction.SCROLL_DOWN -> dispatchSwipe(0.5f, 0.25f, 0.5f, 0.75f)
+        AirAction.SCROLL_UP -> dispatchSwipe(AirAction.SCROLL_UP, 0.5f, 0.75f, 0.5f, 0.25f)
+        AirAction.SCROLL_DOWN -> dispatchSwipe(AirAction.SCROLL_DOWN, 0.5f, 0.25f, 0.5f, 0.75f)
         AirAction.NONE -> ActionResult(action, false, "No action")
+    }
+
+    private fun pointerScreenPosition(metrics: DisplayMetrics): Pair<Float, Float> {
+        if (!AirRuntime.pointerTracking) {
+            return metrics.widthPixels / 2f to metrics.heightPixels / 2f
+        }
+        val mirroredX = 1f - AirRuntime.pointerX.coerceIn(0f, 1f)
+        val y = AirRuntime.pointerY.coerceIn(0f, 1f)
+        return (mirroredX * metrics.widthPixels) to (y * metrics.heightPixels)
     }
 
     private fun dispatchPointerTap(doubleTap: Boolean, longPress: Boolean): ActionResult {
         val metrics = resources.displayMetrics
-        val path = Path().apply {
-            moveTo(metrics.widthPixels / 2f, metrics.heightPixels / 2f)
-        }
+        val (tapX, tapY) = pointerScreenPosition(metrics)
+        val path = Path().apply { moveTo(tapX, tapY) }
         val duration = if (longPress) 650L else 1L
         val stroke = GestureDescription.StrokeDescription(path, 0, duration)
         val accepted = dispatchGesture(
@@ -74,7 +77,7 @@ class AirAccessibilityService : AccessibilityService() {
         )
     }
 
-    private fun dispatchSwipe(x1: Float, y1: Float, x2: Float, y2: Float): ActionResult {
+    private fun dispatchSwipe(action: AirAction, x1: Float, y1: Float, x2: Float, y2: Float): ActionResult {
         val metrics = resources.displayMetrics
         val path = Path().apply {
             moveTo(x1 * metrics.widthPixels, y1 * metrics.heightPixels)
@@ -85,7 +88,7 @@ class AirAccessibilityService : AccessibilityService() {
                 .addStroke(GestureDescription.StrokeDescription(path, 0, 350))
                 .build(), null, null
         )
-        return ActionResult(AirAction.SCROLL_UP, accepted)
+        return ActionResult(action, accepted)
     }
 
     companion object {

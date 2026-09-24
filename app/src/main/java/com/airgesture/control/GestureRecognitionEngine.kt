@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Matrix
 import android.os.SystemClock
+import android.util.Log
 import androidx.camera.core.ImageProxy
 import com.airgesture.control.filtering.LandmarkSmoother2D
 import com.google.mediapipe.framework.image.BitmapImageBuilder
@@ -12,6 +13,7 @@ import com.google.mediapipe.tasks.vision.core.RunningMode
 import com.google.mediapipe.tasks.vision.gesturerecognizer.GestureRecognizer
 import com.google.mediapipe.tasks.vision.gesturerecognizer.GestureRecognizer.GestureRecognizerOptions
 import com.google.mediapipe.tasks.vision.gesturerecognizer.GestureRecognizerResult
+import com.google.mediapipe.tasks.components.containers.NormalizedLandmark
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** On-device MediaPipe gesture and hand-landmark inference. */
@@ -25,8 +27,10 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
     private var lastGestureName = "None"
     private var pointerInitialized = false
     private var lastPointerAt = 0L
+    private var trackedPhysicalHand: String? = null
 
     init {
+        val pointerOnly = mappings.pointerEnabled() && !mappings.gesturesEnabled()
         val options = GestureRecognizerOptions.builder()
             .setBaseOptions(
                 BaseOptions.builder()
@@ -34,7 +38,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                     .build()
             )
             .setRunningMode(RunningMode.VIDEO)
-            .setNumHands(2)
+            .setNumHands(if (pointerOnly) 1 else 2)
             .setMinHandDetectionConfidence(0.5f)
             .setMinHandPresenceConfidence(0.5f)
             .setMinTrackingConfidence(0.5f)
@@ -54,6 +58,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             val result = recognizer.recognizeForVideo(mpImage, timestamp)
             publish(result, timestamp)
         } catch (t: Throwable) {
+            Log.e(TAG, "Gesture recognition failed for frame", t)
             AirRuntime.visionError = t.message ?: t.javaClass.simpleName
             AirRuntime.visionReady = false
         } finally {
@@ -66,23 +71,27 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         val landmarks = result.landmarks()
         AirRuntime.handsDetected = landmarks.size
 
-        val gesture = result.gestures()
-            .firstOrNull()
-            ?.firstOrNull()
+        val gesture = result.gestures().firstOrNull()?.firstOrNull()
         val gestureName = gesture?.categoryName()?.takeIf { it.isNotBlank() } ?: "None"
         val gestureScore = gesture?.score() ?: 0f
         AirRuntime.lastGesture = gestureName
 
-        val indexTip = landmarks.firstOrNull()?.getOrNull(8)
+        val physicalHandedness = result.handedness().map { categories ->
+            when (categories.firstOrNull()?.categoryName()) {
+                "Left" -> "Right"
+                "Right" -> "Left"
+                else -> "Unknown"
+            }
+        }
+        AirRuntime.handedness = physicalHandedness.firstOrNull() ?: "Unknown"
+
         val pointerActive = mappings.pointerEnabled()
         AirRuntime.pointerEnabled = pointerActive
+        val selectedIndex = selectPointerHandIndex(landmarks, physicalHandedness, pointerActive)
+        val indexTip = landmarks.getOrNull(selectedIndex)?.getOrNull(8)
         if (pointerActive && indexTip != null) {
-            val rawX = indexTip.x().coerceIn(0f, 1f)
-            val rawY = indexTip.y().coerceIn(0f, 1f)
             val smoothed = pointerSmoother.filter(indexTip, timestamp)
-            if (!pointerInitialized) {
-                pointerInitialized = true
-            }
+            pointerInitialized = true
             lastPointerAt = timestamp
             AirRuntime.pointerX = smoothed.x.coerceIn(0f, 1f)
             AirRuntime.pointerY = smoothed.y.coerceIn(0f, 1f)
@@ -102,6 +111,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         } else {
             AirRuntime.pointerTracking = false
             pointerInitialized = false
+            trackedPhysicalHand = null
             pointerSmoother.reset()
             AirAccessibilityService.instance?.updatePointer(0f, 0f, false)
         }
@@ -121,6 +131,23 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         AirRuntime.visionReady = true
     }
 
+    private fun selectPointerHandIndex(
+        landmarks: List<List<NormalizedLandmark>>,
+        physicalHandedness: List<String>,
+        pointerActive: Boolean
+    ): Int {
+        if (!pointerActive || landmarks.isEmpty()) return 0
+        val tracked = trackedPhysicalHand
+        if (tracked != null) {
+            val matching = physicalHandedness.indexOfFirst { it == tracked }
+            if (matching >= 0 && matching < landmarks.size) return matching
+        }
+        val firstKnown = physicalHandedness.indexOfFirst { it == "Right" || it == "Left" }
+        val selected = if (firstKnown >= 0 && firstKnown < landmarks.size) firstKnown else 0
+        trackedPhysicalHand = physicalHandedness.getOrNull(selected)?.takeIf { it != "Unknown" }
+        return selected
+    }
+
     private fun rotate(source: Bitmap, degrees: Int): Bitmap {
         if (degrees == 0) return source
         val matrix = Matrix().apply { postRotate(degrees.toFloat()) }
@@ -131,6 +158,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         if (closed.compareAndSet(false, true)) {
             recognizer.close()
             pointerSmoother.reset()
+            trackedPhysicalHand = null
             AirRuntime.visionReady = false
             AirRuntime.pointerTracking = false
             AirAccessibilityService.instance?.updatePointer(0f, 0f, false)
@@ -138,6 +166,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
     }
 
     companion object {
+        private const val TAG = "GestureRecognitionEngine"
         private const val MODEL_ASSET = "gesture_recognizer.task"
         private const val MIN_GESTURE_SCORE = 0.65f
         private const val ACTION_COOLDOWN_MS = 700L

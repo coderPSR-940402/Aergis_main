@@ -36,6 +36,7 @@ class MainActivity : ComponentActivity() {
     private var running by mutableStateOf(false)
     private var handsDetected by mutableStateOf(0)
     private var lastGesture by mutableStateOf("None")
+    private var handedness by mutableStateOf("Unknown")
     private var pointerTracking by mutableStateOf(false)
     private var visionReady by mutableStateOf(false)
     private var visionError by mutableStateOf<String?>(null)
@@ -66,6 +67,7 @@ class MainActivity : ComponentActivity() {
         gesturesEnabled = mappings.gesturesEnabled()
         handsDetected = AirRuntime.handsDetected
         lastGesture = AirRuntime.lastGesture
+        handedness = AirRuntime.handedness
         pointerTracking = AirRuntime.pointerTracking
         visionReady = AirRuntime.visionReady
         visionError = AirRuntime.visionError
@@ -177,6 +179,7 @@ class MainActivity : ComponentActivity() {
                     item { Text("Accessibility: ${if (accessibilityEnabled) "ENABLED" else "NOT ENABLED"}") }
                     item { Text("Vision: ${if (visionReady) "READY" else "NOT READY"}") }
                     item { Text("Hands detected: $handsDetected") }
+                    item { Text("Tracking hand: $handedness") }
                     item { Text("Gesture: $lastGesture") }
                     item { Text("Pointer tracking: ${if (pointerTracking) "TRACKING" else "NO HAND"}") }
                     visionError?.let { error -> item { Text("Vision error: $error") } }

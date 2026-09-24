@@ -9,12 +9,17 @@ import android.os.Looper
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.roundToInt
 
 class PointerOverlay(private val context: Context) {
     private val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
     private val mainHandler = Handler(Looper.getMainLooper())
     private val view = PointerView(context)
+    private val updateScheduled = AtomicBoolean(false)
+    @Volatile private var pendingX = 0f
+    @Volatile private var pendingY = 0f
+    @Volatile private var pendingGeneration = 0L
     private var attached = false
 
     fun show() {
@@ -41,16 +46,36 @@ class PointerOverlay(private val context: Context) {
     }
 
     fun update(x: Float, y: Float) {
-        mainHandler.post {
-            if (!attached) {
-                show()
-                return@post
-            }
-            val metrics = context.resources.displayMetrics
-            val params = view.layoutParams as? WindowManager.LayoutParams ?: return@post
-            params.x = (x.coerceIn(0f, 1f) * metrics.widthPixels).roundToInt() - 22
-            params.y = (y.coerceIn(0f, 1f) * metrics.heightPixels).roundToInt() - 22
+        pendingX = x.coerceIn(0f, 1f)
+        pendingY = y.coerceIn(0f, 1f)
+        pendingGeneration += 1L
+        if (!updateScheduled.compareAndSet(false, true)) return
+        mainHandler.post(::renderLatest)
+    }
+
+    private fun renderLatest() {
+        if (!attached) {
+            updateScheduled.set(false)
+            show()
+            return
+        }
+        val generation = pendingGeneration
+        val x = pendingX
+        val y = pendingY
+        val metrics = context.resources.displayMetrics
+        val params = view.layoutParams as? WindowManager.LayoutParams
+        if (params != null) {
+            params.x = (x * metrics.widthPixels).roundToInt() - 22
+            params.y = (y * metrics.heightPixels).roundToInt() - 22
             runCatching { windowManager.updateViewLayout(view, params) }
+        }
+        if (pendingGeneration != generation) {
+            mainHandler.post(::renderLatest)
+            return
+        }
+        updateScheduled.set(false)
+        if (pendingGeneration != generation && updateScheduled.compareAndSet(false, true)) {
+            mainHandler.post(::renderLatest)
         }
     }
 

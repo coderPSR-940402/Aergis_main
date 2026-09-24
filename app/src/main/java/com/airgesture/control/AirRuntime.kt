@@ -11,6 +11,7 @@ object AirRuntime {
     @Volatile var visionError: String? = null
     @Volatile var handsDetected: Int = 0
     @Volatile var lastGesture: String = "None"
+    @Volatile var handedness: String = "Unknown"
     @Volatile var pointerTracking: Boolean = false
     @Volatile var pointerX: Float = 0f
     @Volatile var pointerY: Float = 0f
