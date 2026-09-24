@@ -50,18 +50,7 @@ jobs:
             exit 1
           fi
 
-          "$SDKMANAGER" --licenses <<'EOF'
-
-y
-y
-y
-y
-y
-y
-y
-y
-y
-EOF
+          yes | "$SDKMANAGER" --licenses || true
 
           "$SDKMANAGER" "platforms;android-36" "build-tools;36.0.0"
 
@@ -128,3 +117,4 @@ EOF
             app/build/reports/tests/
             app/build/reports/lint-results*
           if-no-files-found: ignore
+
