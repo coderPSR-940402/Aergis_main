@@ -28,6 +28,14 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      - name: Cache Android SDK 36
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.ANDROID_HOME }}/platforms/android-36
+            ${{ env.ANDROID_HOME }}/build-tools/36.0.0
+          key: android-sdk-36
+
       - name: Prepare Android SDK 36
         shell: bash
         run: |
@@ -70,13 +78,13 @@ EOF
         run: gradle --version
 
       - name: Run unit tests
-        run: gradle test --stacktrace --warning-mode all
+        run: gradle test --build-cache --stacktrace --warning-mode all
 
       - name: Run Android lint
-        run: gradle :app:lint --stacktrace --warning-mode all
+        run: gradle :app:lint --build-cache --stacktrace --warning-mode all
 
       - name: Assemble debug APK
-        run: gradle :app:assembleDebug --stacktrace --warning-mode all
+        run: gradle :app:assembleDebug --build-cache --stacktrace --warning-mode all
 
       - name: Verify APK
         shell: bash
