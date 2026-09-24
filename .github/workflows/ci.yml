@@ -17,6 +17,7 @@ jobs:
   build:
     name: Build and test Aergis
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -31,12 +32,21 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          SDKMANAGER="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
-          if [ ! -x "$SDKMANAGER" ]; then
+
+          if [ -x "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" ]; then
+            SDKMANAGER="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
+          elif [ -x "${ANDROID_HOME}/cmdline-tools/16.0/bin/sdkmanager" ]; then
             SDKMANAGER="${ANDROID_HOME}/cmdline-tools/16.0/bin/sdkmanager"
+          else
+            echo "ERROR: sdkmanager not found"
+            exit 1
           fi
-          yes | "$SDKMANAGER" --licenses >/dev/null || true
+
+          yes | "$SDKMANAGER" --licenses >/dev/null
           "$SDKMANAGER" "platforms;android-36" "build-tools;36.0.0"
+
+          test -d "${ANDROID_HOME}/platforms/android-36"
+          test -x "${ANDROID_HOME}/build-tools/36.0.0/aapt"
 
       - name: Set up Gradle 8.11.1
         uses: gradle/actions/setup-gradle@v6
@@ -48,25 +58,53 @@ jobs:
         run: gradle --version
 
       - name: Run unit tests
-        run: gradle test --stacktrace
+        run: gradle test --stacktrace --warning-mode all
+
+      - name: Run Android lint
+        run: gradle :app:lint --stacktrace --warning-mode all
 
       - name: Assemble debug APK
-        run: gradle :app:assembleDebug --stacktrace
+        run: gradle :app:assembleDebug --stacktrace --warning-mode all
 
-      - name: Verify APK exists
-        run: test -s app/build/outputs/apk/debug/app-debug.apk
+      - name: Verify APK
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          AAPT="${ANDROID_HOME}/build-tools/36.0.0/aapt"
+
+          test -s "$APK"
+          "$AAPT" dump badging "$APK" > apk-badging.txt
+
+          grep -q "package: name='com.airgesture.control'" apk-badging.txt
+          grep -q "versionCode='10'" apk-badging.txt
+          grep -q "versionName='0.10.0-preview'" apk-badging.txt
+
+          echo "APK verification passed"
+          cat apk-badging.txt
+
+      - name: Generate APK checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum app/build/outputs/apk/debug/app-debug.apk | tee apk-sha256.txt
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
           name: Aergis-debug-${{ github.sha }}
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: |
+            app/build/outputs/apk/debug/app-debug.apk
+            apk-sha256.txt
           if-no-files-found: error
 
-      - name: Upload test reports
+      - name: Upload test and lint reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Aergis-test-reports-${{ github.sha }}
-          path: app/build/reports/tests/
+          name: Aergis-reports-${{ github.sha }}
+          path: |
+            app/build/reports/tests/
+            app/build/reports/lint-results*
           if-no-files-found: ignore
