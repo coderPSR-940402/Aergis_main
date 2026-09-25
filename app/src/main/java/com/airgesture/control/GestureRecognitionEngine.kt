@@ -116,7 +116,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         val selectedHand = landmarks.getOrNull(selectedIndex)
         val indexTip = selectedHand?.getOrNull(INDEX_TIP)
 
-        if (pointerActive && indexTip != null && selectedHand != null) {
+        if (pointerActive && indexTip != null) {
             val rawMapped = PointerCoordinateMapper.map(indexTip.x(), indexTip.y())
             val points = selectedHand.map { landmark ->
                 Point3D(landmark.x(), landmark.y(), landmark.z())
