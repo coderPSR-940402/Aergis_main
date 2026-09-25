@@ -3,9 +3,7 @@ package com.airgesture.control.filtering
 import kotlin.math.PI
 import kotlin.math.abs
 
-/**
- * Adaptive low-pass filter that reduces jitter while limiting lag during motion.
- */
+/** Adaptive low-pass filter that reduces jitter while limiting lag during motion. */
 class OneEuroFilter(
     private val minCutoff: Float = 1.0f,
     private val beta: Float = 0.01f,
@@ -21,10 +19,16 @@ class OneEuroFilter(
             return valueFilter.filter(value, 1f)
         }
 
-        val dt = (timestampMs - lastTimestampMs) / 1000f
-        lastTimestampMs = timestampMs
-        if (dt <= 0.0001f) return valueFilter.lastValue() ?: value
+        val deltaMs = timestampMs - lastTimestampMs
+        if (deltaMs <= 0L || deltaMs > MAX_GAP_MS) {
+            valueFilter.reset()
+            derivativeFilter.reset()
+            lastTimestampMs = timestampMs
+            return valueFilter.filter(value, 1f)
+        }
 
+        val dt = deltaMs / 1000f
+        lastTimestampMs = timestampMs
         val previousValue = valueFilter.lastValue() ?: value
         val derivative = (value - previousValue) / dt
         val filteredDerivative = derivativeFilter.filter(
@@ -45,5 +49,9 @@ class OneEuroFilter(
         val safeCutoff = cutoff.coerceAtLeast(0.001f)
         val tau = 1f / (2f * PI.toFloat() * safeCutoff)
         return 1f / (1f + tau / dt)
+    }
+
+    companion object {
+        private const val MAX_GAP_MS = 250L
     }
 }

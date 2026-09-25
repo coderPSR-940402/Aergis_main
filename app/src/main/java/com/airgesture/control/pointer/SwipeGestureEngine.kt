@@ -18,28 +18,35 @@ class SwipeGestureEngine(
 
     private val sampleWindow = ArrayDeque<FrameSample>()
     private var cooldownUntilMs = 0L
+    private var lastTimestampMs = 0L
 
     fun processFrame(handPosition: Point3D, timestampMs: Long): SwipeDirection {
+        if (lastTimestampMs > 0L && timestampMs <= lastTimestampMs) {
+            sampleWindow.clear()
+            lastTimestampMs = timestampMs
+            return SwipeDirection.NONE
+        }
+        lastTimestampMs = timestampMs
+
         sampleWindow.addLast(FrameSample(handPosition, timestampMs))
-        while (sampleWindow.size > windowSize.coerceAtLeast(2)) {
+        val safeWindowSize = windowSize.coerceAtLeast(2)
+        while (sampleWindow.size > safeWindowSize) {
             sampleWindow.removeFirst()
         }
 
         if (timestampMs < cooldownUntilMs) {
-            val oldest = sampleWindow.firstOrNull()
-            if (oldest != null) {
-                val dx = handPosition.x - oldest.point.x
-                val dy = handPosition.y - oldest.point.y
-                val dt = (timestampMs - oldest.timestampMs) / 1000.0f
-                val velocity = if (dt > 0.001f) sqrt(dx * dx + dy * dy) / dt else 0.0f
-                if (velocity < returnVelocityThreshold) {
-                    cooldownUntilMs = 0L
-                }
+            val first = sampleWindow.firstOrNull()
+            if (first != null) {
+                val dx = handPosition.x - first.point.x
+                val dy = handPosition.y - first.point.y
+                val dt = (timestampMs - first.timestampMs) / 1000.0f
+                val velocity = if (dt > 0.001f) sqrt(dx * dx + dy * dy) / dt else 0f
+                if (velocity < returnVelocityThreshold) cooldownUntilMs = 0L
             }
             return SwipeDirection.NONE
         }
 
-        if (sampleWindow.size < windowSize.coerceAtLeast(2)) return SwipeDirection.NONE
+        if (sampleWindow.size < safeWindowSize) return SwipeDirection.NONE
 
         val oldest = sampleWindow.first()
         val latest = sampleWindow.last()
@@ -62,15 +69,15 @@ class SwipeGestureEngine(
         }
 
         if (direction != SwipeDirection.NONE) {
-            cooldownUntilMs = timestampMs + returnCooldownMs.coerceAtLeast(0L)
+            cooldownUntilMs = timestampMs + returnCooldownMs
             sampleWindow.clear()
         }
-
         return direction
     }
 
     fun reset() {
         sampleWindow.clear()
         cooldownUntilMs = 0L
+        lastTimestampMs = 0L
     }
 }

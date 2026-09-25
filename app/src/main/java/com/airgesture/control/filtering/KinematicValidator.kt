@@ -46,7 +46,7 @@ class KinematicValidator {
 
     fun validateAndConstrainIndexTip(
         landmarks: List<Point3D>,
-        @Suppress("UNUSED_PARAMETER") previousIndexTip: Point3D?
+        previousIndexTip: Point3D?
     ): Point3D {
         if (landmarks.size <= INDEX_TIP) return Point3D(0f, 0f, 0f)
         if (landmarks.size <= PINKY_MCP) return landmarks[INDEX_TIP]
@@ -54,21 +54,19 @@ class KinematicValidator {
         val indexMcp = landmarks[INDEX_MCP]
         val pinkyMcp = landmarks[PINKY_MCP]
         val currentTip = landmarks[INDEX_TIP]
-
         val palmWidth = indexMcp.distance2DTo(pinkyMcp).coerceAtLeast(MIN_PALM_WIDTH_PX)
         val boneLength = indexMcp.distance2DTo(currentTip)
         val maxAllowedBoneLength = palmWidth * MAX_BONE_TO_PALM_RATIO
 
-        if (boneLength > maxAllowedBoneLength && boneLength > 0f) {
-            val dirX = (currentTip.x - indexMcp.x) / boneLength
-            val dirY = (currentTip.y - indexMcp.y) / boneLength
-            return Point3D(
-                x = indexMcp.x + dirX * maxAllowedBoneLength,
-                y = indexMcp.y + dirY * maxAllowedBoneLength,
-                z = currentTip.z
-            )
-        }
+        if (boneLength <= maxAllowedBoneLength) return currentTip
+        if (boneLength <= MIN_PALM_WIDTH_PX) return previousIndexTip ?: indexMcp
 
-        return currentTip
+        val dirX = (currentTip.x - indexMcp.x) / boneLength
+        val dirY = (currentTip.y - indexMcp.y) / boneLength
+        return Point3D(
+            x = indexMcp.x + dirX * maxAllowedBoneLength,
+            y = indexMcp.y + dirY * maxAllowedBoneLength,
+            z = currentTip.z
+        )
     }
 }

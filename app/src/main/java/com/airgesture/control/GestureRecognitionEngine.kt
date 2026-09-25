@@ -23,7 +23,8 @@ import kotlin.math.hypot
 /** On-device MediaPipe gesture and hand-landmark inference. */
 class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
     private val closed = AtomicBoolean(false)
-    private val recognizer: GestureRecognizer
+    private var recognizer: GestureRecognizer = createRecognizer()
+    private var configuredNumHands = desiredNumHands()
     private val mappings = ActionMappingStore(context)
     private val interpreter = GestureInterpreter(mappings)
     private val pointerSmoother = LandmarkSmoother2D()
@@ -35,26 +36,13 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
     private var referencePalmScale = 0f
 
     init {
-        val pointerOnly = mappings.pointerEnabled() && !mappings.gesturesEnabled()
-        val options = GestureRecognizerOptions.builder()
-            .setBaseOptions(
-                BaseOptions.builder()
-                    .setModelAssetPath(MODEL_ASSET)
-                    .build()
-            )
-            .setRunningMode(RunningMode.VIDEO)
-            .setNumHands(if (pointerOnly) 1 else 2)
-            .setMinHandDetectionConfidence(0.45f)
-            .setMinHandPresenceConfidence(0.4f)
-            .setMinTrackingConfidence(0.4f)
-            .build()
-        recognizer = GestureRecognizer.createFromOptions(context, options)
         AirRuntime.visionReady = true
         AirRuntime.visionError = null
     }
 
     fun analyze(image: ImageProxy) {
         if (closed.get()) return
+        reconcileRecognizerConfiguration()
         val source = image.toBitmap()
         val bitmap = rotate(source, image.imageInfo.rotationDegrees)
         try {
@@ -70,6 +58,44 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             if (bitmap !== source) bitmap.recycle()
             source.recycle()
         }
+    }
+
+    private fun desiredNumHands(): Int =
+        if (mappings.pointerEnabled() && !mappings.gesturesEnabled()) 1 else 2
+
+    private fun createRecognizer(): GestureRecognizer {
+        val options = GestureRecognizerOptions.builder()
+            .setBaseOptions(
+                BaseOptions.builder()
+                    .setModelAssetPath(MODEL_ASSET)
+                    .build()
+            )
+            .setRunningMode(RunningMode.VIDEO)
+            .setNumHands(desiredNumHands())
+            .setMinHandDetectionConfidence(0.45f)
+            .setMinHandPresenceConfidence(0.4f)
+            .setMinTrackingConfidence(0.4f)
+            .build()
+        return GestureRecognizer.createFromOptions(context, options)
+    }
+
+    private fun reconcileRecognizerConfiguration() {
+        val desired = desiredNumHands()
+        if (desired == configuredNumHands || closed.get()) return
+
+        val replacement = runCatching { createRecognizer() }.getOrElse {
+            AirRuntime.visionReady = false
+            AirRuntime.visionError = it.message ?: it.javaClass.simpleName
+            return
+        }
+
+        val previous = recognizer
+        recognizer = replacement
+        configuredNumHands = desired
+        previous.close()
+        resetTrackingState()
+        AirRuntime.visionReady = true
+        AirRuntime.visionError = null
     }
 
     private fun publish(result: GestureRecognizerResult, timestamp: Long) {
@@ -206,16 +232,22 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         return Bitmap.createBitmap(source, 0, 0, source.width, source.height, matrix, true)
     }
 
+    private fun resetTrackingState() {
+        pointerInitialized = false
+        lastPointerAt = 0L
+        trackedPhysicalHand = null
+        referencePalmScale = 0f
+        pointerSmoother.reset()
+        interpreter.reset()
+        AirRuntime.pointerTracking = false
+        AirAccessibilityService.instance?.updatePointer(0f, 0f, false)
+    }
+
     override fun close() {
         if (closed.compareAndSet(false, true)) {
             recognizer.close()
-            pointerSmoother.reset()
-            interpreter.reset()
-            trackedPhysicalHand = null
-            referencePalmScale = 0f
+            resetTrackingState()
             AirRuntime.visionReady = false
-            AirRuntime.pointerTracking = false
-            AirAccessibilityService.instance?.updatePointer(0f, 0f, false)
         }
     }
 

@@ -22,8 +22,14 @@ class ClickHysteresisStateMachine(
 
     fun processFrame(dNorm: Float, timestampMs: Long): Boolean {
         val safeDNorm = dNorm.coerceAtLeast(0f)
+        if (lastTimestampMs > 0L && timestampMs <= lastTimestampMs) {
+            lastTimestampMs = timestampMs
+            lastDNorm = safeDNorm
+            return false
+        }
+
         val dt = if (lastTimestampMs > 0L) {
-            ((timestampMs - lastTimestampMs).coerceAtLeast(0L)) / 1000.0f
+            (timestampMs - lastTimestampMs) / 1000.0f
         } else {
             0.033f
         }
