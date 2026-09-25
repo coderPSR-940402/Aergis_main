@@ -20,7 +20,10 @@ class OneEuroFilter(
         }
 
         val deltaMs = timestampMs - lastTimestampMs
-        if (deltaMs <= 0L || deltaMs > MAX_GAP_MS) {
+        if (deltaMs == 0L) {
+            return valueFilter.lastValue() ?: value
+        }
+        if (deltaMs < 0L || deltaMs > MAX_GAP_MS) {
             valueFilter.reset()
             derivativeFilter.reset()
             lastTimestampMs = timestampMs
