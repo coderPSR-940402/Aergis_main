@@ -51,9 +51,7 @@ jobs:
           fi
 
           yes | "$SDKMANAGER" --licenses || true
-
           "$SDKMANAGER" "platforms;android-36" "build-tools;36.0.0"
-
           test -d "${ANDROID_HOME}/platforms/android-36"
           test -x "${ANDROID_HOME}/build-tools/36.0.0/aapt"
 
@@ -75,36 +73,43 @@ jobs:
       - name: Assemble debug APK
         run: gradle :app:assembleDebug --build-cache --stacktrace --warning-mode all
 
-      - name: Verify APK
+      - name: Assemble minified release APK
+        run: gradle :app:assembleRelease --build-cache --stacktrace --warning-mode all
+
+      - name: Verify debug APK
         shell: bash
         run: |
           set -euo pipefail
-
           APK="app/build/outputs/apk/debug/app-debug.apk"
           AAPT="${ANDROID_HOME}/build-tools/36.0.0/aapt"
-
           test -s "$APK"
           "$AAPT" dump badging "$APK" > apk-badging.txt
-
           grep -q "package: name='com.airgesture.control'" apk-badging.txt
           grep -q "versionCode='10'" apk-badging.txt
           grep -q "versionName='0.10.0-preview'" apk-badging.txt
+          echo "Debug APK verification passed"
 
-          echo "APK verification passed"
-          cat apk-badging.txt
-
-      - name: Generate APK checksum
+      - name: Verify release APK
         shell: bash
         run: |
           set -euo pipefail
-          sha256sum app/build/outputs/apk/debug/app-debug.apk | tee apk-sha256.txt
+          APK="app/build/outputs/apk/release/app-release-unsigned.apk"
+          test -s "$APK"
+          echo "Release APK verification passed"
 
-      - name: Upload debug APK
+      - name: Generate APK checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/release/app-release-unsigned.apk | tee apk-sha256.txt
+
+      - name: Upload APKs
         uses: actions/upload-artifact@v4
         with:
-          name: Aergis-debug-${{ github.sha }}
+          name: Aergis-apks-${{ github.sha }}
           path: |
             app/build/outputs/apk/debug/app-debug.apk
+            app/build/outputs/apk/release/app-release-unsigned.apk
             apk-sha256.txt
           if-no-files-found: error
 
@@ -117,4 +122,3 @@ jobs:
             app/build/reports/tests/
             app/build/reports/lint-results*
           if-no-files-found: ignore
-

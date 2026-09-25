@@ -7,18 +7,21 @@ import android.graphics.Paint
 import android.graphics.PixelFormat
 import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
 import android.view.WindowManager
+import android.widget.FrameLayout
 
 class PointerOverlay(private val context: Context) {
     private val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
-    private var overlayView: CursorView? = null
+    private var rootView: FrameLayout? = null
+    private var cursorView: CursorView? = null
 
     val isVisible: Boolean
-        get() = overlayView?.isAttachedToWindow == true
+        get() = rootView?.isAttachedToWindow == true
 
     private val params = WindowManager.LayoutParams(
-        WindowManager.LayoutParams.WRAP_CONTENT,
-        WindowManager.LayoutParams.WRAP_CONTENT,
+        WindowManager.LayoutParams.MATCH_PARENT,
+        WindowManager.LayoutParams.MATCH_PARENT,
         WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
         WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
@@ -26,38 +29,43 @@ class PointerOverlay(private val context: Context) {
         PixelFormat.TRANSLUCENT
     ).apply {
         gravity = Gravity.TOP or Gravity.START
-        x = 0
-        y = 0
     }
 
     fun show() {
-        if (overlayView == null) {
-            overlayView = CursorView(context)
-            windowManager.addView(overlayView, params)
-        }
+        if (rootView != null) return
+        val root = FrameLayout(context)
+        val cursor = CursorView(context)
+        root.addView(
+            cursor,
+            FrameLayout.LayoutParams(CursorView.SIZE, CursorView.SIZE)
+        )
+        rootView = root
+        cursorView = cursor
+        windowManager.addView(root, params)
     }
 
     fun hide() {
-        overlayView?.let {
+        rootView?.let {
             if (it.isAttachedToWindow) {
                 windowManager.removeView(it)
             }
-            overlayView = null
         }
+        cursorView = null
+        rootView = null
     }
 
     fun updatePosition(x: Float, y: Float, isClicking: Boolean = false) {
-        params.x = x.toInt() - 25
-        params.y = y.toInt() - 25
-        overlayView?.setClicking(isClicking)
-        overlayView?.let {
-            if (it.isAttachedToWindow) {
-                windowManager.updateViewLayout(it, params)
-            }
-        }
+        val cursor = cursorView ?: return
+        cursor.setClicking(isClicking)
+        cursor.translationX = x - CursorView.SIZE / 2f
+        cursor.translationY = y - CursorView.SIZE / 2f
     }
 
     private class CursorView(context: Context) : View(context) {
+        companion object {
+            const val SIZE = 50
+        }
+
         private var isClicking = false
         private val outerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.parseColor("#80000000")
@@ -73,8 +81,8 @@ class PointerOverlay(private val context: Context) {
         }
 
         init {
-            minimumWidth = 50
-            minimumHeight = 50
+            minimumWidth = SIZE
+            minimumHeight = SIZE
         }
 
         fun setClicking(clicking: Boolean) {
@@ -85,7 +93,7 @@ class PointerOverlay(private val context: Context) {
         }
 
         override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-            setMeasuredDimension(50, 50)
+            setMeasuredDimension(SIZE, SIZE)
         }
 
         override fun onDraw(canvas: Canvas) {

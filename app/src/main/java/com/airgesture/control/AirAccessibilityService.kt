@@ -7,57 +7,62 @@ import android.os.Handler
 import android.os.Looper
 import android.view.ViewConfiguration
 import android.view.accessibility.AccessibilityEvent
-import com.airgesture.control.pointer.ClickManager
-import com.airgesture.control.pointer.PointerController
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
 class AirAccessibilityService : AccessibilityService() {
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val updateScheduled = AtomicBoolean(false)
+    private val pendingVersion = AtomicLong(0L)
+    @Volatile private var pendingX = 0f
+    @Volatile private var pendingY = 0f
+    @Volatile private var pendingVisible = false
+    @Volatile private var pendingClicking = false
     private var pointerOverlay: PointerOverlay? = null
-    private var pointerController: PointerController? = null
-    private var clickManager: ClickManager? = null
 
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
-
-        val metrics = resources.displayMetrics
-        pointerController = PointerController(
-            screenWidth = metrics.widthPixels,
-            screenHeight = metrics.heightPixels
-        )
-        clickManager = ClickManager(dwellTimeMs = 400L, maxDwellMovePx = 15.0f)
         pointerOverlay = PointerOverlay(this)
     }
 
-    fun updatePointer(normalizedX: Float, normalizedY: Float, visible: Boolean) {
-        mainHandler.post {
-            val overlay = pointerOverlay ?: return@post
-            if (!visible) {
-                overlay.hide()
-                return@post
-            }
+    fun updatePointer(normalizedX: Float, normalizedY: Float, visible: Boolean, isClicking: Boolean = false) {
+        pendingX = normalizedX.coerceIn(0f, 1f)
+        pendingY = normalizedY.coerceIn(0f, 1f)
+        pendingVisible = visible
+        pendingClicking = isClicking
+        pendingVersion.incrementAndGet()
+        schedulePointerUpdate()
+    }
 
-            if (!overlay.isVisible) overlay.show()
-            val metrics = resources.displayMetrics
-            val x = normalizedX.coerceIn(0f, 1f) * metrics.widthPixels
-            val y = normalizedY.coerceIn(0f, 1f) * metrics.heightPixels
-            overlay.updatePosition(x, y)
+    private fun schedulePointerUpdate() {
+        if (!updateScheduled.compareAndSet(false, true)) return
+        mainHandler.post {
+            val appliedVersion = pendingVersion.get()
+            try {
+                applyLatestPointer()
+            } finally {
+                updateScheduled.set(false)
+                if (pendingVersion.get() != appliedVersion) {
+                    schedulePointerUpdate()
+                }
+            }
         }
     }
 
-    fun onRawInputReceived(rawX: Float, rawY: Float, timestampMs: Long) {
-        mainHandler.post {
-            val controller = pointerController ?: return@post
-            val overlay = pointerOverlay ?: return@post
-            val manager = clickManager ?: return@post
-
-            val state = controller.updateRawInput(rawX, rawY, timestampMs)
-            val shouldClick = manager.processPosition(state.x, state.y, timestampMs)
-            overlay.show()
-            overlay.updatePosition(state.x, state.y, shouldClick)
-
-            if (shouldClick) performClickAt(state.x, state.y)
+    private fun applyLatestPointer() {
+        val overlay = pointerOverlay ?: return
+        if (!pendingVisible) {
+            overlay.hide()
+            return
         }
+        if (!overlay.isVisible) overlay.show()
+        val metrics = resources.displayMetrics
+        overlay.updatePosition(
+            pendingX * metrics.widthPixels,
+            pendingY * metrics.heightPixels,
+            pendingClicking
+        )
     }
 
     fun dispatch(action: AirAction) {
@@ -121,15 +126,9 @@ class AirAccessibilityService : AccessibilityService() {
         dispatchGesture(gesture, null, mainHandler)
     }
 
-    private fun currentPointerX(): Float {
-        val metrics = resources.displayMetrics
-        return AirRuntime.pointerX.coerceIn(0f, 1f) * metrics.widthPixels
-    }
+    private fun currentPointerX(): Float = AirRuntime.pointerSnapshot().x * resources.displayMetrics.widthPixels
 
-    private fun currentPointerY(): Float {
-        val metrics = resources.displayMetrics
-        return AirRuntime.pointerY.coerceIn(0f, 1f) * metrics.heightPixels
-    }
+    private fun currentPointerY(): Float = AirRuntime.pointerSnapshot().y * resources.displayMetrics.heightPixels
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) = Unit
 
@@ -142,9 +141,6 @@ class AirAccessibilityService : AccessibilityService() {
         mainHandler.removeCallbacksAndMessages(null)
         pointerOverlay?.hide()
         pointerOverlay = null
-        pointerController?.resetAnchor()
-        pointerController = null
-        clickManager = null
         super.onDestroy()
     }
 
