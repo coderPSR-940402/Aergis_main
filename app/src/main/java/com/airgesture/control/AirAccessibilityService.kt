@@ -153,6 +153,8 @@ class AirAccessibilityService : AccessibilityService() {
         var instance: AirAccessibilityService? = null
             private set
 
+        fun enabled(): Boolean = instance != null
+
         private const val DOUBLE_TAP_GAP_MS = 120L
         private const val LONG_PRESS_DURATION_MS = 650L
         private const val SCROLL_DURATION_MS = 280L
