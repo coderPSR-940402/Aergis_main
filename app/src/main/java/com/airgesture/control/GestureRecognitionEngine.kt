@@ -6,14 +6,17 @@ import android.graphics.Matrix
 import android.os.SystemClock
 import android.util.Log
 import androidx.camera.core.ImageProxy
+import com.airgesture.control.filtering.KinematicValidator
 import com.airgesture.control.filtering.LandmarkSmoother2D
+import com.airgesture.control.filtering.Point3D
+import com.airgesture.control.pointer.SwipeDirection
 import com.google.mediapipe.framework.image.BitmapImageBuilder
+import com.google.mediapipe.tasks.components.containers.NormalizedLandmark
 import com.google.mediapipe.tasks.core.BaseOptions
 import com.google.mediapipe.tasks.vision.core.RunningMode
 import com.google.mediapipe.tasks.vision.gesturerecognizer.GestureRecognizer
 import com.google.mediapipe.tasks.vision.gesturerecognizer.GestureRecognizer.GestureRecognizerOptions
 import com.google.mediapipe.tasks.vision.gesturerecognizer.GestureRecognizerResult
-import com.google.mediapipe.tasks.components.containers.NormalizedLandmark
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.hypot
 
@@ -95,7 +98,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         val wrist = selectedHand?.getOrNull(WRIST)
         val middleMcp = selectedHand?.getOrNull(MIDDLE_MCP)
 
-        if (pointerActive && indexTip != null && wrist != null && middleMcp != null) {
+        if (pointerActive && indexTip != null && wrist != null && middleMcp != null && selectedHand != null) {
             val pointerPoint = depthCompensatedTip(indexTip, wrist, middleMcp)
             val mapped = mapActiveRegion(pointerPoint.x, pointerPoint.y)
             val smoothed = pointerSmoother.filter(mapped.x, mapped.y, timestamp)
@@ -104,6 +107,24 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             AirRuntime.pointerX = smoothed.x.coerceIn(0f, 1f)
             AirRuntime.pointerY = smoothed.y.coerceIn(0f, 1f)
             AirRuntime.pointerTracking = true
+
+            val points = selectedHand.map { landmark ->
+                Point3D(landmark.x(), landmark.y(), landmark.z())
+            }
+            val processed = interpreter.processFrame(points, timestamp)
+            if (processed != null) {
+                if (processed.isClickEngaged) {
+                    AirAccessibilityService.instance?.dispatch(AirAction.TAP)
+                }
+                when (processed.detectedSwipe) {
+                    SwipeDirection.UP -> AirAccessibilityService.instance?.dispatch(AirAction.SCROLL_UP)
+                    SwipeDirection.DOWN -> AirAccessibilityService.instance?.dispatch(AirAction.SCROLL_DOWN)
+                    SwipeDirection.LEFT,
+                    SwipeDirection.RIGHT,
+                    SwipeDirection.NONE -> Unit
+                }
+            }
+
             AirAccessibilityService.instance?.updatePointer(
                 AirRuntime.pointerX,
                 AirRuntime.pointerY,
@@ -122,16 +143,17 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             trackedPhysicalHand = null
             referencePalmScale = 0f
             pointerSmoother.reset()
+            interpreter.reset()
             AirAccessibilityService.instance?.updatePointer(0f, 0f, false)
         }
 
         AirRuntime.gesturesEnabled = mappings.gesturesEnabled()
         if (AirRuntime.gesturesEnabled && gestureName != "None" && gestureScore >= MIN_GESTURE_SCORE) {
-            if (gestureName != lastGestureName || SystemClock.uptimeMillis() - lastActionAt >= ACTION_COOLDOWN_MS) {
+            if (gestureName != lastGestureName || timestamp - lastActionAt >= ACTION_COOLDOWN_MS) {
                 val decision = interpreter.interpret(GestureSignal(gestureName, gestureScore))
                 if (decision.action != AirAction.NONE) {
                     AirAccessibilityService.instance?.dispatch(decision.action)
-                    lastActionAt = SystemClock.uptimeMillis()
+                    lastActionAt = timestamp
                 }
             }
         }
@@ -188,6 +210,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         if (closed.compareAndSet(false, true)) {
             recognizer.close()
             pointerSmoother.reset()
+            interpreter.reset()
             trackedPhysicalHand = null
             referencePalmScale = 0f
             AirRuntime.visionReady = false
@@ -209,8 +232,8 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         private const val ACTIVE_TOP = 0.08f
         private const val ACTIVE_BOTTOM = 0.92f
         private const val MIN_PALM_SCALE = 0.001f
-        private const val WRIST = 0
-        private const val INDEX_TIP = 8
+        private const val WRIST = KinematicValidator.WRIST
+        private const val INDEX_TIP = KinematicValidator.INDEX_TIP
         private const val MIDDLE_MCP = 9
     }
 }

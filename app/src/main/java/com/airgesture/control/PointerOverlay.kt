@@ -12,6 +12,10 @@ import android.view.WindowManager
 class PointerOverlay(private val context: Context) {
     private val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
     private var overlayView: CursorView? = null
+
+    val isVisible: Boolean
+        get() = overlayView?.isAttachedToWindow == true
+
     private val params = WindowManager.LayoutParams(
         WindowManager.LayoutParams.WRAP_CONTENT,
         WindowManager.LayoutParams.WRAP_CONTENT,
@@ -94,4 +98,3 @@ class PointerOverlay(private val context: Context) {
         }
     }
 }
-

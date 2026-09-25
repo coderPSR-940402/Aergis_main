@@ -22,31 +22,35 @@ class ClickHysteresisStateMachine(
 
     fun processFrame(dNorm: Float, timestampMs: Long): Boolean {
         val safeDNorm = dNorm.coerceAtLeast(0f)
-        val dtSeconds = if (lastTimestampMs > 0L) {
-            ((timestampMs - lastTimestampMs).coerceAtLeast(1L)) / 1000.0f
+        val dt = if (lastTimestampMs > 0L) {
+            ((timestampMs - lastTimestampMs).coerceAtLeast(0L)) / 1000.0f
         } else {
             0.033f
         }
         lastTimestampMs = timestampMs
 
-        val approachVelocity = (safeDNorm - lastDNorm) / dtSeconds
+        val approachVelocity = if (dt > 0.001f) {
+            (safeDNorm - lastDNorm) / dt
+        } else {
+            0.0f
+        }
         lastDNorm = safeDNorm
 
-        when (currentState) {
+        return when (currentState) {
             State.REFRACTORY -> {
                 if (timestampMs - lastRefractoryStartTime >= refractoryPeriodMs) {
                     currentState = State.IDLE
                     dwellCounter = 0
                 }
-                return false
+                false
             }
 
             State.IDLE -> {
-                if (safeDNorm < engageThreshold && approachVelocity <= minApproachVelocity) {
+                if (isEngaging(safeDNorm, approachVelocity)) {
                     dwellCounter = 1
                     currentState = State.ENGAGING
                 }
-                return false
+                false
             }
 
             State.ENGAGING -> {
@@ -60,7 +64,7 @@ class ClickHysteresisStateMachine(
                     currentState = State.IDLE
                     dwellCounter = 0
                 }
-                return false
+                false
             }
 
             State.CLICKED -> {
@@ -69,7 +73,7 @@ class ClickHysteresisStateMachine(
                     lastRefractoryStartTime = timestampMs
                     dwellCounter = 0
                 }
-                return true
+                false
             }
         }
     }
@@ -82,5 +86,10 @@ class ClickHysteresisStateMachine(
         lastRefractoryStartTime = 0L
         lastDNorm = 1.0f
         lastTimestampMs = 0L
+    }
+
+    private fun isEngaging(dNorm: Float, approachVelocity: Float): Boolean {
+        if (dNorm >= engageThreshold) return false
+        return approachVelocity <= minApproachVelocity || dNorm <= engageThreshold * 0.75f
     }
 }

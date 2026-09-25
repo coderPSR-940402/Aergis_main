@@ -46,9 +46,10 @@ class KinematicValidator {
 
     fun validateAndConstrainIndexTip(
         landmarks: List<Point3D>,
-        previousIndexTip: Point3D?
+        @Suppress("UNUSED_PARAMETER") previousIndexTip: Point3D?
     ): Point3D {
-        if (landmarks.size <= PINKY_MCP) return Point3D(0f, 0f, 0f)
+        if (landmarks.size <= INDEX_TIP) return Point3D(0f, 0f, 0f)
+        if (landmarks.size <= PINKY_MCP) return landmarks[INDEX_TIP]
 
         val indexMcp = landmarks[INDEX_MCP]
         val pinkyMcp = landmarks[PINKY_MCP]
