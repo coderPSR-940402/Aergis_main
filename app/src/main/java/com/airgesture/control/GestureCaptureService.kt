@@ -58,6 +58,7 @@ class GestureCaptureService : Service(), LifecycleOwner {
                 val provider = future.get()
                 cameraProvider = provider
                 val analysis = ImageAnalysis.Builder()
+                    .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
                     .setTargetResolution(Size(960, 540))
                     .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                     .build()
