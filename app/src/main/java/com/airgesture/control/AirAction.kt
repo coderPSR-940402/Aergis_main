@@ -6,6 +6,8 @@ enum class AirAction {
 
 data class ActionResult(val action: AirAction, val accepted: Boolean, val message: String = "")
 
-data class GestureDecision(val action: AirAction, val confidence: Float)
+data class GestureDecision(val action: AirAction, val confidence: Float) {
+    val score: Float get() = confidence
+}
 
 data class GestureSignal(val name: String, val score: Float)

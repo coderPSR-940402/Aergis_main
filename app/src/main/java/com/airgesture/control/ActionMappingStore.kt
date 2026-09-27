@@ -31,7 +31,3 @@ class ActionMappingStore(context: Context) {
         private const val KEY_HAND_PREF = "hand_preference"
     }
 }
-
-object DefaultMappings {
-    fun create(): Map<AirAction, AirAction> = AirAction.entries.associateWith { it }
-}

@@ -31,6 +31,10 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
     private var lastActionAt = 0L
     private var lastGestureName = "None"
 
+    // Reusable buffers to avoid heap allocations per frame
+    private val reusablePointsList = ArrayList<Point3D>(21)
+    private val handednessList = ArrayList<String>(2)
+
     init {
         AirRuntime.visionReady = false
         AirRuntime.visionError = null
@@ -103,27 +107,36 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         val gestureScore = gesture?.score() ?: 0f
         AirRuntime.lastGesture = gestureName
 
-        val physicalHandedness = result.handedness().map { categories ->
-            when (categories.firstOrNull()?.categoryName()) {
+        // Populate handedness without creating new list/string objects
+        handednessList.clear()
+        val rawHandedness = result.handedness()
+        for (i in rawHandedness.indices) {
+            val category = rawHandedness[i].firstOrNull()?.categoryName()
+            val mapped = when (category) {
                 "Left" -> "Right"
                 "Right" -> "Left"
                 else -> "Unknown"
             }
+            handednessList.add(mapped)
         }
-        AirRuntime.handedness = physicalHandedness.firstOrNull() ?: "Unknown"
+        AirRuntime.handedness = handednessList.firstOrNull() ?: "Unknown"
 
-        val pointerActive = mappings.pointerEnabled()
-        AirRuntime.pointerEnabled = pointerActive
-        val selectedIndex = selectPointerHandIndex(landmarks, physicalHandedness, pointerActive)
+        val pointerActive = AirRuntime.pointerEnabled
+        val selectedIndex = selectPointerHandIndex(landmarks, handednessList, pointerActive)
         val selectedHand = landmarks.getOrNull(selectedIndex)
         val indexTip = selectedHand?.getOrNull(INDEX_TIP)
 
         if (pointerActive && indexTip != null) {
             val rawMapped = PointerCoordinateMapper.map(indexTip.x(), indexTip.y())
-            val points = selectedHand.map { landmark ->
-                Point3D(landmark.x(), landmark.y(), landmark.z())
+
+            // Re-use landmark points list buffer
+            reusablePointsList.clear()
+            for (i in selectedHand.indices) {
+                val lm = selectedHand[i]
+                reusablePointsList.add(Point3D(lm.x(), lm.y(), lm.z()))
             }
-            val processed = interpreter.processFrame(points, timestamp)
+
+            val processed = interpreter.processFrame(reusablePointsList, timestamp)
             val mapped = processed?.let { PointerCoordinateMapper.map(it.smoothedX, it.smoothedY) } ?: rawMapped
             pointerInitialized = true
             lastPointerAt = timestamp
@@ -152,7 +165,6 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             AirAccessibilityService.instance?.updatePointer(0f, 0f, false)
         }
 
-        AirRuntime.gesturesEnabled = mappings.gesturesEnabled()
         if (AirRuntime.gesturesEnabled && gestureName != "None" && gestureScore >= MIN_GESTURE_SCORE) {
             if (gestureName != lastGestureName || timestamp - lastActionAt >= ACTION_COOLDOWN_MS) {
                 val decision = interpreter.interpret(GestureSignal(gestureName, gestureScore))
@@ -175,7 +187,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         if (!pointerActive || landmarks.isEmpty()) return 0
         val pref = AirRuntime.handPreference
         if (pref == ControlHandPreference.LEFT || pref == ControlHandPreference.RIGHT) {
-            val target = pref.name.lowercase().replaceFirstChar { it.uppercase() }
+            val target = pref.name
             val match = physicalHandedness.indexOfFirst { it.equals(target, ignoreCase = true) }
             if (match >= 0 && match < landmarks.size) {
                 trackedPhysicalHand = physicalHandedness[match]

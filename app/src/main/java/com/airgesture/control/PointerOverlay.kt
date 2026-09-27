@@ -7,7 +7,6 @@ import android.graphics.Paint
 import android.graphics.PixelFormat
 import android.view.Gravity
 import android.view.View
-import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.FrameLayout
 
@@ -41,17 +40,26 @@ class PointerOverlay(private val context: Context) {
         )
         rootView = root
         cursorView = cursor
-        windowManager.addView(root, params)
+        try {
+            windowManager.addView(root, params)
+        } catch (e: Exception) {
+            rootView = null
+            cursorView = null
+        }
     }
 
     fun hide() {
-        rootView?.let {
-            if (it.isAttachedToWindow) {
-                windowManager.removeView(it)
+        val root = rootView ?: return
+        try {
+            if (root.isAttachedToWindow) {
+                windowManager.removeViewImmediate(root)
             }
+        } catch (ignored: Exception) {
+            // View may already be removed or window detached
+        } finally {
+            cursorView = null
+            rootView = null
         }
-        cursorView = null
-        rootView = null
     }
 
     fun updatePosition(x: Float, y: Float, isClicking: Boolean = false) {

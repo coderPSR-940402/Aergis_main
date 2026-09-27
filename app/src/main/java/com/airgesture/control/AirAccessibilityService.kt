@@ -2,9 +2,11 @@ package com.airgesture.control
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
+import android.content.res.Configuration
 import android.graphics.Path
 import android.os.Handler
 import android.os.Looper
+import android.util.DisplayMetrics
 import android.view.ViewConfiguration
 import android.view.accessibility.AccessibilityEvent
 import java.util.concurrent.atomic.AtomicBoolean
@@ -19,6 +21,17 @@ class AirAccessibilityService : AccessibilityService() {
     @Volatile private var pendingVisible = false
     @Volatile private var pendingClicking = false
     private var pointerOverlay: PointerOverlay? = null
+    private lateinit var displayMetrics: DisplayMetrics
+
+    override fun onCreate() {
+        super.onCreate()
+        displayMetrics = resources.displayMetrics
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        displayMetrics = resources.displayMetrics
+    }
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -57,10 +70,11 @@ class AirAccessibilityService : AccessibilityService() {
             return
         }
         if (!overlay.isVisible) overlay.show()
-        val metrics = resources.displayMetrics
+        val width = displayMetrics.widthPixels
+        val height = displayMetrics.heightPixels
         overlay.updatePosition(
-            pendingX * metrics.widthPixels,
-            pendingY * metrics.heightPixels,
+            pendingX * width,
+            pendingY * height,
             pendingClicking
         )
     }
@@ -110,15 +124,16 @@ class AirAccessibilityService : AccessibilityService() {
     }
 
     private fun performScroll(up: Boolean) {
-        val metrics = resources.displayMetrics
-        val x = currentPointerX().coerceIn(0f, metrics.widthPixels.toFloat())
-        val centerY = currentPointerY().coerceIn(0f, metrics.heightPixels.toFloat())
-        val distance = (metrics.heightPixels * 0.25f).coerceAtLeast(180f)
+        val width = displayMetrics.widthPixels
+        val height = displayMetrics.heightPixels
+        val x = currentPointerX().coerceIn(0f, width.toFloat())
+        val centerY = currentPointerY().coerceIn(0f, height.toFloat())
+        val distance = (height * 0.25f).coerceAtLeast(180f)
         val startY = if (up) centerY + distance else centerY - distance
         val endY = if (up) centerY - distance else centerY + distance
         val path = Path().apply {
-            moveTo(x, startY.coerceIn(0f, metrics.heightPixels.toFloat()))
-            lineTo(x, endY.coerceIn(0f, metrics.heightPixels.toFloat()))
+            moveTo(x, startY.coerceIn(0f, height.toFloat()))
+            lineTo(x, endY.coerceIn(0f, height.toFloat()))
         }
         val gesture = GestureDescription.Builder()
             .addStroke(GestureDescription.StrokeDescription(path, 0L, SCROLL_DURATION_MS))
@@ -126,19 +141,22 @@ class AirAccessibilityService : AccessibilityService() {
         dispatchGesture(gesture, null, mainHandler)
     }
 
-    private fun currentPointerX(): Float = AirRuntime.pointerSnapshot().x * resources.displayMetrics.widthPixels
+    private fun currentPointerX(): Float = AirRuntime.pointerSnapshot().x * displayMetrics.widthPixels
 
-    private fun currentPointerY(): Float = AirRuntime.pointerSnapshot().y * resources.displayMetrics.heightPixels
+    private fun currentPointerY(): Float = AirRuntime.pointerSnapshot().y * displayMetrics.heightPixels
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) = Unit
 
     override fun onInterrupt() {
+        mainHandler.removeCallbacksAndMessages(null)
+        updateScheduled.set(false)
         mainHandler.post { pointerOverlay?.hide() }
     }
 
     override fun onDestroy() {
         if (instance === this) instance = null
         mainHandler.removeCallbacksAndMessages(null)
+        updateScheduled.set(false)
         pointerOverlay?.hide()
         pointerOverlay = null
         super.onDestroy()
