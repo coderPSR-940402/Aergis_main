@@ -28,6 +28,7 @@ class GestureCaptureService : Service(), LifecycleOwner {
     override val lifecycle: Lifecycle
         get() = lifecycleRegistry
 
+    @ExperimentalGetImage
     override fun onCreate() {
         super.onCreate()
         lifecycleRegistry.currentState = Lifecycle.State.RESUMED
