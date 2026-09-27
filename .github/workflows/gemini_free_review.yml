@@ -1,0 +1,36 @@
+name: Free Gemini Repository Review
+
+on:
+  workflow_dispatch:
+
+jobs:
+  gemini-review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout Codebase
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Bundle Repository Context
+        run: npx repomix --style xml --ignore "build/,**/*.apk,.gradle/,.git/" . -o repomix-output.xml
+
+      - name: Execute Gemini API Review
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          PROMPT="Perform a complete repository review on package com.airgesture.control. Analyze AccessibilityService memory safety, gesture coordinate calculation performance, and thread safety."
+          CODE_DATA=$(jq -aRs . < repomix-output.xml)
+          
+          curl -s -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${GEMINI_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d "{\"contents\": [{\"parts\": [{\"text\": \"$PROMPT\"}, {\"text\": $CODE_DATA}]}]}" > gemini_review_response.json
+
+          jq -r '.candidates[0].content.parts[0].text' gemini_review_response.json > GEMINI_REVIEW.md
+          cat GEMINI_REVIEW.md
