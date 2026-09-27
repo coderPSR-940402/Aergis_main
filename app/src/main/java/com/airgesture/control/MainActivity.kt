@@ -33,6 +33,7 @@ import kotlinx.coroutines.delay
 class MainActivity : ComponentActivity() {
     private var pointerEnabled by mutableStateOf(true)
     private var gesturesEnabled by mutableStateOf(true)
+    private var handPreference by mutableStateOf(ControlHandPreference.EITHER)
     private var running by mutableStateOf(false)
     private var handsDetected by mutableStateOf(0)
     private var lastGesture by mutableStateOf("None")
@@ -52,6 +53,8 @@ class MainActivity : ComponentActivity() {
         val mappings = ActionMappingStore(this)
         pointerEnabled = mappings.pointerEnabled()
         gesturesEnabled = mappings.gesturesEnabled()
+        handPreference = mappings.handPreference()
+        AirRuntime.handPreference = handPreference
         setContent { AirGestureScreen() }
     }
 
@@ -65,6 +68,8 @@ class MainActivity : ComponentActivity() {
         running = AirRuntime.running
         pointerEnabled = mappings.pointerEnabled()
         gesturesEnabled = mappings.gesturesEnabled()
+        handPreference = mappings.handPreference()
+        AirRuntime.handPreference = handPreference
         handsDetected = AirRuntime.handsDetected
         lastGesture = AirRuntime.lastGesture
         handedness = AirRuntime.handedness
@@ -173,6 +178,20 @@ class MainActivity : ComponentActivity() {
                                 ActionMappingStore(this@MainActivity).setGesturesEnabled(it)
                                 AirRuntime.gesturesEnabled = it
                             })
+                        }
+                    }
+
+                    item {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("Tracking Hand Preference")
+                            ControlHandSelector(
+                                selected = handPreference,
+                                onSelected = { selected ->
+                                    handPreference = selected
+                                    ActionMappingStore(this@MainActivity).setHandPreference(selected)
+                                    AirRuntime.handPreference = selected
+                                }
+                            )
                         }
                     }
 
