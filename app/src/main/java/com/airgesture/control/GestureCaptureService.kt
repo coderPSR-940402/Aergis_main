@@ -45,7 +45,7 @@ class GestureCaptureService : Service(), LifecycleOwner {
         setupCamera()
     }
 
-    @OptIn(ExperimentalGetImage::class)
+    @ExperimentalGetImage
     private fun setupCamera() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
             AirRuntime.cameraReady = false
