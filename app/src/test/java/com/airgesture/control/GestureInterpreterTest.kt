@@ -25,6 +25,6 @@ class GestureInterpreterTest {
     fun retainsScoreInDecision() {
         val interpreter = GestureInterpreter()
         val decision = interpreter.interpret(GestureSignal("thumb_up", 0.85f))
-        assertEquals(0.85f, decision.score, 0.0001f)
+        assertEquals(0.85f, decision.confidence, 0.0001f)
     }
 }
