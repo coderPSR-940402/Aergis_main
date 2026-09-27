@@ -3,6 +3,7 @@ package com.airgesture.control
 import android.content.Context
 import android.os.SystemClock
 import android.util.Log
+import androidx.camera.core.ExperimentalGetImage
 import androidx.camera.core.ImageProxy
 import com.airgesture.control.filtering.KinematicValidator
 import com.airgesture.control.filtering.Point3D
@@ -35,6 +36,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         AirRuntime.visionError = null
     }
 
+    @ExperimentalGetImage
     fun analyze(image: ImageProxy) {
         if (closed.get()) return
         try {
