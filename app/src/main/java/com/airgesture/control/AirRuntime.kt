@@ -7,6 +7,7 @@ object AirRuntime {
     @Volatile var cameraReady: Boolean = false
     @Volatile var pointerEnabled: Boolean = true
     @Volatile var gesturesEnabled: Boolean = true
+    @Volatile var handPreference: ControlHandPreference = ControlHandPreference.EITHER
     @Volatile var visionReady: Boolean = false
     @Volatile var visionError: String? = null
     @Volatile var handsDetected: Int = 0

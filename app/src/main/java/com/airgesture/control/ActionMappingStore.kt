@@ -18,9 +18,17 @@ class ActionMappingStore(context: Context) {
     fun setMapping(source: AirAction, target: AirAction) =
         prefs.edit().putString("map_${source.name}", target.name).apply()
 
+    fun handPreference(): ControlHandPreference = runCatching {
+        ControlHandPreference.valueOf(prefs.getString(KEY_HAND_PREF, ControlHandPreference.EITHER.name) ?: ControlHandPreference.EITHER.name)
+    }.getOrDefault(ControlHandPreference.EITHER)
+
+    fun setHandPreference(preference: ControlHandPreference) =
+        prefs.edit().putString(KEY_HAND_PREF, preference.name).apply()
+
     companion object {
         private const val KEY_POINTER = "pointer_enabled"
         private const val KEY_GESTURES = "gestures_enabled"
+        private const val KEY_HAND_PREF = "hand_preference"
     }
 }
 

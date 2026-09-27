@@ -173,6 +173,15 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         pointerActive: Boolean
     ): Int {
         if (!pointerActive || landmarks.isEmpty()) return 0
+        val pref = AirRuntime.handPreference
+        if (pref == ControlHandPreference.LEFT || pref == ControlHandPreference.RIGHT) {
+            val target = pref.name.lowercase().replaceFirstChar { it.uppercase() }
+            val match = physicalHandedness.indexOfFirst { it.equals(target, ignoreCase = true) }
+            if (match >= 0 && match < landmarks.size) {
+                trackedPhysicalHand = physicalHandedness[match]
+                return match
+            }
+        }
         val tracked = trackedPhysicalHand
         if (tracked != null) {
             val matching = physicalHandedness.indexOfFirst { it == tracked }
