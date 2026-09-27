@@ -10,6 +10,7 @@ import android.content.pm.PackageManager
 import android.os.IBinder
 import android.util.Size
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.ExperimentalGetImage
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
@@ -44,6 +45,7 @@ class GestureCaptureService : Service(), LifecycleOwner {
         setupCamera()
     }
 
+    @OptIn(ExperimentalGetImage::class)
     private fun setupCamera() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
             AirRuntime.cameraReady = false
