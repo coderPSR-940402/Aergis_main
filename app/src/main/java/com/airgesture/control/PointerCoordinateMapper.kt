@@ -8,11 +8,13 @@ object PointerCoordinateMapper {
     private const val ACTIVE_BOTTOM = 0.98f
 
     fun map(x: Float, y: Float): Point {
-        val mirroredX = 1f - x.coerceIn(0f, 1f)
+        // Camera frames are arriving in the rotated coordinate space used by the
+        // current portrait pipeline: camera Y is screen X and camera X is screen Y.
+        val mirroredX = 1f - y.coerceIn(0f, 1f)
         val normalizedX =
             ((mirroredX - ACTIVE_LEFT) / (ACTIVE_RIGHT - ACTIVE_LEFT)).coerceIn(0f, 1f)
         val normalizedY =
-            ((y.coerceIn(0f, 1f) - ACTIVE_TOP) / (ACTIVE_BOTTOM - ACTIVE_TOP)).coerceIn(0f, 1f)
+            ((x.coerceIn(0f, 1f) - ACTIVE_TOP) / (ACTIVE_BOTTOM - ACTIVE_TOP)).coerceIn(0f, 1f)
         return Point(normalizedX, normalizedY)
     }
 
