@@ -17,13 +17,14 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
+import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 class GestureCaptureService : Service(), LifecycleOwner {
-    private val executor = Executors.newSingleThreadExecutor()
+    private var executor: ExecutorService? = null
     private var cameraProvider: ProcessCameraProvider? = null
     private var visionEngine: GestureRecognitionEngine? = null
-    private val lifecycleRegistry = LifecycleRegistry.createUnsafe(this)
+    private val lifecycleRegistry = LifecycleRegistry(this)
 
     override val lifecycle: Lifecycle
         get() = lifecycleRegistry
@@ -31,7 +32,10 @@ class GestureCaptureService : Service(), LifecycleOwner {
     @ExperimentalGetImage
     override fun onCreate() {
         super.onCreate()
-        lifecycleRegistry.currentState = Lifecycle.State.RESUMED
+        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
+        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_START)
+        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
+        executor = Executors.newSingleThreadExecutor()
         createChannel()
         startForeground(NOTIFICATION_ID, notification())
         AirRuntime.running = true
@@ -52,6 +56,7 @@ class GestureCaptureService : Service(), LifecycleOwner {
             AirRuntime.cameraReady = false
             return
         }
+        val exec = executor ?: return
         val future = ProcessCameraProvider.getInstance(this)
         future.addListener({
             runCatching {
@@ -62,7 +67,7 @@ class GestureCaptureService : Service(), LifecycleOwner {
                     .setTargetResolution(Size(960, 540))
                     .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                     .build()
-                analysis.setAnalyzer(executor) { image ->
+                analysis.setAnalyzer(exec) { image ->
                     try {
                         visionEngine?.analyze(image)
                     } finally {
@@ -80,11 +85,15 @@ class GestureCaptureService : Service(), LifecycleOwner {
     }
 
     override fun onDestroy() {
+        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_PAUSE)
+        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_STOP)
+        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
         cameraProvider?.unbindAll()
+        cameraProvider = null
         visionEngine?.close()
         visionEngine = null
-        executor.shutdownNow()
-        lifecycleRegistry.currentState = Lifecycle.State.DESTROYED
+        executor?.shutdownNow()
+        executor = null
         AirRuntime.cameraReady = false
         AirRuntime.running = false
         AirRuntime.handsDetected = 0
@@ -98,7 +107,7 @@ class GestureCaptureService : Service(), LifecycleOwner {
     override fun onBind(intent: Intent?): IBinder? = null
 
     private fun createChannel() {
-        getSystemService(NotificationManager::class.java).createNotificationChannel(
+        getSystemService(NotificationManager::class.java)?.createNotificationChannel(
             NotificationChannel(CHANNEL_ID, "Aergis", NotificationManager.IMPORTANCE_LOW)
         )
     }

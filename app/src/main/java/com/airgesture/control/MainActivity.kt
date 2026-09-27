@@ -23,6 +23,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -42,7 +43,7 @@ class MainActivity : ComponentActivity() {
     private var visionReady by mutableStateOf(false)
     private var visionError by mutableStateOf<String?>(null)
     private var accessibilityEnabled by mutableStateOf(false)
-    private var mappingsVersion by mutableStateOf(0)
+    private var mappingsVersion by mutableIntStateOf(0)
 
     private val cameraPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) refresh()
@@ -110,8 +111,7 @@ class MainActivity : ComponentActivity() {
         mappingsVersion++
     }
 
-    private fun mapping(source: AirAction): AirAction {
-        mappingsVersion
+    private fun mapping(source: AirAction, version: Int): AirAction {
         return ActionMappingStore(this).mapping(source)
     }
 
@@ -253,7 +253,7 @@ class MainActivity : ComponentActivity() {
         ) {
             Text(label, modifier = Modifier.padding(top = 12.dp))
             Button(onClick = { cycleMapping(source) }) {
-                Text(mapping(source).name.replace('_', ' '))
+                Text(mapping(source, mappingsVersion).name.replace('_', ' '))
             }
         }
     }

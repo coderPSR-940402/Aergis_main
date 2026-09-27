@@ -16,23 +16,13 @@ data class ProcessedGestureResult(
 )
 
 class GestureInterpreter(
+    private val mappings: ActionMappingStore? = null,
     private val smoother: LandmarkSmoother2D = LandmarkSmoother2D(),
     private val validator: KinematicValidator = KinematicValidator(),
     private val clickStateMachine: ClickHysteresisStateMachine = ClickHysteresisStateMachine(),
     private val swipeEngine: SwipeGestureEngine = SwipeGestureEngine()
 ) {
-    private var mappings: ActionMappingStore? = null
     private var previousIndexTip: Point3D? = null
-
-    constructor(
-        mappings: ActionMappingStore,
-        smoother: LandmarkSmoother2D = LandmarkSmoother2D(),
-        validator: KinematicValidator = KinematicValidator(),
-        clickStateMachine: ClickHysteresisStateMachine = ClickHysteresisStateMachine(),
-        swipeEngine: SwipeGestureEngine = SwipeGestureEngine()
-    ) : this(smoother, validator, clickStateMachine, swipeEngine) {
-        this.mappings = mappings
-    }
 
     fun interpret(signal: GestureSignal): GestureDecision {
         val source = when (signal.name.lowercase()) {

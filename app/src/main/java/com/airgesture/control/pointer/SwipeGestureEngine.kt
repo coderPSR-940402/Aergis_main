@@ -14,47 +14,59 @@ class SwipeGestureEngine(
     private val returnCooldownMs: Long = 300L,
     private val returnVelocityThreshold: Float = 0.15f
 ) {
-    private data class FrameSample(val point: Point3D, val timestampMs: Long)
+    private val capacity = windowSize.coerceAtLeast(2)
+    private val xRing = FloatArray(capacity)
+    private val yRing = FloatArray(capacity)
+    private val zRing = FloatArray(capacity)
+    private val timeRing = LongArray(capacity)
 
-    private val sampleWindow = ArrayDeque<FrameSample>()
+    private var head = 0
+    private var count = 0
     private var cooldownUntilMs = 0L
     private var lastTimestampMs = 0L
 
     fun processFrame(handPosition: Point3D, timestampMs: Long): SwipeDirection {
         if (lastTimestampMs > 0L && timestampMs <= lastTimestampMs) {
-            sampleWindow.clear()
+            resetRing()
             lastTimestampMs = timestampMs
             return SwipeDirection.NONE
         }
         lastTimestampMs = timestampMs
 
-        sampleWindow.addLast(FrameSample(handPosition, timestampMs))
-        val safeWindowSize = windowSize.coerceAtLeast(2)
-        while (sampleWindow.size > safeWindowSize) {
-            sampleWindow.removeFirst()
+        // Store sample in ring buffer
+        xRing[head] = handPosition.x
+        yRing[head] = handPosition.y
+        zRing[head] = handPosition.z
+        timeRing[head] = timestampMs
+
+        head = (head + 1) % capacity
+        if (count < capacity) {
+            count++
         }
 
         if (timestampMs < cooldownUntilMs) {
-            val first = sampleWindow.firstOrNull()
-            if (first != null) {
-                val dx = handPosition.x - first.point.x
-                val dy = handPosition.y - first.point.y
-                val dt = (timestampMs - first.timestampMs) / 1000.0f
+            if (count > 0) {
+                val oldestIdx = if (count < capacity) 0 else head
+                val dx = handPosition.x - xRing[oldestIdx]
+                val dy = handPosition.y - yRing[oldestIdx]
+                val dt = (timestampMs - timeRing[oldestIdx]) / 1000.0f
                 val velocity = if (dt > 0.001f) sqrt(dx * dx + dy * dy) / dt else 0f
                 if (velocity < returnVelocityThreshold) cooldownUntilMs = 0L
             }
             return SwipeDirection.NONE
         }
 
-        if (sampleWindow.size < safeWindowSize) return SwipeDirection.NONE
+        if (count < capacity) return SwipeDirection.NONE
 
-        val oldest = sampleWindow.first()
-        val latest = sampleWindow.last()
-        val dt = (latest.timestampMs - oldest.timestampMs) / 1000.0f
+        // oldest index is `head` when buffer is full
+        val oldestIdx = head
+        val latestIdx = (head + capacity - 1) % capacity
+
+        val dt = (timeRing[latestIdx] - timeRing[oldestIdx]) / 1000.0f
         if (dt <= 0.001f) return SwipeDirection.NONE
 
-        val dx = latest.point.x - oldest.point.x
-        val dy = latest.point.y - oldest.point.y
+        val dx = xRing[latestIdx] - xRing[oldestIdx]
+        val dy = yRing[latestIdx] - yRing[oldestIdx]
         val displacement = sqrt(dx * dx + dy * dy)
         val velocity = displacement / dt
         if (velocity < minVelocityScreensPerSec) return SwipeDirection.NONE
@@ -70,13 +82,18 @@ class SwipeGestureEngine(
 
         if (direction != SwipeDirection.NONE) {
             cooldownUntilMs = timestampMs + returnCooldownMs
-            sampleWindow.clear()
+            resetRing()
         }
         return direction
     }
 
+    private fun resetRing() {
+        head = 0
+        count = 0
+    }
+
     fun reset() {
-        sampleWindow.clear()
+        resetRing()
         cooldownUntilMs = 0L
         lastTimestampMs = 0L
     }
