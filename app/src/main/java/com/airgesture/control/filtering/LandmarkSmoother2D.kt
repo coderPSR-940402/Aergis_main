@@ -3,10 +3,10 @@ package com.airgesture.control.filtering
 import android.os.SystemClock
 import com.google.mediapipe.tasks.components.containers.NormalizedLandmark
 
-/** 2D 1 Euro smoothing for normalized MediaPipe landmark coordinates. */
+/** Adaptive 1 Euro smoothing for normalized MediaPipe landmark coordinates. */
 class LandmarkSmoother2D(
-    minCutoff: Float = 1.0f,
-    beta: Float = 0.01f,
+    minCutoff: Float = 1.5f,
+    beta: Float = 0.15f,
     dCutoff: Float = 1.0f
 ) {
     private val filterX = OneEuroFilter(minCutoff, beta, dCutoff)
