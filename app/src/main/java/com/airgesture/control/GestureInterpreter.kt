@@ -22,8 +22,6 @@ class GestureInterpreter(
     private val clickStateMachine: ClickHysteresisStateMachine = ClickHysteresisStateMachine(),
     private val swipeEngine: SwipeGestureEngine = SwipeGestureEngine()
 ) {
-    private var previousIndexTip: Point3D? = null
-
     fun interpret(signal: GestureSignal): GestureDecision {
         val source = when (signal.name.lowercase()) {
             "thumb_up", "thumbs_up" -> AirAction.TAP
@@ -38,15 +36,16 @@ class GestureInterpreter(
     }
 
     fun processFrame(landmarks: List<Point3D>, timestampMs: Long): ProcessedGestureResult? {
-        if (landmarks.isEmpty()) {
+        if (landmarks.size <= KinematicValidator.INDEX_TIP) {
             reset()
             return null
         }
 
-        val constrainedTip = validator.validateAndConstrainIndexTip(landmarks, previousIndexTip)
-        previousIndexTip = constrainedTip
-
-        val smoothedPoint = smoother.filter(constrainedTip.x, constrainedTip.y, timestampMs)
+        // Pointer position must follow the actual recognized index fingertip.
+        // Kinematic validation remains responsible for gesture metrics, but must
+        // not relocate the pointer when a fingertip is temporarily extended.
+        val indexTip = landmarks[KinematicValidator.INDEX_TIP]
+        val smoothedPoint = smoother.filter(indexTip.x, indexTip.y, timestampMs)
         val dNorm = validator.calculateNormalizedFingerDistance(landmarks)
         val clickState = clickStateMachine.processFrame(dNorm, timestampMs)
         val swipeState = swipeEngine.processFrame(
@@ -67,6 +66,5 @@ class GestureInterpreter(
         smoother.reset()
         clickStateMachine.reset()
         swipeEngine.reset()
-        previousIndexTip = null
     }
 }
