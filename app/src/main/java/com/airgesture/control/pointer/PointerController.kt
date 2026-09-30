@@ -38,8 +38,10 @@ class PointerController(
             return PointerState(currentX, currentY, isClicking = false, isDragging = false)
         }
 
-        val deltaX = smoothRawX - anchorX!!
-        val deltaY = smoothRawY - anchorY!!
+        val previousAnchorX = anchorX ?: smoothRawX
+        val previousAnchorY = anchorY ?: smoothRawY
+        val deltaX = smoothRawX - previousAnchorX
+        val deltaY = smoothRawY - previousAnchorY
 
         val distance = sqrt(deltaX * deltaX + deltaY * deltaY)
         val gain = if (distance > 0) distance.pow(accelerationFactor - 1.0f) * sensitivity else sensitivity
@@ -58,4 +60,3 @@ class PointerController(
         anchorY = null
     }
 }
-

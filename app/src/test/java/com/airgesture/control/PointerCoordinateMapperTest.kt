@@ -44,8 +44,8 @@ class PointerCoordinateMapperTest {
         val top = PointerCoordinateMapper.map(0.5f, 0.1f)
         val bottom = PointerCoordinateMapper.map(0.5f, 0.9f)
         assertEquals(top.x, bottom.x, 0.0001f)
-        assertEquals(0.0f, top.y, 0.0001f)
-        assertEquals(1.0f, bottom.y, 0.0001f)
+        assertEquals((0.1f - 0.02f) / 0.96f, top.y, 0.0001f)
+        assertEquals((0.9f - 0.02f) / 0.96f, bottom.y, 0.0001f)
     }
 
     @Test
