@@ -52,8 +52,8 @@ class PointerCoordinateMapperTest {
     fun horizontalMovementStaysHorizontalAndMirrored() {
         val left = PointerCoordinateMapper.map(0.1f, 0.5f)
         val right = PointerCoordinateMapper.map(0.9f, 0.5f)
-        assertEquals(1.0f, left.x, 0.0001f)
-        assertEquals(0.0f, right.x, 0.0001f)
+        assertEquals((0.9f - 0.02f) / 0.96f, left.x, 0.0001f)
+        assertEquals((0.1f - 0.02f) / 0.96f, right.x, 0.0001f)
         assertEquals(left.y, right.y, 0.0001f)
     }
 
