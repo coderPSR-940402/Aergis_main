@@ -35,8 +35,7 @@ class GestureInterpreter(
             "pointing_up", "point" -> AirAction.DOUBLE_TAP
             else -> AirAction.NONE
         }
-        val mappedAction = mappings?.mapping(source) ?: source
-        return GestureDecision(mappedAction, signal.score)
+        return GestureDecision(mappings?.mapping(source) ?: source, signal.score)
     }
 
     fun processFrame(landmarks: List<Point3D>, timestampMs: Long): ProcessedGestureResult? {
@@ -44,27 +43,15 @@ class GestureInterpreter(
             reset()
             return null
         }
-
         val rawIndexTip = landmarks[KinematicValidator.INDEX_TIP]
         val constrainedTip = validator.validateAndConstrainIndexTip(landmarks, previousIndexTip)
         val smoothedPoint = smoother.filter(constrainedTip.x, constrainedTip.y, timestampMs)
         val stabilized = pointerFilter.filter(smoothedPoint.x, smoothedPoint.y, timestampMs)
-
         previousIndexTip = constrainedTip
         val dNorm = validator.calculateNormalizedFingerDistance(landmarks).coerceIn(0f, 1.5f)
         val clickState = clickStateMachine.processFrame(dNorm, timestampMs)
-        val swipeState = swipeEngine.processFrame(
-            Point3D(stabilized.x, stabilized.y, rawIndexTip.z),
-            timestampMs
-        )
-
-        return ProcessedGestureResult(
-            smoothedX = stabilized.x,
-            smoothedY = stabilized.y,
-            isClickEngaged = clickState,
-            detectedSwipe = swipeState,
-            normalizedDistance = dNorm
-        )
+        val swipeState = swipeEngine.processFrame(Point3D(stabilized.x, stabilized.y, rawIndexTip.z), timestampMs)
+        return ProcessedGestureResult(stabilized.x, stabilized.y, clickState, swipeState, dNorm)
     }
 
     fun reset() {

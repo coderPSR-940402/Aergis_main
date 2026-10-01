@@ -81,22 +81,24 @@ class AirAccessibilityService : AccessibilityService() {
 
     fun dispatch(action: AirAction) {
         if (action == AirAction.NONE) return
+        // Gesture recognition runs off the main thread. Snapshot the target now;
+        // otherwise a queued click can land wherever the cursor moved later.
+        val targetX = currentPointerX().coerceIn(0f, displayMetrics.widthPixels.toFloat())
+        val targetY = currentPointerY().coerceIn(0f, displayMetrics.heightPixels.toFloat())
         mainHandler.post {
             when (action) {
                 AirAction.NONE -> Unit
-                AirAction.TAP -> performClickAt(currentPointerX(), currentPointerY())
+                AirAction.TAP -> performClickAt(targetX, targetY)
                 AirAction.DOUBLE_TAP -> {
-                    val x = currentPointerX()
-                    val y = currentPointerY()
-                    performClickAt(x, y)
-                    mainHandler.postDelayed({ performClickAt(x, y) }, DOUBLE_TAP_GAP_MS)
+                    performClickAt(targetX, targetY)
+                    mainHandler.postDelayed({ performClickAt(targetX, targetY) }, DOUBLE_TAP_GAP_MS)
                 }
                 AirAction.BACK -> performGlobalAction(GLOBAL_ACTION_BACK)
                 AirAction.HOME -> performGlobalAction(GLOBAL_ACTION_HOME)
                 AirAction.RECENTS -> performGlobalAction(GLOBAL_ACTION_RECENTS)
-                AirAction.LONG_PRESS -> performLongPressAt(currentPointerX(), currentPointerY())
-                AirAction.SCROLL_UP -> performScroll(up = true)
-                AirAction.SCROLL_DOWN -> performScroll(up = false)
+                AirAction.LONG_PRESS -> performLongPressAt(targetX, targetY)
+                AirAction.SCROLL_UP -> performScroll(up = true, anchorX = targetX, anchorY = targetY)
+                AirAction.SCROLL_DOWN -> performScroll(up = false, anchorX = targetX, anchorY = targetY)
             }
         }
     }
@@ -123,11 +125,11 @@ class AirAccessibilityService : AccessibilityService() {
         dispatchGesture(gesture, null, mainHandler)
     }
 
-    private fun performScroll(up: Boolean) {
+    private fun performScroll(up: Boolean, anchorX: Float, anchorY: Float) {
         val width = displayMetrics.widthPixels
         val height = displayMetrics.heightPixels
-        val x = currentPointerX().coerceIn(0f, width.toFloat())
-        val centerY = currentPointerY().coerceIn(0f, height.toFloat())
+        val x = anchorX.coerceIn(0f, width.toFloat())
+        val centerY = anchorY.coerceIn(0f, height.toFloat())
         val distance = (height * 0.25f).coerceAtLeast(180f)
         val startY = if (up) centerY + distance else centerY - distance
         val endY = if (up) centerY - distance else centerY + distance
