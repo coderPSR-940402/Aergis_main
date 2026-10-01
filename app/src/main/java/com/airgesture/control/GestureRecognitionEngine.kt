@@ -27,7 +27,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
     private var recognizer: GestureRecognizer? = null
     private var pointerInitialized = false
     private var lastPointerAt = 0L
-    private var trackedPhysicalHand: String? = null
+    private val handOwnership = HandOwnershipTracker()
     private val gestureTransaction = GestureTransactionStateMachine()
     private var recognizerFailureCount = 0
     private var nextRecognizerRetryAt = 0L
@@ -132,9 +132,16 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         AirRuntime.handedness = handednessList.firstOrNull() ?: "Unknown"
 
         val pointerActive = AirRuntime.pointerEnabled
-        val selectedIndex = selectPointerHandIndex(landmarks, handednessList, pointerActive)
-        val selectedHand = landmarks.getOrNull(selectedIndex)
+        val handSelection = selectPointerHand(landmarks, handednessList)
+        val selectedHand = handSelection?.index?.let(landmarks::getOrNull)
         val indexTip = selectedHand?.getOrNull(INDEX_TIP)
+        val commandOwnerId = handSelection?.ownerId ?: if (!pointerActive) {
+            handednessList.firstOrNull()
+        } else {
+            null
+        }
+        val commandTracking = landmarks.isNotEmpty() &&
+            (!pointerActive || (handSelection != null && indexTip != null))
 
         if (pointerActive && indexTip != null) {
             // Re-use landmark points list buffer
@@ -178,9 +185,11 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         } else {
             pointerInitialized = false
             lastPointerAt = 0L
-            trackedPhysicalHand = null
             interpreter.reset()
-            gestureTransaction.reset()
+            if (!commandTracking) {
+                handOwnership.reset()
+                gestureTransaction.reset()
+            }
             AirRuntime.setPointerState(AirRuntime.pointerX, AirRuntime.pointerY, false)
             AirAccessibilityService.instance?.updatePointer(0f, 0f, false)
         }
@@ -195,8 +204,8 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 action = decision.action,
                 confidence = decision.confidence,
                 timestampMs = timestamp,
-                tracking = landmarks.isNotEmpty(),
-                ownershipId = trackedPhysicalHand ?: handednessList.firstOrNull()
+                tracking = commandTracking,
+                ownershipId = commandOwnerId
             )
         )
         if (confirmedAction != null && GestureActionPolicy.isEnabled(AirRuntime.gesturesEnabled, confirmedAction)) {
@@ -206,36 +215,34 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         AirRuntime.visionReady = true
     }
 
-    private fun selectPointerHandIndex(
+    private fun selectPointerHand(
         landmarks: List<List<NormalizedLandmark>>,
-        physicalHandedness: List<String>,
-        pointerActive: Boolean
-    ): Int {
-        if (!pointerActive || landmarks.isEmpty()) return 0
-        val pref = AirRuntime.handPreference
-        if (pref == ControlHandPreference.LEFT || pref == ControlHandPreference.RIGHT) {
-            val target = pref.name
-            val match = physicalHandedness.indexOfFirst { it.equals(target, ignoreCase = true) }
-            if (match >= 0 && match < landmarks.size) {
-                trackedPhysicalHand = physicalHandedness[match]
-                return match
-            }
+        physicalHandedness: List<String>
+    ): HandOwnershipTracker.Selection? {
+        if (landmarks.isEmpty()) return null
+        val observations = landmarks.mapIndexedNotNull { index, hand ->
+            if (hand.size <= PINKY_MCP) return@mapIndexedNotNull null
+            val wrist = hand[WRIST]
+            val indexMcp = hand[INDEX_MCP]
+            val pinkyMcp = hand[PINKY_MCP]
+            val palmSize = Point3D(indexMcp.x(), indexMcp.y()).distance2DTo(
+                Point3D(pinkyMcp.x(), pinkyMcp.y())
+            )
+            HandObservation(
+                index = index,
+                handedness = physicalHandedness.getOrNull(index) ?: "Unknown",
+                centerX = wrist.x(),
+                centerY = wrist.y(),
+                palmSize = palmSize
+            )
         }
-        val tracked = trackedPhysicalHand
-        if (tracked != null) {
-            val matching = physicalHandedness.indexOfFirst { it == tracked }
-            if (matching >= 0 && matching < landmarks.size) return matching
-        }
-        val firstKnown = physicalHandedness.indexOfFirst { it == "Right" || it == "Left" }
-        val selected = if (firstKnown >= 0 && firstKnown < landmarks.size) firstKnown else 0
-        trackedPhysicalHand = physicalHandedness.getOrNull(selected)?.takeIf { it != "Unknown" }
-        return selected
+        return handOwnership.select(observations, AirRuntime.handPreference)
     }
 
     private fun resetTrackingState() {
         pointerInitialized = false
         lastPointerAt = 0L
-        trackedPhysicalHand = null
+        handOwnership.reset()
         interpreter.reset()
         gestureTransaction.reset()
         AirRuntime.setPointerState(AirRuntime.pointerX, AirRuntime.pointerY, false)
@@ -259,6 +266,8 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         private const val MAX_HANDS = 2
         private const val MAX_RETRY_FAILURES = 8
         private const val WRIST = KinematicValidator.WRIST
+        private const val INDEX_MCP = KinematicValidator.INDEX_MCP
         private const val INDEX_TIP = KinematicValidator.INDEX_TIP
+        private const val PINKY_MCP = KinematicValidator.PINKY_MCP
     }
 }
