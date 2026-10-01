@@ -21,7 +21,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -29,55 +29,37 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import kotlinx.coroutines.delay
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 class MainActivity : ComponentActivity() {
     private var pointerEnabled by mutableStateOf(true)
     private var gesturesEnabled by mutableStateOf(true)
     private var handPreference by mutableStateOf(ControlHandPreference.EITHER)
-    private var running by mutableStateOf(false)
-    private var handsDetected by mutableStateOf(0)
-    private var lastGesture by mutableStateOf("None")
-    private var handedness by mutableStateOf("Unknown")
-    private var pointerTracking by mutableStateOf(false)
-    private var visionReady by mutableStateOf(false)
-    private var visionError by mutableStateOf<String?>(null)
     private var sessionStartError by mutableStateOf<String?>(null)
     private var accessibilityEnabled by mutableStateOf(false)
     private var mappingsVersion by mutableIntStateOf(0)
 
     private val cameraPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) refresh()
+        if (granted) refreshSettings()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val mappings = ActionMappingStore(this)
-        pointerEnabled = mappings.pointerEnabled()
-        gesturesEnabled = mappings.gesturesEnabled()
-        handPreference = mappings.handPreference()
-        AirRuntime.handPreference = handPreference
+        refreshSettings()
         setContent { AirGestureScreen() }
     }
 
     override fun onResume() {
         super.onResume()
-        refresh()
+        refreshSettings()
     }
 
-    private fun refresh() {
+    private fun refreshSettings() {
         val mappings = ActionMappingStore(this)
-        running = AirRuntime.running
         pointerEnabled = mappings.pointerEnabled()
         gesturesEnabled = mappings.gesturesEnabled()
         handPreference = mappings.handPreference()
         AirRuntime.handPreference = handPreference
-        handsDetected = AirRuntime.handsDetected
-        lastGesture = AirRuntime.lastGesture
-        handedness = AirRuntime.handedness
-        pointerTracking = AirRuntime.pointerTracking
-        visionReady = AirRuntime.visionReady
-        visionError = AirRuntime.visionError
         accessibilityEnabled = AirAccessibilityService.enabled()
     }
 
@@ -94,17 +76,15 @@ class MainActivity : ComponentActivity() {
         )
         if (!decision.allowed) {
             sessionStartError = decision.reason
-            refresh()
+            refreshSettings()
             return
         }
         sessionStartError = null
         ContextCompat.startForegroundService(this, Intent(this, GestureCaptureService::class.java))
-        refresh()
     }
 
     private fun stopSession() {
         stopService(Intent(this, GestureCaptureService::class.java))
-        refresh()
     }
 
     private fun openAccessibilitySettings() {
@@ -128,14 +108,11 @@ class MainActivity : ComponentActivity() {
         return ActionMappingStore(this).mapping(source)
     }
 
-    @androidx.compose.runtime.Composable
+    @Composable
     private fun AirGestureScreen() {
-        LaunchedEffect(Unit) {
-            while (true) {
-                refresh()
-                delay(250)
-            }
-        }
+        val runtime by AirRuntime.uiState.collectAsStateWithLifecycle(
+            initialValue = AirRuntime.uiStateSnapshot()
+        )
 
         MaterialTheme {
             Surface(modifier = Modifier.fillMaxSize()) {
@@ -152,9 +129,7 @@ class MainActivity : ComponentActivity() {
                             Text("Air gesture control • 0.10.0-preview")
                         }
                     }
-
-                    item { Text(if (running) "Session: ACTIVE" else "Session: STOPPED") }
-
+                    item { Text(if (runtime.running) "Session: ACTIVE" else "Session: STOPPED") }
                     item {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -176,7 +151,6 @@ class MainActivity : ComponentActivity() {
                             })
                         }
                     }
-
                     item {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -193,7 +167,6 @@ class MainActivity : ComponentActivity() {
                             })
                         }
                     }
-
                     item {
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text("Tracking Hand Preference")
@@ -207,16 +180,14 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                     }
-
                     item { Text("Accessibility: ${if (accessibilityEnabled) "ENABLED" else "NOT ENABLED"}") }
-                    item { Text("Vision: ${if (visionReady) "READY" else "NOT READY"}") }
-                    item { Text("Hands detected: $handsDetected") }
-                    item { Text("Tracking hand: $handedness") }
-                    item { Text("Gesture: $lastGesture") }
-                    item { Text("Pointer tracking: ${if (pointerTracking) "TRACKING" else "NO HAND"}") }
-                    visionError?.let { error -> item { Text("Vision error: $error") } }
+                    item { Text("Vision: ${if (runtime.visionReady) "READY" else "NOT READY"}") }
+                    item { Text("Hands detected: ${runtime.handsDetected}") }
+                    item { Text("Tracking hand: ${runtime.handedness}") }
+                    item { Text("Gesture: ${runtime.lastGesture}") }
+                    item { Text("Pointer tracking: ${if (runtime.pointerTracking) "TRACKING" else "NO HAND"}") }
+                    runtime.visionError?.let { error -> item { Text("Vision error: $error") } }
                     sessionStartError?.let { error -> item { Text("Cannot start session: $error") } }
-
                     item {
                         Text(
                             "Gesture mappings",
@@ -229,13 +200,12 @@ class MainActivity : ComponentActivity() {
                     item { MappingRow("Open palm →", AirAction.HOME) }
                     item { MappingRow("Fist →", AirAction.RECENTS) }
                     item { MappingRow("Pointing up →", AirAction.DOUBLE_TAP) }
-
                     item {
                         Button(
-                            onClick = { if (running) stopSession() else startSession() },
+                            onClick = { if (runtime.running) stopSession() else startSession() },
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text(if (running) "Stop capture" else "Start capture")
+                            Text(if (runtime.running) "Stop capture" else "Start capture")
                         }
                     }
                     item {
@@ -250,7 +220,7 @@ class MainActivity : ComponentActivity() {
                     }
                     item {
                         Text(
-                            "Camera: ${if (AirRuntime.cameraReady) "ready" else "not active"}",
+                            "Camera: ${if (runtime.cameraReady) "ready" else "not active"}",
                             modifier = Modifier.padding(bottom = 24.dp)
                         )
                     }
@@ -259,7 +229,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    @androidx.compose.runtime.Composable
+    @Composable
     private fun MappingRow(label: String, source: AirAction) {
         Row(
             modifier = Modifier.fillMaxWidth(),
