@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: aergis-ci-${{ github.ref }}
@@ -103,7 +103,27 @@ jobs:
           set -euo pipefail
           sha256sum app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/release/app-release-unsigned.apk | tee apk-sha256.txt
 
-      - name: Upload APKs
+      - name: Generate baseline metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > baseline.json <<EOF
+          {
+            "repository": "${{ github.repository }}",
+            "branch": "${{ github.ref_name }}",
+            "commit": "${{ github.sha }}",
+            "workflow": "${{ github.workflow }}",
+            "run_id": ${{ github.run_id }},
+            "run_number": ${{ github.run_number }},
+            "run_url": "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+            "baseline_ref": "baseline-successful-apk",
+            "generated_at": "${{ github.run_started_at }}"
+          }
+          EOF
+          test -s baseline.json
+          cat baseline.json
+
+      - name: Upload APKs and baseline metadata
         uses: actions/upload-artifact@v4
         with:
           name: Aergis-apks-${{ github.sha }}
@@ -111,7 +131,17 @@ jobs:
             app/build/outputs/apk/debug/app-debug.apk
             app/build/outputs/apk/release/app-release-unsigned.apk
             apk-sha256.txt
+            baseline.json
           if-no-files-found: error
+
+      - name: Update successful APK baseline
+        if: success() && github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git push origin "HEAD:refs/heads/baseline-successful-apk"
 
       - name: Upload test and lint reports
         if: always()
