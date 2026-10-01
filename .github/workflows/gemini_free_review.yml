@@ -7,7 +7,7 @@ jobs:
   gemini-review:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
 
     steps:
       - name: Checkout Codebase
@@ -24,7 +24,7 @@ jobs:
       - name: Execute Gemini API Review
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GEMINI_MODEL: gemini-2.5-flash
+          GEMINI_MODEL: gemini-3.1-pro-preview
         run: |
           set -euo pipefail
 
@@ -33,7 +33,7 @@ jobs:
             exit 1
           fi
 
-          PROMPT='Perform a complete repository review on package com.airgesture.control. Analyze AccessibilityService memory safety, gesture coordinate calculation performance, and thread safety.'
+          PROMPT='Perform a complete repository review on package com.airgesture.control. Analyze AccessibilityService memory safety, gesture coordinate calculation performance, and thread safety.Apply changes'
 
           REQUEST_BODY="$(
             jq -n \
