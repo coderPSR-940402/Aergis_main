@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.Button
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -27,6 +29,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -128,19 +131,26 @@ class MainActivity : ComponentActivity() {
                             modifier = Modifier.fillMaxWidth().padding(top = 24.dp, bottom = 8.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Text("Aergis", style = MaterialTheme.typography.headlineLarge)
-                            Text("Air gesture control • 0.10.0-preview")
+                            Text(stringResource(R.string.app_name), style = MaterialTheme.typography.headlineLarge)
+                            Text(stringResource(R.string.app_tagline))
                         }
                     }
-                    item { Text(if (runtime.running) "Session: ACTIVE" else "Session: STOPPED") }
+                    item {
+                        StatusCard(
+                            title = stringResource(R.string.session_status_title),
+                            message = stringResource(
+                                if (runtime.running) R.string.session_active else R.string.session_stopped
+                            )
+                        )
+                    }
                     item {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Column {
-                                Text("Pointer mode")
-                                Text("Enable pointer tracking")
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(stringResource(R.string.pointer_mode))
+                                Text(stringResource(R.string.pointer_mode_description))
                             }
                             Switch(checked = pointerEnabled, onCheckedChange = {
                                 pointerEnabled = it
@@ -159,9 +169,9 @@ class MainActivity : ComponentActivity() {
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Column {
-                                Text("Gesture actions")
-                                Text("Enable gesture-triggered actions")
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(stringResource(R.string.gesture_actions))
+                                Text(stringResource(R.string.gesture_actions_description))
                             }
                             Switch(checked = gesturesEnabled, onCheckedChange = {
                                 gesturesEnabled = it
@@ -172,7 +182,7 @@ class MainActivity : ComponentActivity() {
                     }
                     item {
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text("Tracking Hand Preference")
+                            Text(stringResource(R.string.tracking_hand_preference))
                             ControlHandSelector(
                                 selected = handPreference,
                                 onSelected = { selected ->
@@ -183,49 +193,98 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                     }
-                    item { Text("Accessibility: ${if (accessibilityEnabled) "ENABLED" else "NOT ENABLED"}") }
-                    item { Text("Vision: ${if (runtime.visionReady) "READY" else "NOT READY"}") }
-                    item { Text("Hands detected: ${runtime.handsDetected}") }
-                    item { Text("Tracking hand: ${runtime.handedness}") }
-                    item { Text("Gesture: ${runtime.lastGesture}") }
-                    item { Text("Pointer tracking: ${if (runtime.pointerTracking) "TRACKING" else "NO HAND"}") }
-                    runtime.visionError?.let { error -> item { Text("Vision error: $error") } }
-                    sessionStartError?.let { error -> item { Text("Cannot start session: $error") } }
+                    item {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(
+                                stringResource(
+                                    R.string.accessibility_status,
+                                    stringResource(
+                                        if (accessibilityEnabled) R.string.status_enabled else R.string.status_not_enabled
+                                    )
+                                )
+                            )
+                            Text(
+                                stringResource(
+                                    R.string.vision_status,
+                                    stringResource(
+                                        if (runtime.visionReady) R.string.status_ready else R.string.status_not_ready
+                                    )
+                                )
+                            )
+                            Text(
+                                stringResource(
+                                    R.string.camera_status,
+                                    stringResource(
+                                        if (runtime.cameraReady) R.string.status_ready else R.string.status_not_active
+                                    )
+                                )
+                            )
+                        }
+                    }
+                    item { Text(stringResource(R.string.hands_detected, runtime.handsDetected)) }
+                    item { Text(stringResource(R.string.tracking_hand, runtime.handedness)) }
+                    item { Text(stringResource(R.string.gesture, runtime.lastGesture)) }
                     item {
                         Text(
-                            "Gesture mappings",
+                            stringResource(
+                                R.string.pointer_tracking,
+                                stringResource(
+                                    if (runtime.pointerTracking) {
+                                        R.string.pointer_tracking_active
+                                    } else {
+                                        R.string.pointer_tracking_inactive
+                                    }
+                                )
+                            )
+                        )
+                    }
+                    runtime.visionError?.let { error ->
+                        item {
+                            StatusCard(
+                                title = stringResource(R.string.vision_error_title),
+                                message = error,
+                                isError = true
+                            )
+                        }
+                    }
+                    sessionStartError?.let { error ->
+                        item {
+                            StatusCard(
+                                title = stringResource(R.string.session_start_error_title),
+                                message = error,
+                                isError = true
+                            )
+                        }
+                    }
+                    item {
+                        Text(
+                            stringResource(R.string.gesture_mappings),
                             style = MaterialTheme.typography.titleMedium,
                             modifier = Modifier.padding(top = 8.dp)
                         )
                     }
-                    item { MappingRow("Thumb up →", AirAction.TAP) }
-                    item { MappingRow("Victory / peace →", AirAction.BACK) }
-                    item { MappingRow("Open palm →", AirAction.HOME) }
-                    item { MappingRow("Fist →", AirAction.RECENTS) }
-                    item { MappingRow("Pointing up →", AirAction.DOUBLE_TAP) }
+                    item { MappingRow(R.string.mapping_thumb_up, AirAction.TAP) }
+                    item { MappingRow(R.string.mapping_victory, AirAction.BACK) }
+                    item { MappingRow(R.string.mapping_open_palm, AirAction.HOME) }
+                    item { MappingRow(R.string.mapping_fist, AirAction.RECENTS) }
+                    item { MappingRow(R.string.mapping_pointing_up, AirAction.DOUBLE_TAP) }
                     item {
                         Button(
                             onClick = { if (runtime.running) stopSession() else startSession() },
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text(if (runtime.running) "Stop capture" else "Start capture")
+                            Text(stringResource(if (runtime.running) R.string.stop_capture else R.string.start_capture))
                         }
                     }
                     item {
                         Button(onClick = { openAccessibilitySettings() }, modifier = Modifier.fillMaxWidth()) {
-                            Text("Accessibility settings")
+                            Text(stringResource(R.string.accessibility_settings))
                         }
                     }
                     item {
                         Button(onClick = { openAppDetails() }, modifier = Modifier.fillMaxWidth()) {
-                            Text("App settings")
+                            Text(stringResource(R.string.app_settings))
                         }
-                    }
-                    item {
-                        Text(
-                            "Camera: ${if (runtime.cameraReady) "ready" else "not active"}",
-                            modifier = Modifier.padding(bottom = 24.dp)
-                        )
                     }
                 }
             }
@@ -233,14 +292,49 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
-    private fun MappingRow(label: String, source: AirAction) {
+    private fun MappingRow(labelRes: Int, source: AirAction) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Text(label, modifier = Modifier.padding(top = 12.dp))
+            Text(stringResource(labelRes), modifier = Modifier.padding(top = 12.dp))
             Button(onClick = { cycleMapping(source) }) {
-                Text(mapping(source, mappingsVersion).name.replace('_', ' '))
+                Text(actionLabel(mapping(source, mappingsVersion)))
+            }
+        }
+    }
+
+    @Composable
+    private fun actionLabel(action: AirAction): String = stringResource(
+        when (action) {
+            AirAction.TAP -> R.string.action_tap
+            AirAction.DOUBLE_TAP -> R.string.action_double_tap
+            AirAction.BACK -> R.string.action_back
+            AirAction.HOME -> R.string.action_home
+            AirAction.RECENTS -> R.string.action_recents
+            AirAction.LONG_PRESS -> R.string.action_long_press
+            AirAction.SCROLL_UP -> R.string.action_scroll_up
+            AirAction.SCROLL_DOWN -> R.string.action_scroll_down
+            AirAction.NONE -> R.string.status_not_ready
+        }
+    )
+
+    @Composable
+    private fun StatusCard(title: String, message: String, isError: Boolean = false) {
+        val colors = MaterialTheme.colorScheme
+        ElevatedCard(
+            colors = CardDefaults.elevatedCardColors(
+                containerColor = if (isError) colors.errorContainer else colors.secondaryContainer,
+                contentColor = if (isError) colors.onErrorContainer else colors.onSecondaryContainer
+            ),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text(title, style = MaterialTheme.typography.titleMedium)
+                Text(message, style = MaterialTheme.typography.bodyMedium)
             }
         }
     }
