@@ -146,6 +146,13 @@ jobs:
           # main build. Advance it only when the current successful commit is
           # a descendant of the existing baseline. Never move it backwards or
           # silently replace a divergent baseline.
+          # actions/checkout uses fetch-depth: 1. The ancestry check below
+          # requires the current main history, so deepen the checkout before
+          # evaluating or advancing the baseline.
+          if [ "$(git rev-parse --is-shallow-repository)" = "true" ]; then
+            git fetch --no-tags --unshallow origin
+          fi
+
           git fetch --no-tags origin \
             refs/heads/baseline-successful-apk:refs/remotes/origin/baseline-successful-apk
 
