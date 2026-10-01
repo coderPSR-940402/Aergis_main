@@ -24,7 +24,11 @@
 - Repository was inspected at baseline `ffb2882`.
 - `git diff --check` passed for this pass.
 - Obsolete frame-level classifier cooldown references were removed.
-- Full Android build/test verification is pending CI because the sandbox does not provide the project Android SDK.
+- Transaction-gate CI passed on `a685323`: run `36938950059`.
+- Hand-ownership CI passed on `c086778`: run `36939617650`.
+- CodeQL passed on `a685323`: run `36938950119`.
+- CodeQL passed on `c086778`: run `36939617636`.
+- Local Android build execution remains unavailable because the sandbox does not provide the project Android SDK; CI is authoritative for APK/lint validation.
 
 ## Important unresolved issues
 
