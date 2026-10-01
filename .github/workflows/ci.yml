@@ -142,20 +142,37 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          # actions/checkout uses a shallow fetch, so fetch the existing baseline
-          # before updating it. This keeps the update fast-forward-only and avoids
-          # overwriting a newer successful baseline.
+          # The baseline is a movable pointer to the most recent successful
+          # main build. Advance it only when the current successful commit is
+          # a descendant of the existing baseline. Never move it backwards or
+          # silently replace a divergent baseline.
           git fetch --no-tags origin \
             refs/heads/baseline-successful-apk:refs/remotes/origin/baseline-successful-apk
 
-          if ! git merge-base --is-ancestor \
-            refs/remotes/origin/baseline-successful-apk \
-            "${{ github.sha }}"; then
-            echo "ERROR: baseline-successful-apk is newer or diverged; refusing to overwrite it."
-            exit 1
+          BASELINE_SHA="$(git rev-parse refs/remotes/origin/baseline-successful-apk)"
+          CURRENT_SHA="${{ github.sha }}"
+
+          if [ "$BASELINE_SHA" = "$CURRENT_SHA" ]; then
+            echo "Baseline already points to successful commit $CURRENT_SHA."
+            exit 0
           fi
 
-          git push origin "${{ github.sha }}:refs/heads/baseline-successful-apk"
+          if git merge-base --is-ancestor "$BASELINE_SHA" "$CURRENT_SHA"; then
+            echo "Advancing baseline: $BASELINE_SHA -> $CURRENT_SHA"
+            git push origin "$CURRENT_SHA:refs/heads/baseline-successful-apk"
+            exit 0
+          fi
+
+          if git merge-base --is-ancestor "$CURRENT_SHA" "$BASELINE_SHA"; then
+            echo "ERROR: baseline-successful-apk points to a newer successful commit ($BASELINE_SHA)."
+            echo "Refusing to move the baseline backwards to $CURRENT_SHA."
+          else
+            echo "ERROR: baseline-successful-apk has diverged from $CURRENT_SHA."
+            echo "Existing baseline: $BASELINE_SHA"
+            echo "Current successful build: $CURRENT_SHA"
+            echo "Refusing to overwrite the baseline automatically."
+          fi
+          exit 1
 
       - name: Upload test and lint reports
         if: always()
