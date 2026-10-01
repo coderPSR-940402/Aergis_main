@@ -141,7 +141,21 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git push origin "HEAD:refs/heads/baseline-successful-apk"
+
+          # actions/checkout uses a shallow fetch, so fetch the existing baseline
+          # before updating it. This keeps the update fast-forward-only and avoids
+          # overwriting a newer successful baseline.
+          git fetch --no-tags origin \
+            refs/heads/baseline-successful-apk:refs/remotes/origin/baseline-successful-apk
+
+          if ! git merge-base --is-ancestor \
+            refs/remotes/origin/baseline-successful-apk \
+            "${{ github.sha }}"; then
+            echo "ERROR: baseline-successful-apk is newer or diverged; refusing to overwrite it."
+            exit 1
+          fi
+
+          git push origin "${{ github.sha }}:refs/heads/baseline-successful-apk"
 
       - name: Upload test and lint reports
         if: always()
