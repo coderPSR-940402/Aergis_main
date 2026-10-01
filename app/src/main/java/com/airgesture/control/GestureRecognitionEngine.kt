@@ -28,8 +28,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
     private var pointerInitialized = false
     private var lastPointerAt = 0L
     private var trackedPhysicalHand: String? = null
-    private var lastActionAt = 0L
-    private var lastGestureName = "None"
+    private val gestureTransaction = GestureTransactionStateMachine()
     private var recognizerFailureCount = 0
     private var nextRecognizerRetryAt = 0L
 
@@ -180,23 +179,29 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             pointerInitialized = false
             lastPointerAt = 0L
             trackedPhysicalHand = null
-            lastGestureName = "None"
-            lastActionAt = 0L
             interpreter.reset()
+            gestureTransaction.reset()
             AirRuntime.setPointerState(AirRuntime.pointerX, AirRuntime.pointerY, false)
             AirAccessibilityService.instance?.updatePointer(0f, 0f, false)
         }
 
-        if (AirRuntime.gesturesEnabled && gestureName != "None" && gestureScore >= MIN_GESTURE_SCORE) {
-            if (gestureName != lastGestureName || timestamp - lastActionAt >= ACTION_COOLDOWN_MS) {
-                val decision = interpreter.interpret(GestureSignal(gestureName, gestureScore))
-                if (decision.action != AirAction.NONE) {
-                    AirAccessibilityService.instance?.dispatch(decision.action)
-                    lastActionAt = timestamp
-                }
-            }
+        val decision = if (AirRuntime.gesturesEnabled && gestureName != "None") {
+            interpreter.interpret(GestureSignal(gestureName, gestureScore))
+        } else {
+            GestureDecision(AirAction.NONE, 0f)
         }
-        lastGestureName = gestureName
+        val confirmedAction = gestureTransaction.process(
+            GestureTransactionStateMachine.Input(
+                action = decision.action,
+                confidence = decision.confidence,
+                timestampMs = timestamp,
+                tracking = landmarks.isNotEmpty(),
+                ownershipId = trackedPhysicalHand ?: handednessList.firstOrNull()
+            )
+        )
+        if (confirmedAction != null && GestureActionPolicy.isEnabled(AirRuntime.gesturesEnabled, confirmedAction)) {
+            AirAccessibilityService.instance?.dispatch(confirmedAction)
+        }
         AirRuntime.visionError = null
         AirRuntime.visionReady = true
     }
@@ -231,9 +236,8 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         pointerInitialized = false
         lastPointerAt = 0L
         trackedPhysicalHand = null
-        lastGestureName = "None"
-        lastActionAt = 0L
         interpreter.reset()
+        gestureTransaction.reset()
         AirRuntime.setPointerState(AirRuntime.pointerX, AirRuntime.pointerY, false)
         AirAccessibilityService.instance?.updatePointer(0f, 0f, false)
     }
@@ -252,7 +256,6 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         private const val TAG = "GestureRecognitionEngine"
         private const val MODEL_ASSET = "gesture_recognizer.task"
         private const val MIN_GESTURE_SCORE = 0.65f
-        private const val ACTION_COOLDOWN_MS = 700L
         private const val MAX_HANDS = 2
         private const val MAX_RETRY_FAILURES = 8
         private const val WRIST = KinematicValidator.WRIST
