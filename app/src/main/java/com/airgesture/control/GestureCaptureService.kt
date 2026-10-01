@@ -98,7 +98,7 @@ class GestureCaptureService : Service(), LifecycleOwner {
         AirRuntime.running = false
         AirRuntime.handsDetected = 0
         AirRuntime.lastGesture = "None"
-        AirRuntime.pointerTracking = false
+        AirRuntime.setPointerState(AirRuntime.pointerX, AirRuntime.pointerY, tracking = false)
         AirRuntime.gesturesEnabled = false
         AirAccessibilityService.instance?.updatePointer(0f, 0f, false)
         super.onDestroy()
