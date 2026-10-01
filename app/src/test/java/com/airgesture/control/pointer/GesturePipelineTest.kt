@@ -1,5 +1,7 @@
 package com.airgesture.control.pointer
 
+import com.airgesture.control.AirAction
+import com.airgesture.control.GestureActionPolicy
 import com.airgesture.control.filtering.KinematicValidator
 import com.airgesture.control.filtering.Point3D
 import org.junit.Assert.assertEquals
@@ -8,6 +10,20 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class GesturePipelineTest {
+    @Test
+    fun disablingGestureActionsBlocksPointerOriginatedActions() {
+        assertFalse(GestureActionPolicy.isEnabled(false, AirAction.TAP))
+        assertFalse(GestureActionPolicy.isEnabled(false, AirAction.SCROLL_UP))
+        assertFalse(GestureActionPolicy.isEnabled(false, AirAction.SCROLL_DOWN))
+    }
+
+    @Test
+    fun enablingGestureActionsAllowsPointerOriginatedActions() {
+        assertTrue(GestureActionPolicy.isEnabled(true, AirAction.TAP))
+        assertTrue(GestureActionPolicy.isEnabled(true, AirAction.SCROLL_UP))
+        assertTrue(GestureActionPolicy.isEnabled(true, AirAction.SCROLL_DOWN))
+    }
+
     @Test
     fun clickRequiresDwellAndDoesNotRepeatUntilRelease() {
         val machine = ClickHysteresisStateMachine(

@@ -145,15 +145,18 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             lastPointerAt = timestamp
             AirRuntime.setPointerState(stabilized.x, stabilized.y, true)
 
-            if (processed.isClickEngaged) {
+            if (processed.isClickEngaged && GestureActionPolicy.isEnabled(AirRuntime.gesturesEnabled, AirAction.TAP)) {
                 AirAccessibilityService.instance?.dispatch(AirAction.TAP)
             }
-            when (processed.detectedSwipe) {
-                SwipeDirection.UP -> AirAccessibilityService.instance?.dispatch(AirAction.SCROLL_UP)
-                SwipeDirection.DOWN -> AirAccessibilityService.instance?.dispatch(AirAction.SCROLL_DOWN)
+            val swipeAction = when (processed.detectedSwipe) {
+                SwipeDirection.UP -> AirAction.SCROLL_UP
+                SwipeDirection.DOWN -> AirAction.SCROLL_DOWN
                 SwipeDirection.LEFT,
                 SwipeDirection.RIGHT,
-                SwipeDirection.NONE -> Unit
+                SwipeDirection.NONE -> AirAction.NONE
+            }
+            if (GestureActionPolicy.isEnabled(AirRuntime.gesturesEnabled, swipeAction)) {
+                AirAccessibilityService.instance?.dispatch(swipeAction)
             }
 
             AirAccessibilityService.instance?.updatePointer(
@@ -217,6 +220,8 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         pointerInitialized = false
         lastPointerAt = 0L
         trackedPhysicalHand = null
+        lastGestureName = "None"
+        lastActionAt = 0L
         interpreter.reset()
         AirRuntime.setPointerState(AirRuntime.pointerX, AirRuntime.pointerY, false)
         AirAccessibilityService.instance?.updatePointer(0f, 0f, false)

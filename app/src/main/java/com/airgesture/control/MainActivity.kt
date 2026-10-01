@@ -42,6 +42,7 @@ class MainActivity : ComponentActivity() {
     private var pointerTracking by mutableStateOf(false)
     private var visionReady by mutableStateOf(false)
     private var visionError by mutableStateOf<String?>(null)
+    private var sessionStartError by mutableStateOf<String?>(null)
     private var accessibilityEnabled by mutableStateOf(false)
     private var mappingsVersion by mutableIntStateOf(0)
 
@@ -81,10 +82,22 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun startSession() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+        val cameraPermissionGranted =
+            ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+        if (!cameraPermissionGranted) {
             cameraPermission.launch(Manifest.permission.CAMERA)
             return
         }
+        val decision = SessionStartPolicy.evaluate(
+            cameraPermissionGranted = true,
+            accessibilityEnabled = AirAccessibilityService.enabled()
+        )
+        if (!decision.allowed) {
+            sessionStartError = decision.reason
+            refresh()
+            return
+        }
+        sessionStartError = null
         ContextCompat.startForegroundService(this, Intent(this, GestureCaptureService::class.java))
         refresh()
     }
@@ -202,6 +215,7 @@ class MainActivity : ComponentActivity() {
                     item { Text("Gesture: $lastGesture") }
                     item { Text("Pointer tracking: ${if (pointerTracking) "TRACKING" else "NO HAND"}") }
                     visionError?.let { error -> item { Text("Vision error: $error") } }
+                    sessionStartError?.let { error -> item { Text("Cannot start session: $error") } }
 
                     item {
                         Text(
