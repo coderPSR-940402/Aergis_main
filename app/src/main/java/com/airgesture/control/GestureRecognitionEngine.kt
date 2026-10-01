@@ -30,6 +30,8 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
     private var trackedPhysicalHand: String? = null
     private var lastActionAt = 0L
     private var lastGestureName = "None"
+    private var recognizerFailureCount = 0
+    private var nextRecognizerRetryAt = 0L
 
     // Reusable buffers to avoid heap allocations per frame
     private val reusablePointsList = ArrayList<Point3D>(21)
@@ -44,33 +46,42 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
     fun analyze(image: ImageProxy) {
         if (closed.get()) return
         try {
-            ensureRecognizer()
+            val timestamp = SystemClock.uptimeMillis()
+            ensureRecognizer(timestamp)
             val currentRecognizer = recognizer ?: return
             val mediaImage = image.image ?: return
             val mpImage = MediaImageBuilder(mediaImage).build()
-            val imageProcessingOptions = ImageProcessingOptions.builder()
-                .setRotationDegrees(image.imageInfo.rotationDegrees)
-                .build()
-            val timestamp = SystemClock.uptimeMillis()
-            val result = currentRecognizer.recognizeForVideo(
-                mpImage,
-                imageProcessingOptions,
-                timestamp
-            )
-            publish(result, timestamp)
+            try {
+                val imageProcessingOptions = ImageProcessingOptions.builder()
+                    .setRotationDegrees(image.imageInfo.rotationDegrees)
+                    .build()
+                val result = currentRecognizer.recognizeForVideo(
+                    mpImage,
+                    imageProcessingOptions,
+                    timestamp
+                )
+                publish(result, timestamp)
+            } finally {
+                mpImage.close()
+            }
         } catch (t: Throwable) {
             Log.e(TAG, "Gesture recognition failed for frame", t)
             AirRuntime.visionError = t.message ?: t.javaClass.simpleName
             AirRuntime.visionReady = false
             runCatching { recognizer?.close() }
             recognizer = null
+            recognizerFailureCount = (recognizerFailureCount + 1).coerceAtMost(MAX_RETRY_FAILURES)
+            nextRecognizerRetryAt = SystemClock.uptimeMillis() +
+                VisionRetryPolicy.delayForFailure(recognizerFailureCount)
             resetTrackingState()
         }
     }
 
-    private fun ensureRecognizer() {
-        if (recognizer != null || closed.get()) return
+    private fun ensureRecognizer(now: Long) {
+        if (recognizer != null || closed.get() || now < nextRecognizerRetryAt) return
         recognizer = createRecognizerWithGpuFallback()
+        recognizerFailureCount = 0
+        nextRecognizerRetryAt = 0L
         AirRuntime.visionReady = true
         AirRuntime.visionError = null
     }
@@ -231,6 +242,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         if (closed.compareAndSet(false, true)) {
             recognizer?.close()
             recognizer = null
+            nextRecognizerRetryAt = 0L
             resetTrackingState()
             AirRuntime.visionReady = false
         }
@@ -242,6 +254,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         private const val MIN_GESTURE_SCORE = 0.65f
         private const val ACTION_COOLDOWN_MS = 700L
         private const val MAX_HANDS = 2
+        private const val MAX_RETRY_FAILURES = 8
         private const val WRIST = KinematicValidator.WRIST
         private const val INDEX_TIP = KinematicValidator.INDEX_TIP
     }

@@ -2,12 +2,12 @@ package com.airgesture.control
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
-import android.content.res.Configuration
 import android.graphics.Path
 import android.os.Handler
 import android.os.Looper
 import android.util.DisplayMetrics
 import android.view.ViewConfiguration
+import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
@@ -21,16 +21,8 @@ class AirAccessibilityService : AccessibilityService() {
     @Volatile private var pendingVisible = false
     @Volatile private var pendingClicking = false
     private var pointerOverlay: PointerOverlay? = null
-    private lateinit var displayMetrics: DisplayMetrics
-
-    override fun onCreate() {
-        super.onCreate()
-        displayMetrics = resources.displayMetrics
-    }
-
-    override fun onConfigurationChanged(newConfig: Configuration) {
-        super.onConfigurationChanged(newConfig)
-        displayMetrics = resources.displayMetrics
+    private val windowManager: WindowManager by lazy {
+        getSystemService(WINDOW_SERVICE) as WindowManager
     }
 
     override fun onServiceConnected() {
@@ -70,11 +62,10 @@ class AirAccessibilityService : AccessibilityService() {
             return
         }
         if (!overlay.isVisible) overlay.show()
-        val width = displayMetrics.widthPixels
-        val height = displayMetrics.heightPixels
+        val display = screenSize()
         overlay.updatePosition(
-            pendingX * width,
-            pendingY * height,
+            pendingX * display.width,
+            pendingY * display.height,
             pendingClicking
         )
     }
@@ -83,8 +74,10 @@ class AirAccessibilityService : AccessibilityService() {
         if (action == AirAction.NONE) return
         // Gesture recognition runs off the main thread. Snapshot the target now;
         // otherwise a queued click can land wherever the cursor moved later.
-        val targetX = currentPointerX().coerceIn(0f, displayMetrics.widthPixels.toFloat())
-        val targetY = currentPointerY().coerceIn(0f, displayMetrics.heightPixels.toFloat())
+        val display = screenSize()
+        val pointer = AirRuntime.pointerSnapshot()
+        val targetX = (pointer.x * display.width).coerceIn(0f, display.width)
+        val targetY = (pointer.y * display.height).coerceIn(0f, display.height)
         mainHandler.post {
             when (action) {
                 AirAction.NONE -> Unit
@@ -126,16 +119,15 @@ class AirAccessibilityService : AccessibilityService() {
     }
 
     private fun performScroll(up: Boolean, anchorX: Float, anchorY: Float) {
-        val width = displayMetrics.widthPixels
-        val height = displayMetrics.heightPixels
-        val x = anchorX.coerceIn(0f, width.toFloat())
-        val centerY = anchorY.coerceIn(0f, height.toFloat())
-        val distance = (height * 0.25f).coerceAtLeast(180f)
+        val display = screenSize()
+        val x = anchorX.coerceIn(0f, display.width)
+        val centerY = anchorY.coerceIn(0f, display.height)
+        val distance = (display.height * 0.25f).coerceAtLeast(180f)
         val startY = if (up) centerY + distance else centerY - distance
         val endY = if (up) centerY - distance else centerY + distance
         val path = Path().apply {
-            moveTo(x, startY.coerceIn(0f, height.toFloat()))
-            lineTo(x, endY.coerceIn(0f, height.toFloat()))
+            moveTo(x, startY.coerceIn(0f, display.height))
+            lineTo(x, endY.coerceIn(0f, display.height))
         }
         val gesture = GestureDescription.Builder()
             .addStroke(GestureDescription.StrokeDescription(path, 0L, SCROLL_DURATION_MS))
@@ -143,9 +135,14 @@ class AirAccessibilityService : AccessibilityService() {
         dispatchGesture(gesture, null, mainHandler)
     }
 
-    private fun currentPointerX(): Float = AirRuntime.pointerSnapshot().x * displayMetrics.widthPixels
+    @Suppress("DEPRECATION")
+    private fun screenSize(): ScreenSize {
+        val metrics = DisplayMetrics()
+        windowManager.defaultDisplay.getRealMetrics(metrics)
+        return ScreenSize(metrics.widthPixels.toFloat(), metrics.heightPixels.toFloat())
+    }
 
-    private fun currentPointerY(): Float = AirRuntime.pointerSnapshot().y * displayMetrics.heightPixels
+    private data class ScreenSize(val width: Float, val height: Float)
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) = Unit
 
