@@ -24,6 +24,7 @@ jobs:
       - name: Execute Gemini API Review
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: gemini-2.5-flash
         run: |
           set -euo pipefail
 
@@ -32,16 +33,33 @@ jobs:
             exit 1
           fi
 
-          PROMPT="Perform a complete repository review on package com.airgesture.control. Analyze AccessibilityService memory safety, gesture coordinate calculation performance, and thread safety."
-          CODE_DATA=$(jq -aRs . < repomix-output.xml)
+          PROMPT='Perform a complete repository review on package com.airgesture.control. Analyze AccessibilityService memory safety, gesture coordinate calculation performance, and thread safety.'
+
+          REQUEST_BODY="$(
+            jq -n \
+              --arg prompt "$PROMPT" \
+              --rawfile code repomix-output.xml \
+              '{
+                contents: [
+                  {
+                    parts: [
+                      { text: $prompt },
+                      { text: $code }
+                    ]
+                  }
+                ]
+              }'
+          )"
 
           curl --fail-with-body --silent --show-error --retry 2 \
-            -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${GEMINI_API_KEY}" \
+            -X POST \
+            "https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}" \
             -H "Content-Type: application/json" \
-            -d "{\"contents\": [{\"parts\": [{\"text\": \"$PROMPT\"}, {\"text\": $CODE_DATA}]}]}" \
+            --data "$REQUEST_BODY" \
             -o gemini_review_response.json
 
-          if ! jq -e '.candidates[0].content.parts[0].text' gemini_review_response.json > GEMINI_REVIEW.md; then
+          if ! jq -er '.candidates[0].content.parts[0].text' \
+              gemini_review_response.json > GEMINI_REVIEW.md; then
             echo "Gemini response did not contain review text."
             cat gemini_review_response.json
             exit 1
