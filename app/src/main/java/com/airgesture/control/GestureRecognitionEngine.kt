@@ -5,6 +5,7 @@ import android.os.SystemClock
 import android.util.Log
 import androidx.camera.core.ExperimentalGetImage
 import androidx.camera.core.ImageProxy
+import com.airgesture.control.filtering.AdaptiveKalmanFilter
 import com.airgesture.control.filtering.KinematicValidator
 import com.airgesture.control.filtering.Point3D
 import com.airgesture.control.pointer.SwipeDirection
@@ -24,6 +25,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
     private val closed = AtomicBoolean(false)
     private val mappings = ActionMappingStore(context)
     private val interpreter = GestureInterpreter(mappings)
+    private val pointerFilter = AdaptiveKalmanFilter()
     private var recognizer: GestureRecognizer? = null
     private var pointerInitialized = false
     private var lastPointerAt = 0L
@@ -137,10 +139,17 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             }
 
             val processed = interpreter.processFrame(reusablePointsList, timestamp)
-            val mapped = processed?.let { PointerCoordinateMapper.map(it.smoothedX, it.smoothedY) } ?: rawMapped
+            val mappedFromGesture = processed?.let {
+                PointerCoordinateMapper.map(it.smoothedX, it.smoothedY)
+            }
+            val stabilized = if (mappedFromGesture != null) {
+                pointerFilter.filter(mappedFromGesture.x, mappedFromGesture.y, timestamp)
+            } else {
+                pointerFilter.filter(rawMapped.x, rawMapped.y, timestamp)
+            }
             pointerInitialized = true
             lastPointerAt = timestamp
-            AirRuntime.setPointerState(mapped.x, mapped.y, true)
+            AirRuntime.setPointerState(stabilized.x, stabilized.y, true)
 
             if (processed != null) {
                 if (processed.isClickEngaged) {
@@ -155,12 +164,18 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 }
             }
 
-            AirAccessibilityService.instance?.updatePointer(mapped.x, mapped.y, true, processed?.isClickEngaged == true)
+            AirAccessibilityService.instance?.updatePointer(
+                stabilized.x,
+                stabilized.y,
+                true,
+                processed?.isClickEngaged == true
+            )
         } else {
             pointerInitialized = false
             lastPointerAt = 0L
             trackedPhysicalHand = null
             interpreter.reset()
+            pointerFilter.reset()
             AirRuntime.setPointerState(AirRuntime.pointerX, AirRuntime.pointerY, false)
             AirAccessibilityService.instance?.updatePointer(0f, 0f, false)
         }
@@ -210,6 +225,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         lastPointerAt = 0L
         trackedPhysicalHand = null
         interpreter.reset()
+        pointerFilter.reset()
         AirRuntime.setPointerState(AirRuntime.pointerX, AirRuntime.pointerY, false)
         AirAccessibilityService.instance?.updatePointer(0f, 0f, false)
     }

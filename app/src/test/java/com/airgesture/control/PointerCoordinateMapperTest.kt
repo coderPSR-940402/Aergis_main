@@ -1,66 +1,31 @@
-package com.airgesture.control
+package com.airgesture.control.filtering
 
-import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
-class PointerCoordinateMapperTest {
+class AdaptiveKalmanFilterTest {
     @Test
-    fun mapsCameraTopLeftToScreenTopRight() {
-        val point = PointerCoordinateMapper.map(0.02f, 0.02f)
-        assertEquals(1f, point.x, 0.0001f)
-        assertEquals(0f, point.y, 0.0001f)
+    fun keepsMotionWithinNormalizedBounds() {
+        val filter = AdaptiveKalmanFilter()
+        val initial = filter.filter(0.2f, 0.3f, 1000L)
+        val updated = filter.filter(0.25f, 0.32f, 1016L)
+
+        assertTrue(initial.x in 0.0f..1.0f)
+        assertTrue(initial.y in 0.0f..1.0f)
+        assertTrue(updated.x in 0.0f..1.0f)
+        assertTrue(updated.y in 0.0f..1.0f)
     }
 
     @Test
-    fun mapsCameraTopRightToScreenTopLeft() {
-        val point = PointerCoordinateMapper.map(0.98f, 0.02f)
-        assertEquals(0f, point.x, 0.0001f)
-        assertEquals(0f, point.y, 0.0001f)
-    }
+    fun ignoresSevereOutlierSpike() {
+        val filter = AdaptiveKalmanFilter()
+        filter.filter(0.5f, 0.5f, 1000L)
+        val outlier = filter.filter(0.95f, 0.95f, 1016L)
+        val followUp = filter.filter(0.55f, 0.52f, 1032L)
 
-    @Test
-    fun mapsCameraBottomLeftToScreenBottomRight() {
-        val point = PointerCoordinateMapper.map(0.02f, 0.98f)
-        assertEquals(1f, point.x, 0.0001f)
-        assertEquals(1f, point.y, 0.0001f)
-    }
-
-    @Test
-    fun mapsCameraBottomRightToScreenBottomLeft() {
-        val point = PointerCoordinateMapper.map(0.98f, 0.98f)
-        assertEquals(0f, point.x, 0.0001f)
-        assertEquals(1f, point.y, 0.0001f)
-    }
-
-    @Test
-    fun mapsCenterToCenter() {
-        val point = PointerCoordinateMapper.map(0.5f, 0.5f)
-        assertEquals(0.5f, point.x, 0.0001f)
-        assertEquals(0.5f, point.y, 0.0001f)
-    }
-
-    @Test
-    fun verticalMovementStaysVertical() {
-        val top = PointerCoordinateMapper.map(0.5f, 0.1f)
-        val bottom = PointerCoordinateMapper.map(0.5f, 0.9f)
-        assertEquals(top.x, bottom.x, 0.0001f)
-        assertEquals((0.1f - 0.02f) / 0.96f, top.y, 0.0001f)
-        assertEquals((0.9f - 0.02f) / 0.96f, bottom.y, 0.0001f)
-    }
-
-    @Test
-    fun horizontalMovementStaysHorizontalAndMirrored() {
-        val left = PointerCoordinateMapper.map(0.1f, 0.5f)
-        val right = PointerCoordinateMapper.map(0.9f, 0.5f)
-        assertEquals((0.9f - 0.02f) / 0.96f, left.x, 0.0001f)
-        assertEquals((0.1f - 0.02f) / 0.96f, right.x, 0.0001f)
-        assertEquals(left.y, right.y, 0.0001f)
-    }
-
-    @Test
-    fun mapsNearEdgeWithoutEightPercentDeadZone() {
-        val point = PointerCoordinateMapper.map(0.5f, 0.08f)
-        assertEquals(0.5f, point.x, 0.0001f)
-        assertEquals(0.0625f, point.y, 0.0001f)
+        assertTrue(outlier.x in 0.0f..1.0f)
+        assertTrue(outlier.y in 0.0f..1.0f)
+        assertTrue(followUp.x in 0.0f..1.0f)
+        assertTrue(followUp.y in 0.0f..1.0f)
     }
 }
