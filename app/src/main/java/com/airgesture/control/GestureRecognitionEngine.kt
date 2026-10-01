@@ -145,17 +145,15 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             lastPointerAt = timestamp
             AirRuntime.setPointerState(stabilized.x, stabilized.y, true)
 
-            if (processed != null) {
-                if (processed.isClickEngaged) {
-                    AirAccessibilityService.instance?.dispatch(AirAction.TAP)
-                }
-                when (processed.detectedSwipe) {
-                    SwipeDirection.UP -> AirAccessibilityService.instance?.dispatch(AirAction.SCROLL_UP)
-                    SwipeDirection.DOWN -> AirAccessibilityService.instance?.dispatch(AirAction.SCROLL_DOWN)
-                    SwipeDirection.LEFT,
-                    SwipeDirection.RIGHT,
-                    SwipeDirection.NONE -> Unit
-                }
+            if (processed.isClickEngaged) {
+                AirAccessibilityService.instance?.dispatch(AirAction.TAP)
+            }
+            when (processed.detectedSwipe) {
+                SwipeDirection.UP -> AirAccessibilityService.instance?.dispatch(AirAction.SCROLL_UP)
+                SwipeDirection.DOWN -> AirAccessibilityService.instance?.dispatch(AirAction.SCROLL_DOWN)
+                SwipeDirection.LEFT,
+                SwipeDirection.RIGHT,
+                SwipeDirection.NONE -> Unit
             }
 
             AirAccessibilityService.instance?.updatePointer(

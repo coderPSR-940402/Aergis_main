@@ -1,31 +1,24 @@
-package com.airgesture.control.filtering
+package com.airgesture.control
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-class AdaptiveKalmanFilterTest {
+class PointerCoordinateMapperTest {
     @Test
-    fun keepsMotionWithinNormalizedBounds() {
-        val filter = AdaptiveKalmanFilter()
-        val initial = filter.filter(0.2f, 0.3f, 1000L)
-        val updated = filter.filter(0.25f, 0.32f, 1016L)
-
-        assertTrue(initial.x in 0.0f..1.0f)
-        assertTrue(initial.y in 0.0f..1.0f)
-        assertTrue(updated.x in 0.0f..1.0f)
-        assertTrue(updated.y in 0.0f..1.0f)
+    fun mirrorsHorizontalAxisAndPreservesVerticalAxis() {
+        val left = PointerCoordinateMapper.map(0f, 0.25f)
+        val right = PointerCoordinateMapper.map(1f, 0.75f)
+        assertEquals(1f, left.x, 0.0001f)
+        assertEquals(0f, right.x, 0.0001f)
+        assertEquals(0.25f, left.y, 0.01f)
+        assertEquals(0.75f, right.y, 0.01f)
     }
 
     @Test
-    fun ignoresSevereOutlierSpike() {
-        val filter = AdaptiveKalmanFilter()
-        filter.filter(0.5f, 0.5f, 1000L)
-        val outlier = filter.filter(0.95f, 0.95f, 1016L)
-        val followUp = filter.filter(0.55f, 0.52f, 1032L)
-
-        assertTrue(outlier.x in 0.0f..1.0f)
-        assertTrue(outlier.y in 0.0f..1.0f)
-        assertTrue(followUp.x in 0.0f..1.0f)
-        assertTrue(followUp.y in 0.0f..1.0f)
+    fun clampsCoordinatesToScreenBounds() {
+        val point = PointerCoordinateMapper.map(-1f, 2f)
+        assertTrue(point.x in 0f..1f)
+        assertTrue(point.y in 0f..1f)
     }
 }
