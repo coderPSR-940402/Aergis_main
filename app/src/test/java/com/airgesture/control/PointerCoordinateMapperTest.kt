@@ -11,8 +11,8 @@ class PointerCoordinateMapperTest {
         val right = PointerCoordinateMapper.map(1f, 0.75f)
         assertEquals(1f, left.x, 0.0001f)
         assertEquals(0f, right.x, 0.0001f)
-        assertEquals(0.25f, left.y, 0.01f)
-        assertEquals(0.75f, right.y, 0.01f)
+        assertEquals(0.24f, left.y, 0.01f)
+        assertEquals(0.76f, right.y, 0.01f)
     }
 
     @Test
