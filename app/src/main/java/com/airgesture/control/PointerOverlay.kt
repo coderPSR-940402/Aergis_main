@@ -5,6 +5,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.PixelFormat
+import android.util.Log
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
@@ -33,6 +34,7 @@ class PointerOverlay(private val context: Context) {
     fun show() {
         if (rootView != null) return
         val root = FrameLayout(context)
+        root.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
         val cursor = CursorView(context)
         root.addView(
             cursor,
@@ -43,6 +45,7 @@ class PointerOverlay(private val context: Context) {
         try {
             windowManager.addView(root, params)
         } catch (e: Exception) {
+            Log.w(TAG, "Unable to attach pointer overlay", e)
             rootView = null
             cursorView = null
         }
@@ -54,8 +57,8 @@ class PointerOverlay(private val context: Context) {
             if (root.isAttachedToWindow) {
                 windowManager.removeViewImmediate(root)
             }
-        } catch (ignored: Exception) {
-            // View may already be removed or window detached
+        } catch (e: Exception) {
+            Log.w(TAG, "Unable to detach pointer overlay", e)
         } finally {
             cursorView = null
             rootView = null
@@ -67,6 +70,10 @@ class PointerOverlay(private val context: Context) {
         cursor.setClicking(isClicking)
         cursor.translationX = x - CursorView.SIZE / 2f
         cursor.translationY = y - CursorView.SIZE / 2f
+    }
+
+    private companion object {
+        const val TAG = "PointerOverlay"
     }
 
     private class CursorView(context: Context) : View(context) {

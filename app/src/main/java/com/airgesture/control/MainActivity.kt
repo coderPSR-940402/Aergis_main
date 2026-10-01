@@ -40,7 +40,10 @@ class MainActivity : ComponentActivity() {
     private var mappingsVersion by mutableIntStateOf(0)
 
     private val cameraPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) refreshSettings()
+        if (granted) {
+            refreshSettings()
+            startSession()
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
