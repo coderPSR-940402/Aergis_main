@@ -2,9 +2,9 @@ import java.net.URL
 import java.security.MessageDigest
 
 plugins {
-    id("com.android.application")
-    id("org.jetbrains.kotlin.android")
-    id("org.jetbrains.kotlin.plugin.compose")
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.compose)
 }
 
 android {
@@ -90,22 +90,21 @@ tasks.register("prepareGestureModel") {
 tasks.named("preBuild").configure { dependsOn("prepareGestureModel") }
 
 dependencies {
-    implementation(platform("androidx.compose:compose-bom:2025.06.01"))
-    implementation("androidx.activity:activity-compose:1.10.1")
-    implementation("androidx.compose.material3:material3")
-    implementation("androidx.compose.ui:ui")
-    implementation("androidx.compose.ui:ui-tooling-preview")
-    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.9.1")
-    implementation("androidx.lifecycle:lifecycle-service:2.9.1")
-    implementation("androidx.core:core-ktx:1.16.0")
+    implementation(platform(libs.androidx.compose.bom))
+    implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.compose.material3)
+    implementation(libs.androidx.compose.ui)
+    implementation(libs.androidx.compose.ui.tooling.preview)
+    implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation(libs.androidx.lifecycle.service)
+    implementation(libs.androidx.core.ktx)
 
-    val cameraX = "1.4.2"
-    implementation("androidx.camera:camera-core:$cameraX")
-    implementation("androidx.camera:camera-camera2:$cameraX")
-    implementation("androidx.camera:camera-lifecycle:$cameraX")
+    implementation(libs.androidx.camera.core)
+    implementation(libs.androidx.camera.camera2)
+    implementation(libs.androidx.camera.lifecycle)
 
-    implementation("com.google.mediapipe:tasks-vision:1.0.0")
+    implementation(libs.mediapipe.tasks.vision)
 
-    debugImplementation("androidx.compose.ui:ui-tooling")
-    testImplementation("junit:junit:4.13.2")
+    debugImplementation(libs.androidx.compose.ui.tooling)
+    testImplementation(libs.junit)
 }
