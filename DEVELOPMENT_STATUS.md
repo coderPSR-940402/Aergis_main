@@ -18,6 +18,9 @@
 - Added regression tests for stable confirmation, release-before-rearm, ownership changes, and stale frames.
 - Added continuity-based primary-hand selection using hand center, palm size, handedness preference, and safe rejection of distant replacement hands.
 - Added regression tests for reordered detections, configured hand preference, and ownership takeover rejection.
+- Added timestamped velocity history to predict the owned hand's next position.
+- Added a score-margin ambiguity gate that rejects close competing hand candidates instead of guessing.
+- Classifier commands now require a safely selected owner even when pointer rendering is disabled.
 
 ## Verified results
 
@@ -32,7 +35,7 @@
 
 ## Important unresolved issues
 
-- Primary-hand ownership still needs velocity history and explicit multi-hand ambiguity scoring for robust arbitration.
+- Primary-hand ownership still needs device validation across occlusion, rapid crossings, and large hand-scale changes.
 - IMU device-motion cancellation is not implemented.
 - Protected foreground-context policy and explicit READY/ARMED control mode are not implemented.
 - Physical-device false-positive, latency, jitter, thermal, and battery measurements are unavailable.

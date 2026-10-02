@@ -132,16 +132,12 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         AirRuntime.handedness = handednessList.firstOrNull() ?: "Unknown"
 
         val pointerActive = AirRuntime.pointerEnabled
-        val handSelection = selectPointerHand(landmarks, handednessList)
+        val handSelection = selectPointerHand(landmarks, handednessList, timestamp)
         val selectedHand = handSelection?.index?.let(landmarks::getOrNull)
         val indexTip = selectedHand?.getOrNull(INDEX_TIP)
-        val commandOwnerId = handSelection?.ownerId ?: if (!pointerActive) {
-            handednessList.firstOrNull()
-        } else {
-            null
-        }
+        val commandOwnerId = handSelection?.ownerId
         val commandTracking = landmarks.isNotEmpty() &&
-            (!pointerActive || (handSelection != null && indexTip != null))
+            handSelection != null && (!pointerActive || indexTip != null)
 
         if (pointerActive && indexTip != null) {
             // Re-use landmark points list buffer
@@ -217,7 +213,8 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
 
     private fun selectPointerHand(
         landmarks: List<List<NormalizedLandmark>>,
-        physicalHandedness: List<String>
+        physicalHandedness: List<String>,
+        timestampMs: Long
     ): HandOwnershipTracker.Selection? {
         if (landmarks.isEmpty()) return null
         val observations = landmarks.mapIndexedNotNull { index, hand ->
@@ -236,7 +233,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 palmSize = palmSize
             )
         }
-        return handOwnership.select(observations, AirRuntime.handPreference)
+        return handOwnership.select(observations, AirRuntime.handPreference, timestampMs)
     }
 
     private fun resetTrackingState() {
