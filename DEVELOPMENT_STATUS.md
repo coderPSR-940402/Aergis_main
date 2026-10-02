@@ -31,6 +31,8 @@
 - Hand-ownership CI passed on `c086778`: run `36939617650`.
 - CodeQL passed on `a685323`: run `36938950119`.
 - CodeQL passed on `c086778`: run `36939617636`.
+- Velocity-arbitration CI passed on `8f13c1c`: run `36950569617`.
+- Velocity-arbitration CodeQL passed on `8f13c1c`: run `36950569678`.
 - Local Android build execution remains unavailable because the sandbox does not provide the project Android SDK; CI is authoritative for APK/lint validation.
 
 ## Important unresolved issues
