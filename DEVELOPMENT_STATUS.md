@@ -33,6 +33,9 @@
 - CodeQL passed on `c086778`: run `36939617636`.
 - Velocity-arbitration CI passed on `8f13c1c`: run `36950569617`.
 - Velocity-arbitration CodeQL passed on `8f13c1c`: run `36950569678`.
+- Motion/context safety CI initially exposed a Kotlin visibility error on `d34e3b5`; the focused fix is `d409bcc`.
+- Corrected safety CI passed on `d409bcc`: run `36951443377`.
+- Corrected safety CodeQL passed on `d409bcc`: run `36951443420`.
 - Local Android build execution remains unavailable because the sandbox does not provide the project Android SDK; CI is authoritative for APK/lint validation.
 
 ## Important unresolved issues
