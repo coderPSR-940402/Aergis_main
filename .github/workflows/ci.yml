@@ -34,7 +34,7 @@ jobs:
           path: |
             ${{ env.ANDROID_HOME }}/platforms/android-36
             ${{ env.ANDROID_HOME }}/build-tools/36.0.0
-          key: android-sdk-36
+          key: android-sdk-36-${{ runner.os }}
 
       - name: Prepare Android SDK 36
         shell: bash
@@ -55,26 +55,26 @@ jobs:
           test -d "${ANDROID_HOME}/platforms/android-36"
           test -x "${ANDROID_HOME}/build-tools/36.0.0/aapt"
 
-      - name: Set up Gradle 8.11.1
+      - name: Validate Gradle Wrapper
+        uses: gradle/actions/wrapper-validation@v6
+
+      - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
-        with:
-          gradle-version: '8.11.1'
-          cache-provider: basic
 
       - name: Verify Gradle configuration
-        run: gradle --version
+        run: ./gradlew --version
 
       - name: Run unit tests
-        run: gradle test --build-cache --stacktrace --warning-mode all
+        run: ./gradlew test --stacktrace --warning-mode all
 
       - name: Run Android lint
-        run: gradle :app:lint --build-cache --stacktrace --warning-mode all
+        run: ./gradlew :app:lint --stacktrace --warning-mode all
 
       - name: Assemble debug APK
-        run: gradle :app:assembleDebug --build-cache --stacktrace --warning-mode all
+        run: ./gradlew :app:assembleDebug --stacktrace --warning-mode all
 
       - name: Assemble minified release APK
-        run: gradle :app:assembleRelease --build-cache --stacktrace --warning-mode all
+        run: ./gradlew :app:assembleRelease --stacktrace --warning-mode all
 
       - name: Verify debug APK
         shell: bash
@@ -142,13 +142,6 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          # The baseline is a movable pointer to the most recent successful
-          # main build. Advance it only when the current successful commit is
-          # a descendant of the existing baseline. Never move it backwards or
-          # silently replace a divergent baseline.
-          # actions/checkout uses fetch-depth: 1. The ancestry check below
-          # requires the current main history, so deepen the checkout before
-          # evaluating or advancing the baseline.
           if [ "$(git rev-parse --is-shallow-repository)" = "true" ]; then
             git fetch --no-tags --unshallow origin
           fi
