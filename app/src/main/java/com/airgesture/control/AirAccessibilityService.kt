@@ -29,6 +29,7 @@ class AirAccessibilityService : AccessibilityService() {
         super.onServiceConnected()
         instance = this
         pointerOverlay = PointerOverlay(this)
+        AirRuntime.setForegroundContext(ForegroundContextPolicy.evaluate(null, null))
     }
 
     fun updatePointer(normalizedX: Float, normalizedY: Float, visible: Boolean, isClicking: Boolean = false) {
@@ -72,6 +73,14 @@ class AirAccessibilityService : AccessibilityService() {
 
     fun dispatch(action: AirAction) {
         if (action == AirAction.NONE) return
+        val safety = ActionSafetyPolicy.evaluate(
+            action = action,
+            gesturesEnabled = AirRuntime.gesturesEnabled,
+            controlMode = AirRuntime.controlMode,
+            motionActive = AirRuntime.motionActive,
+            foregroundSafety = AirRuntime.state.value.foregroundContext.safety
+        )
+        if (!safety.allowed) return
         // Gesture recognition runs off the main thread. Snapshot the target now;
         // otherwise a queued click can land wherever the cursor moved later.
         val display = screenSize()
@@ -144,11 +153,18 @@ class AirAccessibilityService : AccessibilityService() {
 
     private data class ScreenSize(val width: Float, val height: Float)
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) = Unit
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        if (event == null) return
+        AirRuntime.setForegroundContext(
+            ForegroundContextPolicy.evaluate(event.packageName, event.className)
+        )
+    }
 
     override fun onInterrupt() {
         mainHandler.removeCallbacksAndMessages(null)
         updateScheduled.set(false)
+        AirRuntime.controlMode = ControlMode.READY
+        AirRuntime.setForegroundContext(ForegroundContextPolicy.evaluate(null, null))
         mainHandler.post { pointerOverlay?.hide() }
     }
 
@@ -156,6 +172,8 @@ class AirAccessibilityService : AccessibilityService() {
         if (instance === this) instance = null
         mainHandler.removeCallbacksAndMessages(null)
         updateScheduled.set(false)
+        AirRuntime.controlMode = ControlMode.READY
+        AirRuntime.setForegroundContext(ForegroundContextPolicy.evaluate(null, null))
         pointerOverlay?.hide()
         pointerOverlay = null
         super.onDestroy()

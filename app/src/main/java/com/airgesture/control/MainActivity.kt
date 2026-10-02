@@ -144,6 +144,21 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                     item {
+                        StatusCard(
+                            title = stringResource(
+                                R.string.control_mode_title,
+                                when (runtime.controlMode) {
+                                    ControlMode.OFF -> stringResource(R.string.session_stopped)
+                                    ControlMode.READY -> stringResource(R.string.control_mode_ready)
+                                    ControlMode.ARMED -> stringResource(R.string.control_mode_armed)
+                                    ControlMode.PAUSED -> stringResource(R.string.control_mode_paused)
+                                }
+                            ),
+                            message = stringResource(R.string.control_mode_description),
+                            isError = runtime.motionActive || runtime.foregroundSafety == ForegroundSafety.PROTECTED
+                        )
+                    }
+                    item {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween
@@ -238,6 +253,32 @@ class MainActivity : ComponentActivity() {
                             )
                         )
                     }
+                    item {
+                        Text(
+                            stringResource(
+                                R.string.motion_status,
+                                stringResource(
+                                    when {
+                                        !runtime.motionSensorsAvailable -> R.string.motion_unavailable
+                                        runtime.motionActive -> R.string.motion_active
+                                        else -> R.string.motion_inactive
+                                    }
+                                )
+                            )
+                        )
+                        Text(
+                            stringResource(
+                                R.string.foreground_status,
+                                stringResource(
+                                    when (runtime.foregroundSafety) {
+                                        ForegroundSafety.SAFE -> R.string.foreground_safe
+                                        ForegroundSafety.PROTECTED -> R.string.foreground_protected
+                                        ForegroundSafety.UNKNOWN -> R.string.foreground_unknown
+                                    }
+                                )
+                            )
+                        )
+                    }
                     runtime.visionError?.let { error ->
                         item {
                             StatusCard(
@@ -274,6 +315,30 @@ class MainActivity : ComponentActivity() {
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text(stringResource(if (runtime.running) R.string.stop_capture else R.string.start_capture))
+                        }
+                    }
+                    item {
+                        Button(
+                            enabled = runtime.running &&
+                                (runtime.controlMode == ControlMode.ARMED || !runtime.motionActive),
+                            onClick = {
+                                AirRuntime.controlMode = if (runtime.controlMode == ControlMode.ARMED) {
+                                    ControlMode.READY
+                                } else {
+                                    ControlMode.ARMED
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                stringResource(
+                                    if (runtime.controlMode == ControlMode.ARMED) {
+                                        R.string.disarm_control
+                                    } else {
+                                        R.string.arm_control
+                                    }
+                                )
+                            )
                         }
                     }
                     item {

@@ -7,6 +7,10 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.os.IBinder
 import android.util.Size
 import androidx.camera.core.CameraSelector
@@ -19,12 +23,17 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import kotlin.math.sqrt
 
-class GestureCaptureService : Service(), LifecycleOwner {
+class GestureCaptureService : Service(), LifecycleOwner, SensorEventListener {
     private var executor: ExecutorService? = null
     private var cameraProvider: ProcessCameraProvider? = null
     private var visionEngine: GestureRecognitionEngine? = null
     private val lifecycleRegistry = LifecycleRegistry(this)
+    private val motionMonitor = DeviceMotionCancellation()
+    private lateinit var sensorManager: SensorManager
+    private var latestGyroMagnitude = 0f
+    private var latestAccelerationDeviation = 0f
 
     override val lifecycle: Lifecycle
         get() = lifecycleRegistry
@@ -39,6 +48,7 @@ class GestureCaptureService : Service(), LifecycleOwner {
         createChannel()
         startForeground(NOTIFICATION_ID, notification())
         AirRuntime.running = true
+        AirRuntime.controlMode = ControlMode.READY
         val mappings = ActionMappingStore(this)
         AirRuntime.pointerEnabled = mappings.pointerEnabled()
         AirRuntime.gesturesEnabled = mappings.gesturesEnabled()
@@ -47,8 +57,49 @@ class GestureCaptureService : Service(), LifecycleOwner {
                 AirRuntime.visionReady = false
                 AirRuntime.visionError = it.message ?: it.javaClass.simpleName
             }
+        registerMotionSensors()
         setupCamera()
     }
+
+    private fun registerMotionSensors() {
+        sensorManager = getSystemService(SENSOR_SERVICE) as SensorManager
+        val gyro = sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
+        val accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+        AirRuntime.motionSensorsAvailable = gyro != null || accelerometer != null
+        if (gyro == null && accelerometer == null) {
+            AirRuntime.setMotionState(motionMonitor.reset())
+            return
+        }
+        gyro?.let { sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_GAME) }
+        accelerometer?.let { sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_GAME) }
+    }
+
+    override fun onSensorChanged(event: SensorEvent) {
+        when (event.sensor.type) {
+            Sensor.TYPE_GYROSCOPE -> {
+                latestGyroMagnitude = sqrt(
+                    event.values[0] * event.values[0] +
+                        event.values[1] * event.values[1] +
+                        event.values[2] * event.values[2]
+                )
+            }
+            Sensor.TYPE_ACCELEROMETER -> {
+                latestAccelerationDeviation = accelerationDeviation(
+                    event.values[0], event.values[1], event.values[2]
+                )
+            }
+            else -> return
+        }
+        AirRuntime.setMotionState(
+            motionMonitor.update(
+                latestGyroMagnitude,
+                latestAccelerationDeviation,
+                event.timestamp / 1_000_000L
+            )
+        )
+    }
+
+    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
 
     @ExperimentalGetImage
     private fun setupCamera() {
@@ -90,12 +141,16 @@ class GestureCaptureService : Service(), LifecycleOwner {
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
         cameraProvider?.unbindAll()
         cameraProvider = null
+        if (::sensorManager.isInitialized) sensorManager.unregisterListener(this)
+        AirRuntime.setMotionState(motionMonitor.reset())
+        AirRuntime.motionSensorsAvailable = false
         visionEngine?.close()
         visionEngine = null
         executor?.shutdownNow()
         executor = null
         AirRuntime.cameraReady = false
         AirRuntime.running = false
+        AirRuntime.controlMode = ControlMode.OFF
         AirRuntime.handsDetected = 0
         AirRuntime.lastGesture = "None"
         AirRuntime.setPointerState(AirRuntime.pointerX, AirRuntime.pointerY, tracking = false)

@@ -131,13 +131,16 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         }
         AirRuntime.handedness = handednessList.firstOrNull() ?: "Unknown"
 
-        val pointerActive = AirRuntime.pointerEnabled
+        val controlSafe = AirRuntime.controlMode == ControlMode.ARMED &&
+            !AirRuntime.motionActive &&
+            AirRuntime.state.value.foregroundContext.safety == ForegroundSafety.SAFE
+        val pointerActive = AirRuntime.pointerEnabled && controlSafe
         val handSelection = selectPointerHand(landmarks, handednessList, timestamp)
         val selectedHand = handSelection?.index?.let(landmarks::getOrNull)
         val indexTip = selectedHand?.getOrNull(INDEX_TIP)
         val commandOwnerId = handSelection?.ownerId
-        val commandTracking = landmarks.isNotEmpty() &&
-            handSelection != null && (!pointerActive || indexTip != null)
+        val commandTracking = controlSafe && landmarks.isNotEmpty() &&
+            handSelection != null && (!AirRuntime.pointerEnabled || indexTip != null)
 
         if (pointerActive && indexTip != null) {
             // Re-use landmark points list buffer

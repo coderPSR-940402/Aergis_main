@@ -20,6 +20,12 @@ data class AirRuntimeState(
     val cameraReady: Boolean = false,
     val pointerEnabled: Boolean = true,
     val gesturesEnabled: Boolean = true,
+    val controlMode: ControlMode = ControlMode.OFF,
+    val motionActive: Boolean = false,
+    val motionMagnitude: Float = 0f,
+    val motionReason: String? = null,
+    val motionSensorsAvailable: Boolean = false,
+    val foregroundContext: ForegroundContextState = ForegroundContextState(),
     val handPreference: ControlHandPreference = ControlHandPreference.EITHER,
     val visionReady: Boolean = false,
     val visionError: String? = null,
@@ -46,7 +52,12 @@ data class AirRuntimeUiState(
     val handsDetected: Int,
     val lastGesture: String,
     val handedness: String,
-    val pointerTracking: Boolean
+    val pointerTracking: Boolean,
+    val controlMode: ControlMode,
+    val motionActive: Boolean,
+    val motionSensorsAvailable: Boolean,
+    val foregroundSafety: ForegroundSafety,
+    val safetyReason: String
 )
 
 private fun AirRuntimeState.toUiState(): AirRuntimeUiState = AirRuntimeUiState(
@@ -57,7 +68,12 @@ private fun AirRuntimeState.toUiState(): AirRuntimeUiState = AirRuntimeUiState(
     handsDetected = handsDetected,
     lastGesture = lastGesture,
     handedness = handedness,
-    pointerTracking = pointerTracking
+    pointerTracking = pointerTracking,
+    controlMode = controlMode,
+    motionActive = motionActive,
+    motionSensorsAvailable = motionSensorsAvailable,
+    foregroundSafety = foregroundContext.safety,
+    safetyReason = motionReason ?: foregroundContext.reason
 )
 
 object AirRuntime {
@@ -82,6 +98,36 @@ object AirRuntime {
     var gesturesEnabled: Boolean
         get() = state.value.gesturesEnabled
         set(value) = _state.update { it.copy(gesturesEnabled = value) }
+
+    var controlMode: ControlMode
+        get() = state.value.controlMode
+        set(value) = _state.update { it.copy(controlMode = value) }
+
+    var motionActive: Boolean
+        get() = state.value.motionActive
+        set(value) = _state.update { it.copy(motionActive = value) }
+
+    fun setMotionState(state: MotionState) {
+        _state.update {
+            if (it.motionActive == state.active && it.motionReason == state.reason) {
+                it
+            } else {
+                it.copy(
+                    motionActive = state.active,
+                    motionMagnitude = state.magnitude,
+                    motionReason = state.reason
+                )
+            }
+        }
+    }
+
+    var motionSensorsAvailable: Boolean
+        get() = state.value.motionSensorsAvailable
+        set(value) = _state.update { it.copy(motionSensorsAvailable = value) }
+
+    fun setForegroundContext(context: ForegroundContextState) {
+        _state.update { it.copy(foregroundContext = context) }
+    }
 
     var handPreference: ControlHandPreference
         get() = state.value.handPreference
