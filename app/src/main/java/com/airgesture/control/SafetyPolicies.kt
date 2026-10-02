@@ -4,14 +4,14 @@ import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.sqrt
 
-internal enum class ControlMode {
+enum class ControlMode {
     OFF,
     READY,
     ARMED,
     PAUSED
 }
 
-internal data class MotionState(
+data class MotionState(
     val active: Boolean,
     val magnitude: Float,
     val reason: String?
@@ -59,13 +59,13 @@ internal class DeviceMotionCancellation(
     }
 }
 
-internal enum class ForegroundSafety {
+enum class ForegroundSafety {
     UNKNOWN,
     SAFE,
     PROTECTED
 }
 
-internal data class ForegroundContextState(
+data class ForegroundContextState(
     val packageName: String? = null,
     val className: String? = null,
     val safety: ForegroundSafety = ForegroundSafety.UNKNOWN,
