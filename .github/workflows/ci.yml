@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: aergis-ci-${{ github.ref }}
@@ -134,53 +134,6 @@ jobs:
             baseline.json
           if-no-files-found: error
 
-      - name: Update successful APK baseline
-        if: success() && github.ref == 'refs/heads/main'
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          # The baseline is a movable pointer to the most recent successful
-          # main build. Advance it only when the current successful commit is
-          # a descendant of the existing baseline. Never move it backwards or
-          # silently replace a divergent baseline.
-          # actions/checkout uses fetch-depth: 1. The ancestry check below
-          # requires the current main history, so deepen the checkout before
-          # evaluating or advancing the baseline.
-          if [ "$(git rev-parse --is-shallow-repository)" = "true" ]; then
-            git fetch --no-tags --unshallow origin
-          fi
-
-          git fetch --no-tags origin \
-            refs/heads/baseline-successful-apk:refs/remotes/origin/baseline-successful-apk
-
-          BASELINE_SHA="$(git rev-parse refs/remotes/origin/baseline-successful-apk)"
-          CURRENT_SHA="${{ github.sha }}"
-
-          if [ "$BASELINE_SHA" = "$CURRENT_SHA" ]; then
-            echo "Baseline already points to successful commit $CURRENT_SHA."
-            exit 0
-          fi
-
-          if git merge-base --is-ancestor "$BASELINE_SHA" "$CURRENT_SHA"; then
-            echo "Advancing baseline: $BASELINE_SHA -> $CURRENT_SHA"
-            git push origin "$CURRENT_SHA:refs/heads/baseline-successful-apk"
-            exit 0
-          fi
-
-          if git merge-base --is-ancestor "$CURRENT_SHA" "$BASELINE_SHA"; then
-            echo "ERROR: baseline-successful-apk points to a newer successful commit ($BASELINE_SHA)."
-            echo "Refusing to move the baseline backwards to $CURRENT_SHA."
-          else
-            echo "ERROR: baseline-successful-apk has diverged from $CURRENT_SHA."
-            echo "Existing baseline: $BASELINE_SHA"
-            echo "Current successful build: $CURRENT_SHA"
-            echo "Refusing to overwrite the baseline automatically."
-          fi
-          exit 1
-
       - name: Upload test and lint reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -190,3 +143,43 @@ jobs:
             app/build/reports/tests/
             app/build/reports/lint-results*
           if-no-files-found: ignore
+
+  update-baseline:
+    name: Advance successful APK baseline
+    if: github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout full history
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Advance baseline without moving backwards
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch --no-tags origin \
+            refs/heads/baseline-successful-apk:refs/remotes/origin/baseline-successful-apk
+          BASELINE_SHA="$(git rev-parse refs/remotes/origin/baseline-successful-apk)"
+          CURRENT_SHA="${{ github.sha }}"
+
+          if [ "$BASELINE_SHA" = "$CURRENT_SHA" ]; then
+            echo "Baseline already points to successful commit $CURRENT_SHA."
+            exit 0
+          fi
+          if git merge-base --is-ancestor "$BASELINE_SHA" "$CURRENT_SHA"; then
+            echo "Advancing baseline: $BASELINE_SHA -> $CURRENT_SHA"
+            git push origin "$CURRENT_SHA:refs/heads/baseline-successful-apk"
+            exit 0
+          fi
+          if git merge-base --is-ancestor "$CURRENT_SHA" "$BASELINE_SHA"; then
+            echo "ERROR: baseline-successful-apk points to a newer successful commit ($BASELINE_SHA)."
+          else
+            echo "ERROR: baseline-successful-apk has diverged from $CURRENT_SHA."
+          fi
+          exit 1

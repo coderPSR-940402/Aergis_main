@@ -47,6 +47,7 @@
     <string name="app_settings">App settings</string>
     <string name="vision_error_title">Vision error</string>
     <string name="session_start_error_title">Cannot start session</string>
+    <string name="camera_permission_required">Camera permission is required to start capture.</string>
     <string name="mapping_thumb_up">Thumb up →</string>
     <string name="mapping_victory">Victory / peace →</string>
     <string name="mapping_open_palm">Open palm →</string>

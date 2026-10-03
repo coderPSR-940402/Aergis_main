@@ -46,6 +46,8 @@ class MainActivity : ComponentActivity() {
         if (granted) {
             refreshSettings()
             startSession()
+        } else {
+            sessionStartError = getString(R.string.camera_permission_required)
         }
     }
 

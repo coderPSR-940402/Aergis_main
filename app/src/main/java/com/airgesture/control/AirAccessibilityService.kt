@@ -113,7 +113,7 @@ class AirAccessibilityService : AccessibilityService() {
         foregroundSafety = AirRuntime.state.value.foregroundContext.safety
     ).allowed
 
-    fun performClickAt(x: Float, y: Float) {
+    private fun performClickAt(x: Float, y: Float) {
         val path = Path().apply { moveTo(x, y) }
         val gesture = GestureDescription.Builder()
             .addStroke(

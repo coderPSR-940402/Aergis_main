@@ -55,11 +55,15 @@ tasks.register("prepareGestureModel") {
         if (!gestureModelFile.exists() || gestureModelFile.length() == 0L) {
             logger.lifecycle("Downloading the exact MediaPipe gesture model used by the 0.10.0-preview APK")
             try {
-                URL(gestureModelUrl).openStream().use { input ->
+                val connection = URL(gestureModelUrl).openConnection().apply {
+                    connectTimeout = 30_000
+                    readTimeout = 120_000
+                }
+                connection.getInputStream().use { input ->
                     gestureModelFile.outputStream().use { output -> input.copyTo(output) }
                 }
             } catch (e: Exception) {
-                logger.warn("Could not download gesture model: ${e.message}")
+                throw GradleException("Could not download gesture model: ${e.message}", e)
             }
         }
         if (gestureModelFile.exists() && gestureModelFile.length() > 0L) {
@@ -82,7 +86,7 @@ tasks.register("prepareGestureModel") {
                 "gesture_recognizer.task size mismatch: expected 8373440 bytes, got ${gestureModelFile.length()}"
             }
         } else {
-            logger.warn("Gesture model asset missing or empty; build will continue.")
+            throw GradleException("Gesture model asset missing or empty; refusing to build a non-functional APK.")
         }
     }
 }

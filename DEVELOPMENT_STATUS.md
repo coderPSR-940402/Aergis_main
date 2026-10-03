@@ -41,8 +41,8 @@
 ## Important unresolved issues
 
 - Primary-hand ownership still needs device validation across occlusion, rapid crossings, and large hand-scale changes.
-- IMU device-motion cancellation is not implemented.
-- Protected foreground-context policy and explicit READY/ARMED control mode are not implemented.
+- IMU device-motion cancellation is implemented but still needs physical-device threshold validation.
+- Protected foreground-context policy and explicit READY/ARMED control mode are implemented; device coverage remains outstanding.
 - Physical-device false-positive, latency, jitter, thermal, and battery measurements are unavailable.
 
 ## Device testing needed
@@ -53,4 +53,4 @@
 
 ## Next frontier
 
-Implement persistent hand tracking and explicit control arming/context safety before expanding gesture vocabulary.
+Run the physical-device false-positive campaign, validate motion thresholds and protected-context coverage, then expand the gesture vocabulary only if the measured safety gates remain green.
