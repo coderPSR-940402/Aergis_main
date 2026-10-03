@@ -7,7 +7,7 @@ jobs:
   gemini-review:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
 
     steps:
       - name: Checkout Codebase
@@ -33,7 +33,7 @@ jobs:
             exit 1
           fi
 
-          PROMPT='Perform a complete repository review on package com.airgesture.control. Analyze AccessibilityService memory safety, gesture coordinate calculation performance, and thread safety.Apply changes'
+          PROMPT='Perform a complete repository review on package com.airgesture.control. Analyze AccessibilityService memory safety, gesture coordinate calculation performance, and thread safety. Return prioritized recommendations only; do not modify the repository.'
 
           REQUEST_BODY="$(
             jq -n \
