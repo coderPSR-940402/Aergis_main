@@ -24,6 +24,7 @@
 - Gesture model preparation now fails closed on download, checksum, size, or missing-asset errors instead of producing a non-functional APK.
 - CI build permissions are read-only; successful baseline advancement runs in a separate write-scoped job.
 - Accessibility gesture injection helpers are private, and camera-permission denial is surfaced in the launcher UI.
+- The manual Gemini review workflow is read-only and explicitly recommendation-only.
 
 ## Verified results
 
@@ -42,6 +43,9 @@
 - Hardening CI passed on `0e290b3`: run `37114581999`.
 - Hardening CodeQL passed on `0e290b3`: run `37114582022`.
 - `baseline-successful-apk` advanced to `0e290b3` after the successful APK-producing workflow.
+- Final least-privilege CI passed on `371f38a`: run `37115190081`.
+- Final least-privilege CodeQL passed on `371f38a`: run `37115190102`.
+- `baseline-successful-apk` advanced to `371f38a` after the final successful APK-producing workflow.
 - Local Android build execution remains unavailable because the sandbox does not provide the project Android SDK; CI is authoritative for APK/lint validation.
 
 ## Important unresolved issues
