@@ -8,12 +8,12 @@ plugins {
 
 android {
     namespace = "com.airgesture.control"
-    compileSdk = 37
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.airgesture.control"
         minSdk = 26
-        targetSdk = 37
+        targetSdk = 36
         versionCode = 10
         versionName = "0.10.0-preview"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

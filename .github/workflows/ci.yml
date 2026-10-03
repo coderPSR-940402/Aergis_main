@@ -28,15 +28,15 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Cache Android SDK 37
+      - name: Cache Android SDK 36
         uses: actions/cache@v4
         with:
           path: |
-            ${{ env.ANDROID_HOME }}/platforms/android-37
+            ${{ env.ANDROID_HOME }}/platforms/android-36
             ${{ env.ANDROID_HOME }}/build-tools/36.0.0
-          key: android-sdk-37
+          key: android-sdk-36
 
-      - name: Prepare Android SDK 37
+      - name: Prepare Android SDK 36
         shell: bash
         run: |
           set -euo pipefail
@@ -51,8 +51,8 @@ jobs:
           fi
 
           yes | "$SDKMANAGER" --licenses || true
-          "$SDKMANAGER" --channel=1 "platforms;android-37" "build-tools;36.0.0"
-          test -d "${ANDROID_HOME}/platforms/android-37"
+          "$SDKMANAGER" "platforms;android-36" "build-tools;36.0.0"
+          test -d "${ANDROID_HOME}/platforms/android-36"
           test -x "${ANDROID_HOME}/build-tools/36.0.0/aapt"
 
       - name: Set up Gradle wrapper
