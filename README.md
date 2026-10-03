@@ -12,7 +12,9 @@ Aergis is an Android air-gesture control application. The repository is the acti
 | Minimum SDK | `26` |
 | Compile / target SDK | `36` |
 | Java | `17` |
-| Gradle | `8.11.1` |
+| Android Gradle Plugin | `9.4.0` |
+| Gradle | `9.8.0` via the checked-in wrapper |
+| Kotlin | `2.4.20` |
 | CI | GitHub Actions |
 
 The version values above describe the current project configuration. **They are not the definition of the development baseline.**
@@ -63,7 +65,7 @@ The project includes:
 
 ## Build and verification
 
-The CI environment uses Java 17, Android SDK 36, and Gradle 8.11.1.
+The CI environment uses Java 17, Android SDK 36, and the checked-in Gradle 9.8.0 wrapper. Run `./gradlew` for reproducible local builds; AGP 9 uses built-in Kotlin support and the project keeps the Compose compiler plugin aligned with Kotlin 2.4.20.
 
 The workflow is defined in:
 
