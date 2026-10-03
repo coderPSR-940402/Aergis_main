@@ -21,6 +21,9 @@
 - Added timestamped velocity history to predict the owned hand's next position.
 - Added a score-margin ambiguity gate that rejects close competing hand candidates instead of guessing.
 - Classifier commands now require a safely selected owner even when pointer rendering is disabled.
+- Gesture model preparation now fails closed on download, checksum, size, or missing-asset errors instead of producing a non-functional APK.
+- CI build permissions are read-only; successful baseline advancement runs in a separate write-scoped job.
+- Accessibility gesture injection helpers are private, and camera-permission denial is surfaced in the launcher UI.
 
 ## Verified results
 
@@ -36,6 +39,9 @@
 - Motion/context safety CI initially exposed a Kotlin visibility error on `d34e3b5`; the focused fix is `d409bcc`.
 - Corrected safety CI passed on `d409bcc`: run `36951443377`.
 - Corrected safety CodeQL passed on `d409bcc`: run `36951443420`.
+- Hardening CI passed on `0e290b3`: run `37114581999`.
+- Hardening CodeQL passed on `0e290b3`: run `37114582022`.
+- `baseline-successful-apk` advanced to `0e290b3` after the successful APK-producing workflow.
 - Local Android build execution remains unavailable because the sandbox does not provide the project Android SDK; CI is authoritative for APK/lint validation.
 
 ## Important unresolved issues
