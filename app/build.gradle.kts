@@ -8,12 +8,12 @@ plugins {
 
 android {
     namespace = "com.airgesture.control"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.airgesture.control"
         minSdk = 26
-        targetSdk = 36
+        targetSdk = 37
         versionCode = 10
         versionName = "0.10.0-preview"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -92,16 +92,16 @@ tasks.register("prepareGestureModel") {
 tasks.named("preBuild").configure { dependsOn("prepareGestureModel") }
 
 dependencies {
-    implementation(platform("androidx.compose:compose-bom:2025.06.01"))
-    implementation("androidx.activity:activity-compose:1.10.1")
+    implementation(platform("androidx.compose:compose-bom:2026.09.00"))
+    implementation("androidx.activity:activity-compose:1.13.0")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
-    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.9.1")
-    implementation("androidx.lifecycle:lifecycle-service:2.9.1")
-    implementation("androidx.core:core-ktx:1.16.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.11.0")
+    implementation("androidx.lifecycle:lifecycle-service:2.11.0")
+    implementation("androidx.core:core-ktx:1.19.1")
 
-    val cameraX = "1.4.2"
+    val cameraX = "1.6.2"
     implementation("androidx.camera:camera-core:$cameraX")
     implementation("androidx.camera:camera-camera2:$cameraX")
     implementation("androidx.camera:camera-lifecycle:$cameraX")
