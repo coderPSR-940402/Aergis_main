@@ -16,10 +16,10 @@ Aergis is an Android air-gesture control application. The repository is the acti
 | Gradle | `9.8.0` via the checked-in wrapper |
 | Kotlin | `2.4.20` |
 | CameraX | `1.6.2` |
-| Compose BOM | `2026.09.00` |
+| Compose BOM | `2026.06.00` |
 | AndroidX Activity | `1.13.0` |
-| AndroidX Lifecycle | `2.11.0` |
-| AndroidX Core KTX | `1.19.1` |
+| AndroidX Lifecycle | `2.10.0` |
+| AndroidX Core KTX | `1.18.0` |
 | CI | GitHub Actions |
 
 The version values above describe the current project configuration. **They are not the definition of the development baseline.**
