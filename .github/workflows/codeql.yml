@@ -37,7 +37,7 @@ jobs:
             SDKMANAGER="${ANDROID_HOME}/cmdline-tools/16.0/bin/sdkmanager"
           fi
           yes | "$SDKMANAGER" --licenses >/dev/null || true
-          "$SDKMANAGER" "platforms;android-37" "build-tools;36.0.0"
+          "$SDKMANAGER" --channel=1 "platforms;android-37" "build-tools;36.0.0"
 
       - name: Set up Gradle wrapper
         uses: gradle/actions/setup-gradle@v6

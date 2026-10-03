@@ -51,7 +51,7 @@ jobs:
           fi
 
           yes | "$SDKMANAGER" --licenses || true
-          "$SDKMANAGER" "platforms;android-37" "build-tools;36.0.0"
+          "$SDKMANAGER" --channel=1 "platforms;android-37" "build-tools;36.0.0"
           test -d "${ANDROID_HOME}/platforms/android-37"
           test -x "${ANDROID_HOME}/build-tools/36.0.0/aapt"
 
