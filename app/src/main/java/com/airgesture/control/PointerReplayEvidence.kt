@@ -97,27 +97,27 @@ object PointerReplayEvidenceCodec {
             .filter { it.isNotBlank() }
             .map { line ->
                 val separator = line.indexOf('=')
-                require(separator > 0) { "Malformed evidence line" }
+                if (separator <= 0) invalid("Malformed evidence line")
                 line.substring(0, separator) to unescape(line.substring(separator + 1))
             }
             .toMap()
         fun required(key: String): String = values[key]?.takeIf { it.isNotBlank() }
-            ?: error("Missing evidence field: $key")
+            ?: invalid("Missing evidence field: $key")
         fun optionalFloat(key: String): Float? {
             val raw = values[key]?.takeIf { it.isNotBlank() } ?: return null
-            return raw.toFloatOrNull() ?: error("Invalid $key")
+            return raw.toFloatOrNull() ?: invalid("Invalid $key")
         }
         return PointerReplayEvidence(
-            schemaVersion = required("schemaVersion").toIntOrNull() ?: error("Invalid schemaVersion"),
+            schemaVersion = required("schemaVersion").toIntOrNull() ?: invalid("Invalid schemaVersion"),
             commitSha = required("commitSha"),
             traceId = required("traceId"),
             mapperProfile = required("mapperProfile"),
             evidenceType = runCatching {
                 PointerReplayEvidence.EvidenceType.valueOf(required("evidenceType"))
-            }.getOrElse { error("Invalid evidenceType") },
+            }.getOrElse { invalid("Invalid evidenceType") },
             deviceModel = values["deviceModel"]?.takeIf { it.isNotBlank() },
-            frameCount = required("frameCount").toIntOrNull() ?: error("Invalid frameCount"),
-            durationMs = required("durationMs").toLongOrNull() ?: error("Invalid durationMs"),
+            frameCount = required("frameCount").toIntOrNull() ?: invalid("Invalid frameCount"),
+            durationMs = required("durationMs").toLongOrNull() ?: invalid("Invalid durationMs"),
             meanAbsoluteError = optionalFloat("meanAbsoluteError"),
             p95AbsoluteError = optionalFloat("p95AbsoluteError"),
             maxAbsoluteError = optionalFloat("maxAbsoluteError"),
@@ -125,6 +125,8 @@ object PointerReplayEvidenceCodec {
             maxOutputStep = optionalFloat("maxOutputStep")
         )
     }
+
+    private fun invalid(message: String): Nothing = throw IllegalArgumentException(message)
 
     private fun escape(value: String): String = value
         .replace("\\", "\\\\")
@@ -144,7 +146,7 @@ object PointerReplayEvidenceCodec {
                 result.append(character)
             }
         }
-        require(!escaped) { "Malformed escape sequence" }
+        if (escaped) invalid("Malformed escape sequence")
         return result.toString()
     }
 }
