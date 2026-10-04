@@ -20,6 +20,20 @@ class AirRuntimeTest {
     }
 
     @Test
+    fun rawPointerStateIsClampedAndIndependentFromMappedPointer() {
+        AirRuntime.setPointerState(0.8f, 0.9f, tracking = true)
+        AirRuntime.setRawPointerState(-1f, 2f, tracking = true)
+
+        assertEquals(0.8f, AirRuntime.pointerSnapshot().x, 0f)
+        assertEquals(0.9f, AirRuntime.pointerSnapshot().y, 0f)
+        assertEquals(0f, AirRuntime.rawPointerSnapshot().x, 0f)
+        assertEquals(1f, AirRuntime.rawPointerSnapshot().y, 0f)
+
+        AirRuntime.setPointerState(0f, 0f, tracking = false)
+        AirRuntime.setRawPointerState(0f, 0f, tracking = false)
+    }
+
+    @Test
     fun runtimePropertyUpdatesArePublishedToObservers() {
         AirRuntime.running = true
         assertTrue(AirRuntime.state.value.running)

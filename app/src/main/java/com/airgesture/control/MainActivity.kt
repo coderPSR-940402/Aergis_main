@@ -41,6 +41,11 @@ class MainActivity : ComponentActivity() {
     private var sessionStartError by mutableStateOf<String?>(null)
     private var accessibilityEnabled by mutableStateOf(false)
     private var mappingsVersion by mutableIntStateOf(0)
+    private var calibrationState by mutableStateOf(PointerCalibrationSession.State.IDLE)
+    private var calibrationSampleCount by mutableIntStateOf(0)
+    private var calibrationEnabled by mutableStateOf(false)
+    private var calibrationMessage by mutableStateOf<String?>(null)
+    private val calibrationSession = PointerCalibrationSession()
 
     private val cameraPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) {
@@ -67,6 +72,7 @@ class MainActivity : ComponentActivity() {
         pointerEnabled = mappings.pointerEnabled()
         gesturesEnabled = mappings.gesturesEnabled()
         handPreference = mappings.handPreference()
+        calibrationEnabled = PointerCalibrationStore(this).enabled()
         AirRuntime.handPreference = handPreference
         accessibilityEnabled = AirAccessibilityService.enabled()
     }
@@ -110,6 +116,52 @@ class MainActivity : ComponentActivity() {
         val index = options.indexOf(current).coerceAtLeast(0)
         store.setMapping(source, options[(index + 1) % options.size])
         mappingsVersion++
+    }
+
+    private fun startCalibration() {
+        calibrationSession.start()
+        calibrationState = calibrationSession.state()
+        calibrationSampleCount = calibrationSession.sampleCount()
+        calibrationMessage = getString(R.string.calibration_capture_guidance)
+    }
+
+    private fun captureCalibrationSample() {
+        val rawPointer = AirRuntime.rawPointerSnapshot()
+        val accepted = calibrationSession.addSample(rawPointer.x, rawPointer.y)
+        calibrationState = calibrationSession.state()
+        calibrationSampleCount = calibrationSession.sampleCount()
+        calibrationMessage = if (accepted) {
+            getString(R.string.calibration_sample_captured, calibrationSampleCount)
+        } else {
+            getString(R.string.calibration_sample_rejected)
+        }
+    }
+
+    private fun completeCalibration() {
+        val profile = calibrationSession.complete()
+        calibrationState = calibrationSession.state()
+        calibrationSampleCount = calibrationSession.sampleCount()
+        if (profile == null) {
+            calibrationMessage = getString(R.string.calibration_invalid)
+            return
+        }
+        calibrationEnabled = PointerCalibrationStore(this).save(profile)
+        calibrationMessage = getString(R.string.calibration_enabled)
+    }
+
+    private fun disableCalibration() {
+        PointerCalibrationStore(this).setEnabled(false)
+        calibrationEnabled = false
+        calibrationMessage = getString(R.string.calibration_disabled)
+    }
+
+    private fun resetCalibration() {
+        PointerCalibrationStore(this).reset()
+        calibrationSession.reset()
+        calibrationState = calibrationSession.state()
+        calibrationSampleCount = calibrationSession.sampleCount()
+        calibrationEnabled = false
+        calibrationMessage = getString(R.string.calibration_reset)
     }
 
     private fun mapping(source: AirAction, version: Int): AirAction {
@@ -160,6 +212,7 @@ class MainActivity : ComponentActivity() {
                             isError = runtime.motionActive || runtime.foregroundSafety == ForegroundSafety.PROTECTED
                         )
                     }
+                    item { CalibrationCard(runtime.pointerTracking) }
                     item {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -353,6 +406,77 @@ class MainActivity : ComponentActivity() {
                             Text(stringResource(R.string.app_settings))
                         }
                     }
+                }
+            }
+        }
+    }
+
+    @Composable
+    private fun CalibrationCard(pointerTracking: Boolean) {
+        ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    stringResource(R.string.calibration_title),
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Text(
+                    stringResource(
+                        R.string.calibration_status,
+                        if (calibrationEnabled) {
+                            stringResource(R.string.calibration_status_enabled)
+                        } else {
+                            stringResource(R.string.calibration_status_disabled)
+                        },
+                        calibrationSampleCount
+                    )
+                )
+                calibrationMessage?.let { Text(it) }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = { startCalibration() },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(stringResource(R.string.calibration_start))
+                    }
+                    Button(
+                        onClick = { captureCalibrationSample() },
+                        enabled = calibrationState == PointerCalibrationSession.State.COLLECTING &&
+                            pointerTracking,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(stringResource(R.string.calibration_capture))
+                    }
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = { completeCalibration() },
+                        enabled = calibrationState == PointerCalibrationSession.State.READY,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(stringResource(R.string.calibration_complete))
+                    }
+                    Button(
+                        onClick = { disableCalibration() },
+                        enabled = calibrationEnabled,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(stringResource(R.string.calibration_disable))
+                    }
+                }
+                Button(
+                    onClick = { resetCalibration() },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(stringResource(R.string.calibration_reset_button))
                 }
             }
         }
