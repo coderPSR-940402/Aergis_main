@@ -46,6 +46,22 @@ Repository-complete pointer benchmarks use `PointerReplayTrace` and
   configuration, and whether the result is repository-complete or
   device-dependent.
 
+## Legacy-versus-candidate comparison
+
+`PointerMappingComparisonBenchmark` runs the same validated trace through the
+legacy mapper and a candidate mapper, then evaluates deltas against explicit
+thresholds. The comparison fails when the candidate changes frame count or
+duration, or exceeds any configured tolerance for mean error, p95 error, peak
+error, mean output step, or peak output step. A candidate does not need to be
+better on every trace to proceed, but it must not introduce an unexplained
+regression beyond the declared tolerance.
+
+The initial tolerances are intentionally conservative and are measurement
+defaults, not product claims: mean error `+0.01`, p95 error `+0.02`, peak error
+`+0.03`, mean output step `+0.02`, and peak output step `+0.04` in normalized
+screen coordinates. Any release decision must report the trace IDs and the
+threshold set used.
+
 ## Regression rules
 
 - A safety regression is an automatic failure.
