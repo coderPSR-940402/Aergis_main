@@ -29,6 +29,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
     private var lastPointerAt = 0L
     private val handOwnership = HandOwnershipTracker()
     private val gestureTransaction = GestureTransactionStateMachine()
+    private val freshnessPolicy = VisionResultFreshnessPolicy()
     private var recognizerFailureCount = 0
     private var nextRecognizerRetryAt = 0L
 
@@ -59,7 +60,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                     imageProcessingOptions,
                     timestamp
                 )
-                publish(result, timestamp)
+                publish(result, timestamp, SystemClock.uptimeMillis())
             } finally {
                 mpImage.close()
             }
@@ -108,7 +109,17 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         return GestureRecognizer.createFromOptions(context, options)
     }
 
-    private fun publish(result: GestureRecognizerResult, timestamp: Long) {
+    private fun publish(
+        result: GestureRecognizerResult,
+        timestamp: Long,
+        observedAtMs: Long
+    ) {
+        val freshness = freshnessPolicy.evaluate(timestamp, observedAtMs)
+        if (!freshness.accepted) {
+            Log.d(TAG, "Vision result rejected: ${freshness.reason}")
+            resetTrackingState()
+            return
+        }
         val landmarks = result.landmarks()
         AirRuntime.handsDetected = landmarks.size
 
@@ -254,6 +265,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             recognizer?.close()
             recognizer = null
             nextRecognizerRetryAt = 0L
+            freshnessPolicy.reset()
             resetTrackingState()
             AirRuntime.visionReady = false
         }
