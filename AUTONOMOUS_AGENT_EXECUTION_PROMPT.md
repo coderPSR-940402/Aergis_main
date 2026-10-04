@@ -15,6 +15,30 @@ AERMOTUS-v0.18.24-preview-vc49-r8-filter-shadow.apk
 SHA-256: 73fdec175522b4caf05ce9f80cc94e6673b837127844d85d42af1a071560b890
 ```
 
+## Verified prototype parameters and configuration decisions
+
+The following facts were verified from the supplied APK and must be treated as reference data, not as permission to copy unsafe packaging:
+
+| Item | Verified prototype value | Required treatment |
+|---|---|---|
+| Package | `com.airgesture.control` | Preserve unless a deliberate migration is required. |
+| Prototype label | `AERMOTUS` | Do not replace the current product identity automatically. |
+| Version | `0.18.24-preview`, version code `49` | Do not copy version numbers; derive the new version from the repository release policy. |
+| SDK | min 26, target/compile 36 | Keep compatible with the current API-36 build unless CI/device evidence justifies a change. |
+| Gesture model size | `8,373,440` bytes | Continue requiring exact size verification. |
+| Gesture model SHA-256 | `97952348cf6a6a4915c2ea1496b4b37ebabc50cbbf80571435643c455f2b0482` | Preserve exact checksum verification; do not silently substitute a model. |
+| Foreground capture | Camera foreground service | Preserve the current explicit camera foreground-service configuration. |
+| Prototype launcher | `ProductionActivity` | Recover the observable product workflow only after runtime behavior is tested; do not change the launcher blindly. |
+| Calibration profile | Prototype exposed profile version `2` | Use an explicit schema version and migration/default tests; invalid profiles must fail closed to defaults. |
+| Pointer freshness limit | `220 ms` hard maximum | Start as a named, configurable policy constant; validate on replay and devices before tuning. |
+| Gesture freshness limit | `450 ms` hard maximum | Start as a named, configurable policy constant; validate on replay and devices before tuning. |
+| Maximum in-flight vision work | `2` for pointer and gestures | Enforce bounded work, but do not assume `2` is optimal on every device. Benchmark before changing. |
+| Native ABIs | `arm64-v8a`, `armeabi-v7a`, `x86`, `x86_64` | Preserve required device/emulator coverage; use ABI filters only with an explicit size/support decision. |
+
+The prototype was also verified to be a **debuggable preview artifact**. Do not copy `debuggable`, signing, version, or release-packaging properties into a production build.
+
+The prototype manifest used broader accessibility/window-content behavior and included network-related permissions. The current repository intentionally minimizes this surface. Keep the current safe configuration unless a separate privacy/policy review approves a specific capability, with tests proving that no window content or network data is collected unnecessarily.
+
 The repository may contain these supporting documents:
 
 - `PROTOTYPE_CODE_REVIEW.md`
