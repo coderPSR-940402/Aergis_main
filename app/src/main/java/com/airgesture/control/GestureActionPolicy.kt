@@ -1,8 +1,13 @@
 package com.airgesture.control
 
-/** Defines which pointer-originated actions are controlled by the gesture-actions setting. */
+/** Separates pointer-originated actions from classifier-mapped system actions. */
 object GestureActionPolicy {
+    /** Compatibility alias for callers that authorize pointer-originated actions. */
     fun isEnabled(gesturesEnabled: Boolean, action: AirAction): Boolean {
+        return isPointerActionEnabled(gesturesEnabled, action)
+    }
+
+    fun isPointerActionEnabled(gesturesEnabled: Boolean, action: AirAction): Boolean {
         if (!gesturesEnabled) return false
         return when (action) {
             AirAction.TAP,
@@ -10,5 +15,9 @@ object GestureActionPolicy {
             AirAction.SCROLL_DOWN -> true
             else -> false
         }
+    }
+
+    fun isClassifierActionEnabled(gesturesEnabled: Boolean, action: AirAction): Boolean {
+        return gesturesEnabled && action != AirAction.NONE
     }
 }
