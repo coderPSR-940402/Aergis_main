@@ -30,6 +30,22 @@ Requires physical Android devices and covers camera latency, tracking quality, p
 | False actions | Unintended accessibility actions per campaign hour | Device-unverified | Zero unexplained actions in release gate |
 | Duplicate-fire rate | Extra action per deliberate gesture | Device-unverified | Zero re-arm violations in release gate |
 
+## Deterministic pointer replay contract
+
+Repository-complete pointer benchmarks use `PointerReplayTrace` and
+`PointerReplayBenchmark` so results are reproducible without Android hardware.
+
+- Every trace has a stable `traceId`, contiguous zero-based frame sequence, and
+  non-decreasing timestamp in milliseconds.
+- Source and expected coordinates are finite normalized values in `[0, 1]`.
+- Invalid traces are rejected before the mapper is invoked; they must never be
+  silently clamped into a passing result.
+- Reports include frame count, duration, mean absolute Euclidean error, p95
+  absolute error, maximum error, and output-step metrics.
+- A benchmark record must include the commit SHA, trace ID, mapper/profile
+  configuration, and whether the result is repository-complete or
+  device-dependent.
+
 ## Regression rules
 
 - A safety regression is an automatic failure.
