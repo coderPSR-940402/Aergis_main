@@ -16,7 +16,7 @@ class GestureInterpreterTest {
 
         var direction = SwipeDirection.NONE
         for (i in 0 until 5) {
-            direction = engine.processFrame(Point3D(i * 0.05f, 0.5f), i * 33L)
+            direction = engine.processFrame(Point3D(0.50f + i * 0.05f, 0.5f), i * 33L)
         }
 
         assertEquals(SwipeDirection.RIGHT, direction)
@@ -25,10 +25,10 @@ class GestureInterpreterTest {
     @Test
     fun productionEngineSuppressesSamplesDuringCooldown() {
         val engine = SwipeGestureEngine(windowSize = 3, returnCooldownMs = 300L)
-        engine.processFrame(Point3D(0f, 0.5f), 1L)
-        engine.processFrame(Point3D(0.1f, 0.5f), 34L)
-        assertEquals(SwipeDirection.RIGHT, engine.processFrame(Point3D(0.2f, 0.5f), 67L))
+        engine.processFrame(Point3D(0.50f, 0.5f), 1L)
+        engine.processFrame(Point3D(0.60f, 0.5f), 34L)
+        assertEquals(SwipeDirection.RIGHT, engine.processFrame(Point3D(0.70f, 0.5f), 67L))
 
-        assertFalse(engine.processFrame(Point3D(0.25f, 0.5f), 100L) == SwipeDirection.RIGHT)
+        assertFalse(engine.processFrame(Point3D(0.75f, 0.5f), 100L) == SwipeDirection.RIGHT)
     }
 }
