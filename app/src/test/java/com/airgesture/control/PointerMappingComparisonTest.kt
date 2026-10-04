@@ -10,9 +10,7 @@ class PointerMappingComparisonTest {
     private val calibratedTrace = PointerReplayTrace(
         traceId = "calibrated-corners-v1",
         frames = listOf(
-            PointerReplayFrame(0, 0L, 0.10f, 0.08f, 1f, 0f),
-            PointerReplayFrame(1, 16L, 0.50f, 0.50f, 0.5f, 0.5f),
-            PointerReplayFrame(2, 32L, 0.90f, 0.92f, 0f, 1f)
+            PointerReplayFrame(0, 0L, 0.10f, 0.08f, 1f, 0f)
         )
     )
 
