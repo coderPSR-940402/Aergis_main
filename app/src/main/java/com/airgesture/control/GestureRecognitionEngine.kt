@@ -40,6 +40,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
     init {
         AirRuntime.visionReady = false
         AirRuntime.visionError = null
+        AirRuntime.resetVisionTelemetry()
     }
 
     @ExperimentalGetImage
@@ -115,6 +116,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         observedAtMs: Long
     ) {
         val freshness = freshnessPolicy.evaluate(timestamp, observedAtMs)
+        AirRuntime.recordVisionResult(freshness)
         if (!freshness.accepted) {
             Log.d(TAG, "Vision result rejected: ${freshness.reason}")
             resetTrackingState()

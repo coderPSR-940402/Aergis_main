@@ -15,6 +15,18 @@ data class PointerSnapshot(
     val tracking: Boolean
 )
 
+data class VisionTelemetry(
+    val totalResults: Long = 0L,
+    val acceptedResults: Long = 0L,
+    val rejectedResults: Long = 0L,
+    val duplicateResults: Long = 0L,
+    val outOfOrderResults: Long = 0L,
+    val staleResults: Long = 0L,
+    val excessiveGapResults: Long = 0L,
+    val invalidClockOrderResults: Long = 0L,
+    val lastRejectionReason: String? = null
+)
+
 data class AirRuntimeState(
     val running: Boolean = false,
     val cameraReady: Boolean = false,
@@ -33,6 +45,7 @@ data class AirRuntimeState(
     val lastGesture: String = "None",
     val handedness: String = "Unknown",
     val pointer: PointerSnapshot = PointerSnapshot(0f, 0f, false),
+    val visionTelemetry: VisionTelemetry = VisionTelemetry(),
     /** Invalidates actions queued under an older session or safety state. */
     val actionEpoch: Long = 0L
 ) {
@@ -190,6 +203,46 @@ object AirRuntime {
         }
     }
 
+    internal fun recordVisionResult(decision: VisionResultFreshnessPolicy.Decision) {
+        _state.update { current ->
+            val telemetry = current.visionTelemetry
+            val total = telemetry.totalResults.safeIncrement()
+            if (decision.accepted) {
+                current.copy(
+                    visionTelemetry = telemetry.copy(
+                        totalResults = total,
+                        acceptedResults = telemetry.acceptedResults.safeIncrement()
+                    )
+                )
+            } else {
+                val updated = when (decision.reason) {
+                    VisionResultFreshnessPolicy.RejectionReason.DUPLICATE_TIMESTAMP ->
+                        telemetry.copy(duplicateResults = telemetry.duplicateResults.safeIncrement())
+                    VisionResultFreshnessPolicy.RejectionReason.OUT_OF_ORDER_TIMESTAMP ->
+                        telemetry.copy(outOfOrderResults = telemetry.outOfOrderResults.safeIncrement())
+                    VisionResultFreshnessPolicy.RejectionReason.STALE_RESULT ->
+                        telemetry.copy(staleResults = telemetry.staleResults.safeIncrement())
+                    VisionResultFreshnessPolicy.RejectionReason.EXCESSIVE_GAP ->
+                        telemetry.copy(excessiveGapResults = telemetry.excessiveGapResults.safeIncrement())
+                    VisionResultFreshnessPolicy.RejectionReason.INVALID_CLOCK_ORDER ->
+                        telemetry.copy(invalidClockOrderResults = telemetry.invalidClockOrderResults.safeIncrement())
+                    VisionResultFreshnessPolicy.RejectionReason.ACCEPTED -> telemetry
+                }
+                current.copy(
+                    visionTelemetry = updated.copy(
+                        totalResults = total,
+                        rejectedResults = telemetry.rejectedResults.safeIncrement(),
+                        lastRejectionReason = decision.reason.name
+                    )
+                )
+            }
+        }
+    }
+
+    internal fun resetVisionTelemetry() {
+        _state.update { it.copy(visionTelemetry = VisionTelemetry()) }
+    }
+
     fun pointerSnapshot(): PointerSnapshot = state.value.pointer
 
     fun status(context: Context): RuntimeStatus {
@@ -202,3 +255,5 @@ object AirRuntime {
         )
     }
 }
+
+private fun Long.safeIncrement(): Long = if (this == Long.MAX_VALUE) this else this + 1L
