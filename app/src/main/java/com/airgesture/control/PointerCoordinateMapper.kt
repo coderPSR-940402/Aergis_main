@@ -19,5 +19,9 @@ object PointerCoordinateMapper {
         return Point(normalizedX, normalizedY)
     }
 
+    /** Applies a validated user calibration; the default mapping remains unchanged. */
+    fun map(x: Float, y: Float, calibration: PointerCalibration): Point =
+        calibration.map(x.coerceIn(0f, 1f), y.coerceIn(0f, 1f))
+
     data class Point(val x: Float, val y: Float)
 }
