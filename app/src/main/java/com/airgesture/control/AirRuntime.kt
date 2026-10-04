@@ -32,7 +32,9 @@ data class AirRuntimeState(
     val handsDetected: Int = 0,
     val lastGesture: String = "None",
     val handedness: String = "Unknown",
-    val pointer: PointerSnapshot = PointerSnapshot(0f, 0f, false)
+    val pointer: PointerSnapshot = PointerSnapshot(0f, 0f, false),
+    /** Invalidates actions queued under an older session or safety state. */
+    val actionEpoch: Long = 0L
 ) {
     val pointerTracking: Boolean
         get() = pointer.tracking
@@ -85,7 +87,9 @@ object AirRuntime {
 
     var running: Boolean
         get() = state.value.running
-        set(value) = _state.update { it.copy(running = value) }
+        set(value) = _state.update {
+            if (it.running == value) it else it.copy(running = value, actionEpoch = it.actionEpoch + 1L)
+        }
 
     var cameraReady: Boolean
         get() = state.value.cameraReady
@@ -97,15 +101,24 @@ object AirRuntime {
 
     var gesturesEnabled: Boolean
         get() = state.value.gesturesEnabled
-        set(value) = _state.update { it.copy(gesturesEnabled = value) }
+        set(value) = _state.update {
+            if (it.gesturesEnabled == value) it
+            else it.copy(gesturesEnabled = value, actionEpoch = it.actionEpoch + 1L)
+        }
 
     var controlMode: ControlMode
         get() = state.value.controlMode
-        set(value) = _state.update { it.copy(controlMode = value) }
+        set(value) = _state.update {
+            if (it.controlMode == value) it
+            else it.copy(controlMode = value, actionEpoch = it.actionEpoch + 1L)
+        }
 
     var motionActive: Boolean
         get() = state.value.motionActive
-        set(value) = _state.update { it.copy(motionActive = value) }
+        set(value) = _state.update {
+            if (it.motionActive == value) it
+            else it.copy(motionActive = value, actionEpoch = it.actionEpoch + 1L)
+        }
 
     fun setMotionState(state: MotionState) {
         _state.update {
@@ -115,7 +128,8 @@ object AirRuntime {
                 it.copy(
                     motionActive = state.active,
                     motionMagnitude = state.magnitude,
-                    motionReason = state.reason
+                    motionReason = state.reason,
+                    actionEpoch = it.actionEpoch + 1L
                 )
             }
         }
@@ -126,7 +140,10 @@ object AirRuntime {
         set(value) = _state.update { it.copy(motionSensorsAvailable = value) }
 
     fun setForegroundContext(context: ForegroundContextState) {
-        _state.update { it.copy(foregroundContext = context) }
+        _state.update {
+            if (it.foregroundContext == context) it
+            else it.copy(foregroundContext = context, actionEpoch = it.actionEpoch + 1L)
+        }
     }
 
     var handPreference: ControlHandPreference
@@ -161,6 +178,9 @@ object AirRuntime {
 
     val pointerY: Float
         get() = state.value.pointerY
+
+    val actionEpoch: Long
+        get() = state.value.actionEpoch
 
     fun setPointerState(x: Float, y: Float, tracking: Boolean) {
         val safeX = x.coerceIn(0f, 1f)

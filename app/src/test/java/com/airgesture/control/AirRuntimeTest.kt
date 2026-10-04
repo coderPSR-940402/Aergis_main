@@ -29,6 +29,26 @@ class AirRuntimeTest {
     }
 
     @Test
+    fun actionEpochChangesForSafetyStateButNotPointerMovement() {
+        AirRuntime.controlMode = ControlMode.OFF
+        val initialEpoch = AirRuntime.actionEpoch
+
+        AirRuntime.setPointerState(0.2f, 0.3f, tracking = true)
+        assertEquals(initialEpoch, AirRuntime.actionEpoch)
+
+        AirRuntime.controlMode = ControlMode.READY
+        assertTrue(AirRuntime.actionEpoch > initialEpoch)
+
+        val readyEpoch = AirRuntime.actionEpoch
+        AirRuntime.gesturesEnabled = false
+        assertTrue(AirRuntime.actionEpoch > readyEpoch)
+
+        AirRuntime.gesturesEnabled = true
+        AirRuntime.controlMode = ControlMode.OFF
+        AirRuntime.setPointerState(0f, 0f, tracking = false)
+    }
+
+    @Test
     fun uiStateDoesNotChangeForPointerCoordinatesWhenTrackingStateIsUnchanged() {
         AirRuntime.setPointerState(0.1f, 0.2f, tracking = true)
         val first = AirRuntime.uiStateSnapshot()

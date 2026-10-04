@@ -74,6 +74,7 @@ class AirAccessibilityService : AccessibilityService() {
     fun dispatch(action: AirAction) {
         if (action == AirAction.NONE) return
         if (!isActionAllowed(action)) return
+        val dispatchEpoch = AirRuntime.actionEpoch
         // Gesture recognition runs off the main thread. Snapshot the target now;
         // otherwise a queued click can land wherever the cursor moved later.
         val display = screenSize()
@@ -85,14 +86,16 @@ class AirAccessibilityService : AccessibilityService() {
             // (for example, after a device-motion or protected-screen event). Check
             // again immediately before injecting instead of trusting the frame-time
             // decision above.
-            if (!isActionAllowed(action)) return@post
+            if (!isActionAllowed(action, dispatchEpoch)) return@post
             when (action) {
                 AirAction.NONE -> Unit
                 AirAction.TAP -> performClickAt(targetX, targetY)
                 AirAction.DOUBLE_TAP -> {
                     performClickAt(targetX, targetY)
                     mainHandler.postDelayed({
-                        if (isActionAllowed(action)) performClickAt(targetX, targetY)
+                        if (isActionAllowed(action, dispatchEpoch)) {
+                            performClickAt(targetX, targetY)
+                        }
                     }, DOUBLE_TAP_GAP_MS)
                 }
                 AirAction.BACK -> performGlobalAction(GLOBAL_ACTION_BACK)
@@ -105,13 +108,16 @@ class AirAccessibilityService : AccessibilityService() {
         }
     }
 
-    private fun isActionAllowed(action: AirAction): Boolean = ActionSafetyPolicy.evaluate(
-        action = action,
-        gesturesEnabled = AirRuntime.gesturesEnabled,
-        controlMode = AirRuntime.controlMode,
-        motionActive = AirRuntime.motionActive,
-        foregroundSafety = AirRuntime.state.value.foregroundContext.safety
-    ).allowed
+    private fun isActionAllowed(action: AirAction, expectedEpoch: Long? = null): Boolean {
+        if (expectedEpoch != null && AirRuntime.actionEpoch != expectedEpoch) return false
+        return ActionSafetyPolicy.evaluate(
+            action = action,
+            gesturesEnabled = AirRuntime.gesturesEnabled,
+            controlMode = AirRuntime.controlMode,
+            motionActive = AirRuntime.motionActive,
+            foregroundSafety = AirRuntime.state.value.foregroundContext.safety
+        ).allowed
+    }
 
     private fun performClickAt(x: Float, y: Float) {
         val path = Path().apply { moveTo(x, y) }
