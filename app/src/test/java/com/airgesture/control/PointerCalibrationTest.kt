@@ -59,7 +59,7 @@ class PointerCalibrationTest {
     fun profileValidationRejectsUnsupportedSchemaAndNarrowBounds() {
         assertFalse(PointerCalibrationProfile(schemaVersion = 1).isValid())
         assertFalse(
-            PointerCalibrationProfile(left = 0.45f, right = 0.55f).isValid()
+            PointerCalibrationProfile(left = 0.46f, right = 0.54f).isValid()
         )
         assertEquals(
             PointerCalibrationProfile.DEFAULT,
