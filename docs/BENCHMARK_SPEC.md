@@ -64,6 +64,17 @@ error, mean output step, or peak output step. A candidate does not need to be
 better on every trace to proceed, but it must not introduce an unexplained
 regression beyond the declared tolerance.
 
+## Center-gated swipe contract
+
+Swipe replay cases must begin inside the normalized center gate (`x` and `y`
+between `0.25` and `0.75`, inclusive) before directional motion can arm the
+detector. A trace that remains outside the gate must produce no swipe action,
+even when its displacement and velocity exceed the normal directional
+thresholds. After valid initiation, the hand may leave the gate to complete the
+swipe. Non-finite, out-of-range, duplicate, or out-of-order samples are invalid
+and must reset the pending swipe trace. A detected swipe also requires a new
+center initiation after cooldown; it may not re-fire from continued edge motion.
+
 The initial tolerances are intentionally conservative and are measurement
 defaults, not product claims: mean error `+0.01`, p95 error `+0.02`, peak error
 `+0.03`, mean output step `+0.02`, and peak output step `+0.04` in normalized

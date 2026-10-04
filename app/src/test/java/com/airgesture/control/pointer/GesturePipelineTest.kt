@@ -64,12 +64,53 @@ class GesturePipelineTest {
         var direction = SwipeDirection.NONE
         for (i in 0 until 5) {
             direction = engine.processFrame(
-                Point3D(x = i * 0.05f, y = 0.5f),
+                Point3D(x = 0.50f + i * 0.05f, y = 0.5f),
                 i * 33L
             )
         }
 
         assertEquals(SwipeDirection.RIGHT, direction)
+    }
+
+    @Test
+    fun swipeCannotArmFromOutsideCenterGate() {
+        val engine = SwipeGestureEngine(windowSize = 3)
+
+        for (i in 0 until 6) {
+            assertEquals(
+                SwipeDirection.NONE,
+                engine.processFrame(Point3D(x = 0.05f + i * 0.03f, y = 0.5f), i * 33L)
+            )
+        }
+    }
+
+    @Test
+    fun swipeMayLeaveCenterGateAfterDeliberateInitiation() {
+        val engine = SwipeGestureEngine(windowSize = 5)
+
+        var direction = SwipeDirection.NONE
+        for (i in 0 until 5) {
+            direction = engine.processFrame(
+                Point3D(x = 0.50f + i * 0.10f, y = 0.5f),
+                i * 33L
+            )
+        }
+
+        assertEquals(SwipeDirection.RIGHT, direction)
+    }
+
+    @Test
+    fun nonFiniteSwipeCoordinatesFailClosed() {
+        val engine = SwipeGestureEngine(windowSize = 3)
+
+        assertEquals(
+            SwipeDirection.NONE,
+            engine.processFrame(Point3D(x = Float.NaN, y = 0.5f), 0L)
+        )
+        assertEquals(
+            SwipeDirection.NONE,
+            engine.processFrame(Point3D(x = 0.5f, y = 0.5f), 33L)
+        )
     }
 
     @Test
