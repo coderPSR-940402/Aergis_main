@@ -23,6 +23,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
     private val closed = AtomicBoolean(false)
     private val mappings = ActionMappingStore(context)
+    private val calibrationStore = PointerCalibrationStore(context)
+    private val calibrationProfile = calibrationStore.profile().takeIf { calibrationStore.enabled() }
     private val interpreter = GestureInterpreter(mappings)
     private var recognizer: GestureRecognizer? = null
     private var pointerInitialized = false
@@ -169,7 +171,9 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             }
             // GestureInterpreter owns the single latency-bounded pointer filter. Applying
             // another filter here doubled lag and made fast motion appear to freeze.
-            val stabilized = PointerCoordinateMapper.map(processed.smoothedX, processed.smoothedY)
+            val stabilized = calibrationProfile?.let {
+                PointerCoordinateMapper.map(processed.smoothedX, processed.smoothedY, it)
+            } ?: PointerCoordinateMapper.map(processed.smoothedX, processed.smoothedY)
             pointerInitialized = true
             lastPointerAt = timestamp
             AirRuntime.setPointerState(stabilized.x, stabilized.y, true)
