@@ -46,6 +46,14 @@ Repository-complete pointer benchmarks use `PointerReplayTrace` and
   configuration, and whether the result is repository-complete or
   device-dependent.
 
+`PointerReplayEvidenceCodec` serializes these aggregate results as a bounded,
+versioned line-oriented payload. It deliberately excludes camera frames,
+landmarks, foreground package names, and user content. Decoding is fail-closed
+for malformed numbers, unknown schema versions, missing required fields, and
+payloads above the size limit. This makes evidence suitable for CI artifacts
+and diagnostics without turning the benchmark format into a raw recording
+channel.
+
 ## Legacy-versus-candidate comparison
 
 `PointerMappingComparisonBenchmark` runs the same validated trace through the
