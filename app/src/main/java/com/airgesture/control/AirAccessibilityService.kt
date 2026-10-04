@@ -109,9 +109,10 @@ class AirAccessibilityService : AccessibilityService() {
     }
 
     private fun isActionAllowed(action: AirAction, expectedEpoch: Long? = null): Boolean {
-        if (expectedEpoch != null && AirRuntime.actionEpoch != expectedEpoch) return false
-        return ActionSafetyPolicy.evaluate(
+        return ActionDispatchGate.evaluate(
             action = action,
+            expectedEpoch = expectedEpoch,
+            currentEpoch = AirRuntime.actionEpoch,
             gesturesEnabled = AirRuntime.gesturesEnabled,
             controlMode = AirRuntime.controlMode,
             motionActive = AirRuntime.motionActive,
