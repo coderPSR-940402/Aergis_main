@@ -118,7 +118,7 @@ object PointerReplayBenchmark {
             meanAbsoluteError = errors.takeIf { it.isNotEmpty() }?.average()?.toFloat(),
             p95AbsoluteError = errors.takeIf { it.isNotEmpty() }?.let {
                 it[(ceil(it.size * 0.95).toInt() - 1).coerceIn(0, it.lastIndex)]
-            },
+            }?.toFloat(),
             maxAbsoluteError = errors.maxOrNull()?.toFloat(),
             meanOutputStep = outputSteps.takeIf { it.isNotEmpty() }?.average()?.toFloat(),
             maxOutputStep = outputSteps.maxOrNull()?.toFloat()
