@@ -39,6 +39,55 @@ The prototype was also verified to be a **debuggable preview artifact**. Do not 
 
 The prototype manifest used broader accessibility/window-content behavior and included network-related permissions. The current repository intentionally minimizes this surface. Keep the current safe configuration unless a separate privacy/policy review approves a specific capability, with tests proving that no window content or network data is collected unnecessarily.
 
+## Recording-derived behavior evidence
+
+Two user-supplied AERMOTUS screen recordings provide additional behavioral evidence. Treat the following as observed product behavior to reproduce or benchmark, not as exact hidden implementation specifications. Recordings can contain OCR/visual-analysis ambiguity; verify labels and timing against frame inspection and device tests before making them contractual.
+
+Observed navigation and workflow:
+
+- Persistent bottom navigation: `Control`, `Practice`, `Setup`, `More`.
+- Control dashboard with active/paused state, last action, tracking state, hand ownership, and confidence.
+- Practice workflow for Swipe Left, Swipe Right, Swipe Up, Swipe Down, and Fine Scroll/Double Gun.
+- Setup workflow for Accessibility, Camera, Air Pointer, pointer activation, mapping, and calibration.
+- More/technical area with `READY`, session/camera/recognizer health, `RESTORE SAFE GESTURE`, and technical console access.
+- Tracking overlay remains visible while the service operates outside the app, including on the Android Home screen.
+
+Observed tracking states and overlay data:
+
+- States resembling `WAITING`, `STARTING`, `SYNCING`, `STATIC/STABLE`, and a transitional tracking state whose exact label needs frame-level verification.
+- Hand ownership such as `Left 98%`, `Right 99%`, or `None 0%`.
+- Recognized gesture and confidence, such as `Victory 85%`, `Closed fist 90%`, or `Thumb up 90%`.
+- A visible pointer-tip marker and tracking engine/status identifiers.
+- The overlay must remain privacy-minimized and must not expose window content.
+
+Observed pointer and calibration behavior:
+
+- Air Pointer uses index fingertip landmark `8` as the primary cursor input.
+- Index/middle fingertip contact appears to provide click and long-press semantics; recover only through the existing action-policy and release/re-arm gates.
+- Control hand options observed: `Auto`, `Left`, and `Right`.
+- Pointer activation is explicit through an `OPEN POINTER`-type action.
+- Calibration displayed raw fingertip, validated aim, and final calibrated/smoothed cursor as separate visual layers.
+- Observed initial calibration bounds: left `0.10`, right `0.90`, top `0.08`, bottom `0.92`.
+- Observed center-precision defaults were approximately `1.00` on horizontal and vertical controls.
+- These values are initial UI/reference defaults only. Keep them configurable, validate them, and benchmark them; do not treat the recording as proof of optimal values.
+
+Observed mapping surface:
+
+- Broad swipes mapped to incremental or directional scrolling.
+- Double Gun/Fine Scroll mapped to small up/down/left/right scroll increments.
+- Other gesture mappings visibly included Back, Home, Recent apps, Select/click focused item, Copy, Paste, Volume up/down, Notifications, Quick settings, and Media play/pause.
+- Observed example mappings included Closed fist → Back, Thumb up/down → Volume up/down, Victory → Recent apps, I-love-you → Media play/pause, and Pinky up → Notifications.
+- Treat mappings as user-configurable data. Preserve safe defaults, explicit confirmation/arming, cooldown, ownership, and final dispatch checks. Do not hard-code recording examples as universal defaults without product approval.
+
+Observed diagnostics and performance evidence:
+
+- Pointer cadence warning when tracking smoothness falls below a target.
+- Intent/interaction states resembling `TRACKING`, `ARMING`, `POINTING`, and `HIDDEN` with confidence and motion/scale telemetry.
+- Local app-private landmark audit/corpus recording toggle.
+- Latency panels showing source-to-pointer and source-to-action measurements; examples observed were approximately `63 ms` and `110/370 ms`.
+- Submitted and result frame rates observed around `6–12 fps`, with result yield near `100%` in the recordings.
+- These are observations, not acceptance thresholds. Add telemetry and replay/device benchmarks before setting targets. Any audit corpus must remain app-private, bounded, user-controlled, and free of window content or network upload.
+
 The repository may contain these supporting documents:
 
 - `PROTOTYPE_CODE_REVIEW.md`
