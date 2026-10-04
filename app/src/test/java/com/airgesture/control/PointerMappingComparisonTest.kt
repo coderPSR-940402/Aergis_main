@@ -18,9 +18,12 @@ class PointerMappingComparisonTest {
 
     @Test
     fun calibratedProfileCanBeComparedAgainstLegacyBaseline() {
-        val comparison = PointerMappingComparisonBenchmark.compare(calibratedTrace) { x, y ->
-            PointerCoordinateMapper.map(x, y, PointerCalibrationProfile.DEFAULT)
-        }
+        val comparison = PointerMappingComparisonBenchmark.compare(
+            trace = calibratedTrace,
+            candidateMapper = { x, y ->
+                PointerCoordinateMapper.map(x, y, PointerCalibrationProfile.DEFAULT)
+            }
+        )
 
         assertTrue(comparison?.passed == true)
         assertEquals(0f, comparison?.candidate?.meanAbsoluteError ?: -1f, 0.0001f)
@@ -54,9 +57,10 @@ class PointerMappingComparisonTest {
         val invalid = calibratedTrace.copy(
             frames = calibratedTrace.frames.drop(1)
         )
-        val comparison = PointerMappingComparisonBenchmark.compare(invalid) { x, y ->
-            PointerCoordinateMapper.map(x, y)
-        }
+        val comparison = PointerMappingComparisonBenchmark.compare(
+            trace = invalid,
+            candidateMapper = { x, y -> PointerCoordinateMapper.map(x, y) }
+        )
 
         assertNull(comparison)
     }
