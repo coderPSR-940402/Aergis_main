@@ -1,0 +1,79 @@
+name: Gemini Free AI Developer & Code Auditor
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  audit-and-build:
+    if: ${{ !github.event.comment || contains(github.event.comment.body, '@gemini') }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Codebase
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Grant Execute Permission for Gradle
+        run: chmod +x gradlew
+
+      - name: Execute Android Unit Tests
+        id: gradle_test
+        continue-on-error: true
+        run: |
+          ./gradlew testDebugUnitTest --continue > build_output.log 2>&1
+          echo "BUILD_STATUS=$?" >> $GITHUB_ENV
+
+      - name: Analyze Code & Build Output via Gemini API
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          GIT_DIFF=$(git diff ORIG_HEAD HEAD | head -c 20000 | jq -sR .)
+          BUILD_LOG=$(cat build_output.log | tail -n 100 | jq -sR .)
+
+          PROMPT="You are a Senior Android Architect auditing com.airgesture.control in Aergis. Review the following Git diff and Gradle build log.
+          Build Exit Code: $BUILD_STATUS
+
+          Git Diff:
+          $GIT_DIFF
+
+          Gradle Log:
+          $BUILD_LOG
+
+          Identify build failure root causes, potential runtime crashes in AccessibilityServices or landmark filters, and provide direct refactoring fixes."
+
+          RESPONSE=$(curl -s -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d "{\"contents\":[{\"parts\":[{\"text\":$PROMPT}]}]}")
+
+          ANALYSIS=$(echo "$RESPONSE" | jq -r '.candidates[0].content.parts[0].text // "Error generating analysis."')
+          echo "$ANALYSIS" > analysis_result.md
+
+      - name: Post Comment to Pull Request
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const body = fs.readFileSync('analysis_result.md', 'utf8');
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `### 🤖 Gemini Free Automated Audit\n\n${body}`
+            });
