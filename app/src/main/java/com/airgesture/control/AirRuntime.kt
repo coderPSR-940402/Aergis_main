@@ -45,6 +45,8 @@ data class AirRuntimeState(
     val lastGesture: String = "None",
     val handedness: String = "Unknown",
     val pointer: PointerSnapshot = PointerSnapshot(0f, 0f, false),
+    /** Raw normalized vision coordinates, before screen mapping or calibration. */
+    val rawPointer: PointerSnapshot = PointerSnapshot(0f, 0f, false),
     val visionTelemetry: VisionTelemetry = VisionTelemetry(),
     /** Invalidates actions queued under an older session or safety state. */
     val actionEpoch: Long = 0L
@@ -203,6 +205,14 @@ object AirRuntime {
         }
     }
 
+    fun setRawPointerState(x: Float, y: Float, tracking: Boolean) {
+        val safeX = x.coerceIn(0f, 1f)
+        val safeY = y.coerceIn(0f, 1f)
+        _state.update {
+            it.copy(rawPointer = PointerSnapshot(safeX, safeY, tracking))
+        }
+    }
+
     internal fun recordVisionResult(decision: VisionResultFreshnessPolicy.Decision) {
         _state.update { current ->
             val telemetry = current.visionTelemetry
@@ -244,6 +254,8 @@ object AirRuntime {
     }
 
     fun pointerSnapshot(): PointerSnapshot = state.value.pointer
+
+    fun rawPointerSnapshot(): PointerSnapshot = state.value.rawPointer
 
     fun status(context: Context): RuntimeStatus {
         val snapshot = state.value

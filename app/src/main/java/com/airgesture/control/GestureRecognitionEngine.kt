@@ -171,6 +171,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             }
             // GestureInterpreter owns the single latency-bounded pointer filter. Applying
             // another filter here doubled lag and made fast motion appear to freeze.
+            AirRuntime.setRawPointerState(processed.smoothedX, processed.smoothedY, true)
             val stabilized = calibrationProfile?.let {
                 PointerCoordinateMapper.map(processed.smoothedX, processed.smoothedY, it)
             } ?: PointerCoordinateMapper.map(processed.smoothedX, processed.smoothedY)
@@ -209,6 +210,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 gestureTransaction.reset()
             }
             AirRuntime.setPointerState(AirRuntime.pointerX, AirRuntime.pointerY, false)
+            AirRuntime.setRawPointerState(AirRuntime.rawPointerSnapshot().x, AirRuntime.rawPointerSnapshot().y, false)
             AirAccessibilityService.instance?.updatePointer(0f, 0f, false)
         }
 

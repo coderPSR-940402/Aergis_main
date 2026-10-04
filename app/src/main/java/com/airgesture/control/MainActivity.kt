@@ -126,7 +126,8 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun captureCalibrationSample() {
-        val accepted = calibrationSession.addSample(AirRuntime.pointerX, AirRuntime.pointerY)
+        val rawPointer = AirRuntime.rawPointerSnapshot()
+        val accepted = calibrationSession.addSample(rawPointer.x, rawPointer.y)
         calibrationState = calibrationSession.state()
         calibrationSampleCount = calibrationSession.sampleCount()
         calibrationMessage = if (accepted) {
