@@ -25,6 +25,15 @@ class GesturePipelineTest {
     }
 
     @Test
+    fun enablingGestureActionsAllowsConfiguredClassifierActions() {
+        assertTrue(GestureActionPolicy.isClassifierActionEnabled(true, AirAction.BACK))
+        assertTrue(GestureActionPolicy.isClassifierActionEnabled(true, AirAction.HOME))
+        assertTrue(GestureActionPolicy.isClassifierActionEnabled(true, AirAction.RECENTS))
+        assertFalse(GestureActionPolicy.isClassifierActionEnabled(true, AirAction.NONE))
+        assertFalse(GestureActionPolicy.isClassifierActionEnabled(false, AirAction.BACK))
+    }
+
+    @Test
     fun clickRequiresDwellAndDoesNotRepeatUntilRelease() {
         val machine = ClickHysteresisStateMachine(
             engageThreshold = 0.18f,

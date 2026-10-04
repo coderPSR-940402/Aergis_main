@@ -174,7 +174,9 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             lastPointerAt = timestamp
             AirRuntime.setPointerState(stabilized.x, stabilized.y, true)
 
-            if (processed.isClickEngaged && GestureActionPolicy.isEnabled(AirRuntime.gesturesEnabled, AirAction.TAP)) {
+            if (processed.isClickEngaged &&
+                GestureActionPolicy.isPointerActionEnabled(AirRuntime.gesturesEnabled, AirAction.TAP)
+            ) {
                 AirAccessibilityService.instance?.dispatch(AirAction.TAP)
             }
             val swipeAction = when (processed.detectedSwipe) {
@@ -184,7 +186,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 SwipeDirection.RIGHT,
                 SwipeDirection.NONE -> AirAction.NONE
             }
-            if (GestureActionPolicy.isEnabled(AirRuntime.gesturesEnabled, swipeAction)) {
+            if (GestureActionPolicy.isPointerActionEnabled(AirRuntime.gesturesEnabled, swipeAction)) {
                 AirAccessibilityService.instance?.dispatch(swipeAction)
             }
 
@@ -220,7 +222,9 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 ownershipId = commandOwnerId
             )
         )
-        if (confirmedAction != null && GestureActionPolicy.isEnabled(AirRuntime.gesturesEnabled, confirmedAction)) {
+        if (confirmedAction != null &&
+            GestureActionPolicy.isClassifierActionEnabled(AirRuntime.gesturesEnabled, confirmedAction)
+        ) {
             AirAccessibilityService.instance?.dispatch(confirmedAction)
         }
         AirRuntime.visionError = null
