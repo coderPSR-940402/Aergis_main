@@ -54,6 +54,19 @@ class GestureInterpreter(
         val stabilized = pointerFilter.filter(smoothedPoint.x, smoothedPoint.y, timestampMs)
         previousIndexTip = constrainedTip
         val dNorm = validator.calculateNormalizedFingerDistance(landmarks).coerceIn(0f, 1.5f)
+        if (!poseEvidence.accepted) {
+            // Rejected geometry must not carry click dwell or swipe history into a later frame.
+            clickStateMachine.reset()
+            swipeEngine.reset()
+            return ProcessedGestureResult(
+                stabilized.x,
+                stabilized.y,
+                false,
+                SwipeDirection.NONE,
+                dNorm.takeIf { it.isFinite() } ?: 1.5f,
+                poseEvidence
+            )
+        }
         val clickState = clickStateMachine.processFrame(dNorm, timestampMs)
         val swipeState = swipeEngine.processFrame(Point3D(stabilized.x, stabilized.y, rawIndexTip.z), timestampMs)
         return ProcessedGestureResult(stabilized.x, stabilized.y, clickState, swipeState, dNorm, poseEvidence)

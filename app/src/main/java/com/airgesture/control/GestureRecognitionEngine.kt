@@ -7,6 +7,7 @@ import androidx.camera.core.ExperimentalGetImage
 import androidx.camera.core.ImageProxy
 import com.airgesture.control.filtering.KinematicValidator
 import com.airgesture.control.filtering.Point3D
+import com.airgesture.control.filtering.PoseGeometryEvidenceEvaluator
 import com.airgesture.control.pointer.SwipeDirection
 import com.google.mediapipe.framework.image.MediaImageBuilder
 import com.google.mediapipe.tasks.components.containers.NormalizedLandmark
@@ -26,6 +27,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
     private val calibrationStore = PointerCalibrationStore(context)
     private val calibrationProfile = calibrationStore.profile().takeIf { calibrationStore.enabled() }
     private val interpreter = GestureInterpreter(mappings)
+    private val poseEvidenceEvaluator = PoseGeometryEvidenceEvaluator()
     private var recognizer: GestureRecognizer? = null
     private var pointerInitialized = false
     private var lastPointerAt = 0L
@@ -156,17 +158,33 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         AirRuntime.lastGesture = gestureName
         val indexTip = selectedHand?.getOrNull(INDEX_TIP)
         val commandOwnerId = handSelection?.ownerId
-        val commandTracking = controlSafe && landmarks.isNotEmpty() &&
-            handSelection != null && (!AirRuntime.pointerEnabled || indexTip != null)
 
-        if (pointerActive && indexTip != null) {
-            // Re-use landmark points list buffer
-            reusablePointsList.clear()
+        reusablePointsList.clear()
+        if (selectedHand != null) {
             for (i in selectedHand.indices) {
                 val lm = selectedHand[i]
                 reusablePointsList.add(Point3D(lm.x(), lm.y(), lm.z()))
             }
+        }
+        val selectedPoseEvidence = if (selectedHand != null) {
+            poseEvidenceEvaluator.evaluate(reusablePointsList)
+        } else {
+            null
+        }
+        if (selectedPoseEvidence != null) {
+            AirRuntime.recordPoseEvidence(selectedPoseEvidence)
+        } else {
+            AirRuntime.clearPoseEvidence()
+        }
+        val commandTracking = CommandTrackingEligibility.isEligible(
+            controlSafe = controlSafe,
+            handSelected = handSelection != null,
+            pointerEnabled = AirRuntime.pointerEnabled,
+            indexTipPresent = indexTip != null,
+            poseEvidence = selectedPoseEvidence
+        )
 
+        if (pointerActive && indexTip != null) {
             val processed = interpreter.processFrame(reusablePointsList, timestamp) ?: run {
                 resetTrackingState()
                 return
@@ -182,7 +200,8 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             lastPointerAt = timestamp
             AirRuntime.setPointerState(stabilized.x, stabilized.y, true)
 
-            if (processed.isClickEngaged &&
+            if (processed.poseEvidence.accepted &&
+                processed.isClickEngaged &&
                 GestureActionPolicy.isPointerActionEnabled(AirRuntime.gesturesEnabled, AirAction.TAP)
             ) {
                 AirAccessibilityService.instance?.dispatch(AirAction.TAP)
@@ -194,7 +213,9 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 SwipeDirection.RIGHT,
                 SwipeDirection.NONE -> AirAction.NONE
             }
-            if (GestureActionPolicy.isPointerActionEnabled(AirRuntime.gesturesEnabled, swipeAction)) {
+            if (processed.poseEvidence.accepted &&
+                GestureActionPolicy.isPointerActionEnabled(AirRuntime.gesturesEnabled, swipeAction)
+            ) {
                 AirAccessibilityService.instance?.dispatch(swipeAction)
             }
 
@@ -202,7 +223,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 stabilized.x,
                 stabilized.y,
                 true,
-                processed?.isClickEngaged == true
+                processed.isClickEngaged
             )
         } else {
             pointerInitialized = false
