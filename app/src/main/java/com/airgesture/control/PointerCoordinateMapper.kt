@@ -8,9 +8,8 @@ object PointerCoordinateMapper {
     private const val ACTIVE_BOTTOM = 0.98f
 
     fun map(x: Float, y: Float): Point {
-        // MediaPipe normalized coordinates are already expressed in the upright
-        // coordinate space produced by the CameraX rotation options. For a
-        // front-facing camera, mirror horizontal movement only; never swap axes.
+        // The recognition engine converts image-space landmarks to upright coordinates.
+        // Apply front-camera horizontal mirroring once, after that rotation.
         val mirroredX = 1f - x.coerceIn(0f, 1f)
         val normalizedX =
             ((mirroredX - ACTIVE_LEFT) / (ACTIVE_RIGHT - ACTIVE_LEFT)).coerceIn(0f, 1f)
