@@ -127,11 +127,6 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         val landmarks = result.landmarks()
         AirRuntime.handsDetected = landmarks.size
 
-        val gesture = result.gestures().firstOrNull()?.firstOrNull()
-        val gestureName = gesture?.categoryName()?.takeIf { it.isNotBlank() } ?: "None"
-        val gestureScore = gesture?.score() ?: 0f
-        AirRuntime.lastGesture = gestureName
-
         // Populate handedness without creating new list/string objects
         handednessList.clear()
         val rawHandedness = result.handedness()
@@ -152,6 +147,13 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         val pointerActive = AirRuntime.pointerEnabled && controlSafe
         val handSelection = selectPointerHand(landmarks, handednessList, timestamp)
         val selectedHand = handSelection?.index?.let(landmarks::getOrNull)
+        val gesture = OwnedGestureEvidenceSelector.select(
+            result.gestures(),
+            handSelection?.index
+        )
+        val gestureName = gesture?.categoryName()?.takeIf { it.isNotBlank() } ?: "None"
+        val gestureScore = gesture?.score() ?: 0f
+        AirRuntime.lastGesture = gestureName
         val indexTip = selectedHand?.getOrNull(INDEX_TIP)
         val commandOwnerId = handSelection?.ownerId
         val commandTracking = controlSafe && landmarks.isNotEmpty() &&
@@ -200,7 +202,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 stabilized.x,
                 stabilized.y,
                 true,
-                processed?.isClickEngaged == true
+                processed.isClickEngaged
             )
         } else {
             pointerInitialized = false
