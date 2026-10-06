@@ -50,6 +50,13 @@ class GestureInterpreter(
         val poseEvidence = poseEvidenceEvaluator.evaluate(landmarks)
         val rawIndexTip = landmarks[KinematicValidator.INDEX_TIP]
         val constrainedTip = validator.validateAndConstrainIndexTip(landmarks, previousIndexTip)
+        if (!rawIndexTip.x.isFinite() || !rawIndexTip.y.isFinite() ||
+            !constrainedTip.x.isFinite() || !constrainedTip.y.isFinite()
+        ) {
+            // NaN survives clamping and would poison both pointer filters across valid frames.
+            reset()
+            return null
+        }
         val smoothedPoint = smoother.filter(constrainedTip.x, constrainedTip.y, timestampMs)
         val stabilized = pointerFilter.filter(smoothedPoint.x, smoothedPoint.y, timestampMs)
         previousIndexTip = constrainedTip
