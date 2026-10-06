@@ -53,6 +53,24 @@ class PointerReplayBenchmarkTest {
     }
 
     @Test
+    fun replayRejectsNonFiniteMapperOutput() {
+        val trace = PointerReplayTrace(
+            traceId = "invalid-output-v1",
+            frames = listOf(
+                PointerReplayFrame(0, 0L, 0.5f, 0.5f, 0.5f, 0.5f)
+            )
+        )
+
+        val report = PointerReplayBenchmark.run(trace) { _, _ ->
+            PointerCoordinateMapper.Point(Float.NaN, 0.5f)
+        }
+
+        assertFalse(report.isValid)
+        assertNull(report.metrics)
+        assertTrue(report.validation.errors.any { it.contains("mapper output") })
+    }
+
+    @Test
     fun replayCalculatesP95AndOutputStepMetricsDeterministically() {
         val trace = PointerReplayTrace(
             traceId = "metric-v1",

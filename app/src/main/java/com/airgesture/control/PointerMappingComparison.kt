@@ -46,8 +46,10 @@ object PointerMappingComparisonBenchmark {
             PointerCoordinateMapper.map(x, y)
         }
         val candidateReport = PointerReplayBenchmark.run(trace, candidateMapper)
+        if (!baselineReport.isValid || !candidateReport.isValid) return null
         val baseline = baselineReport.metrics ?: return null
         val candidate = candidateReport.metrics ?: return null
+        if (!baseline.hasErrorMetrics() || !candidate.hasErrorMetrics()) return null
         val failures = buildList {
             if (candidate.frameCount != baseline.frameCount) {
                 add("candidate frame count differs from baseline")
@@ -73,4 +75,7 @@ object PointerMappingComparisonBenchmark {
         }
         return PointerMappingComparison(trace.traceId, baseline, candidate, thresholds, failures)
     }
+
+    private fun PointerReplayMetrics.hasErrorMetrics(): Boolean =
+        meanAbsoluteError != null && p95AbsoluteError != null && maxAbsoluteError != null
 }

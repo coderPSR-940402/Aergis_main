@@ -51,6 +51,24 @@ class PointerMappingComparisonTest {
     }
 
     @Test
+    fun missingExpectedMetricsProduceNoComparisonReport() {
+        val missingExpected = PointerReplayTrace(
+            traceId = "missing-expected-v1",
+            frames = listOf(
+                PointerReplayFrame(0, 0L, 0.25f, 0.25f),
+                PointerReplayFrame(1, 16L, 0.75f, 0.75f)
+            )
+        )
+
+        val comparison = PointerMappingComparisonBenchmark.compare(
+            trace = missingExpected,
+            candidateMapper = { x, y -> PointerCoordinateMapper.Point(x, y) }
+        )
+
+        assertNull(comparison)
+    }
+
+    @Test
     fun invalidTraceProducesNoComparisonReport() {
         val invalid = calibratedTrace.copy(
             frames = calibratedTrace.frames.drop(1)
