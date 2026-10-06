@@ -91,8 +91,20 @@ object PointerReplayBenchmark {
         val validation = trace.validate()
         if (!validation.isValid) return PointerReplayReport(validation, null)
 
-        val outputs = trace.frames.map { frame ->
-            frame to mapper(frame.sourceX, frame.sourceY)
+        val outputs = ArrayList<Pair<PointerReplayFrame, PointerCoordinateMapper.Point>>(trace.frames.size)
+        trace.frames.forEachIndexed { index, frame ->
+            val output = mapper(frame.sourceX, frame.sourceY)
+            if (!output.x.isFinite() || output.x !in 0f..1f ||
+                !output.y.isFinite() || output.y !in 0f..1f
+            ) {
+                return PointerReplayReport(
+                    PointerReplayValidation(
+                        listOf("frame[$index]: mapper output must be finite and normalized")
+                    ),
+                    null
+                )
+            }
+            outputs += frame to output
         }
         val errors = outputs.mapNotNull { (frame, output) ->
             if (frame.expectedX == null || frame.expectedY == null) {
