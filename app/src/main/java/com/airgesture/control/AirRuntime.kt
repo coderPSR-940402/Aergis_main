@@ -27,6 +27,22 @@ data class VisionTelemetry(
     val lastRejectionReason: String? = null
 )
 
+enum class ActionDispatchOutcome {
+    POLICY_DENIED,
+    PLATFORM_REJECTED,
+    COMPLETED,
+    CANCELLED
+}
+
+data class ActionDispatchTelemetry(
+    val totalOutcomes: Long = 0L,
+    val policyDenied: Long = 0L,
+    val platformRejected: Long = 0L,
+    val completed: Long = 0L,
+    val cancelled: Long = 0L,
+    val lastOutcome: ActionDispatchOutcome? = null
+)
+
 data class AirRuntimeState(
     val running: Boolean = false,
     val cameraReady: Boolean = false,
@@ -48,6 +64,7 @@ data class AirRuntimeState(
     /** Raw normalized vision coordinates, before screen mapping or calibration. */
     val rawPointer: PointerSnapshot = PointerSnapshot(0f, 0f, false),
     val visionTelemetry: VisionTelemetry = VisionTelemetry(),
+    val actionDispatchTelemetry: ActionDispatchTelemetry = ActionDispatchTelemetry(),
     /** Invalidates actions queued under an older session or safety state. */
     val actionEpoch: Long = 0L
 ) {
@@ -251,6 +268,32 @@ object AirRuntime {
 
     internal fun resetVisionTelemetry() {
         _state.update { it.copy(visionTelemetry = VisionTelemetry()) }
+    }
+
+    internal fun recordActionDispatchOutcome(outcome: ActionDispatchOutcome) {
+        _state.update { current ->
+            val telemetry = current.actionDispatchTelemetry
+            val updated = when (outcome) {
+                ActionDispatchOutcome.POLICY_DENIED ->
+                    telemetry.copy(policyDenied = telemetry.policyDenied.safeIncrement())
+                ActionDispatchOutcome.PLATFORM_REJECTED ->
+                    telemetry.copy(platformRejected = telemetry.platformRejected.safeIncrement())
+                ActionDispatchOutcome.COMPLETED ->
+                    telemetry.copy(completed = telemetry.completed.safeIncrement())
+                ActionDispatchOutcome.CANCELLED ->
+                    telemetry.copy(cancelled = telemetry.cancelled.safeIncrement())
+            }
+            current.copy(
+                actionDispatchTelemetry = updated.copy(
+                    totalOutcomes = telemetry.totalOutcomes.safeIncrement(),
+                    lastOutcome = outcome
+                )
+            )
+        }
+    }
+
+    internal fun resetActionDispatchTelemetry() {
+        _state.update { it.copy(actionDispatchTelemetry = ActionDispatchTelemetry()) }
     }
 
     fun pointerSnapshot(): PointerSnapshot = state.value.pointer

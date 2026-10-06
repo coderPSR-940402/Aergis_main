@@ -83,6 +83,26 @@ class AirRuntimeTest {
     }
 
     @Test
+    fun actionDispatchTelemetryCountsEachPlatformOutcome() {
+        AirRuntime.resetActionDispatchTelemetry()
+
+        AirRuntime.recordActionDispatchOutcome(ActionDispatchOutcome.POLICY_DENIED)
+        AirRuntime.recordActionDispatchOutcome(ActionDispatchOutcome.PLATFORM_REJECTED)
+        AirRuntime.recordActionDispatchOutcome(ActionDispatchOutcome.COMPLETED)
+        AirRuntime.recordActionDispatchOutcome(ActionDispatchOutcome.CANCELLED)
+
+        val telemetry = AirRuntime.state.value.actionDispatchTelemetry
+        assertEquals(4L, telemetry.totalOutcomes)
+        assertEquals(1L, telemetry.policyDenied)
+        assertEquals(1L, telemetry.platformRejected)
+        assertEquals(1L, telemetry.completed)
+        assertEquals(1L, telemetry.cancelled)
+        assertEquals(ActionDispatchOutcome.CANCELLED, telemetry.lastOutcome)
+
+        AirRuntime.resetActionDispatchTelemetry()
+    }
+
+    @Test
     fun uiStateDoesNotChangeForPointerCoordinatesWhenTrackingStateIsUnchanged() {
         AirRuntime.setPointerState(0.1f, 0.2f, tracking = true)
         val first = AirRuntime.uiStateSnapshot()
