@@ -4,6 +4,8 @@ import com.airgesture.control.filtering.AdaptiveKalmanFilter
 import com.airgesture.control.filtering.KinematicValidator
 import com.airgesture.control.filtering.LandmarkSmoother2D
 import com.airgesture.control.filtering.Point3D
+import com.airgesture.control.filtering.PoseGeometryEvidence
+import com.airgesture.control.filtering.PoseGeometryEvidenceEvaluator
 import com.airgesture.control.pointer.ClickHysteresisStateMachine
 import com.airgesture.control.pointer.SwipeDirection
 import com.airgesture.control.pointer.SwipeGestureEngine
@@ -13,7 +15,8 @@ data class ProcessedGestureResult(
     val smoothedY: Float,
     val isClickEngaged: Boolean,
     val detectedSwipe: SwipeDirection,
-    val normalizedDistance: Float
+    val normalizedDistance: Float,
+    val poseEvidence: PoseGeometryEvidence
 )
 
 class GestureInterpreter(
@@ -22,7 +25,8 @@ class GestureInterpreter(
     private val validator: KinematicValidator = KinematicValidator(),
     private val clickStateMachine: ClickHysteresisStateMachine = ClickHysteresisStateMachine(),
     private val swipeEngine: SwipeGestureEngine = SwipeGestureEngine(),
-    private val pointerFilter: AdaptiveKalmanFilter = AdaptiveKalmanFilter()
+    private val pointerFilter: AdaptiveKalmanFilter = AdaptiveKalmanFilter(),
+    private val poseEvidenceEvaluator: PoseGeometryEvidenceEvaluator = PoseGeometryEvidenceEvaluator()
 ) {
     private var previousIndexTip: Point3D? = null
 
@@ -43,6 +47,7 @@ class GestureInterpreter(
             reset()
             return null
         }
+        val poseEvidence = poseEvidenceEvaluator.evaluate(landmarks)
         val rawIndexTip = landmarks[KinematicValidator.INDEX_TIP]
         val constrainedTip = validator.validateAndConstrainIndexTip(landmarks, previousIndexTip)
         val smoothedPoint = smoother.filter(constrainedTip.x, constrainedTip.y, timestampMs)
@@ -51,7 +56,7 @@ class GestureInterpreter(
         val dNorm = validator.calculateNormalizedFingerDistance(landmarks).coerceIn(0f, 1.5f)
         val clickState = clickStateMachine.processFrame(dNorm, timestampMs)
         val swipeState = swipeEngine.processFrame(Point3D(stabilized.x, stabilized.y, rawIndexTip.z), timestampMs)
-        return ProcessedGestureResult(stabilized.x, stabilized.y, clickState, swipeState, dNorm)
+        return ProcessedGestureResult(stabilized.x, stabilized.y, clickState, swipeState, dNorm, poseEvidence)
     }
 
     fun reset() {

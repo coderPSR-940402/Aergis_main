@@ -75,6 +75,17 @@ swipe. Non-finite, out-of-range, duplicate, or out-of-order samples are invalid
 and must reset the pending swipe trace. A detected swipe also requires a new
 center initiation after cooldown; it may not re-fire from continued edge motion.
 
+## Pose geometry evidence contract
+
+Pose evidence is an aggregate diagnostic record, not a landmark recording. It
+may contain landmark count, finite-landmark count, bounded palm-width and bone
+ratios, an acceptance bit, and a named rejection reason. It must not contain
+raw coordinates, camera frames, foreground package names, accessibility-node
+content, or user content. Invalid, non-finite, out-of-range, insufficient, or
+kinematically excessive input fails closed in the evidence evaluator. Evidence
+generation is observational in this slice and does not bypass the existing
+gesture, freshness, motion, foreground, or action-dispatch gates.
+
 The initial tolerances are intentionally conservative and are measurement
 defaults, not product claims: mean error `+0.01`, p95 error `+0.02`, peak error
 `+0.03`, mean output step `+0.02`, and peak output step `+0.04` in normalized
