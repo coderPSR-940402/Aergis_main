@@ -31,6 +31,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
     private var recognizer: GestureRecognizer? = null
     private var pointerInitialized = false
     private var lastPointerAt = 0L
+    private var lastFrameRotationDegrees: Int? = null
     private val handOwnership = HandOwnershipTracker()
     private val gestureTransaction = GestureTransactionStateMachine()
     private val freshnessPolicy = VisionResultFreshnessPolicy()
@@ -65,7 +66,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                     imageProcessingOptions,
                     timestamp
                 )
-                publish(result, timestamp, SystemClock.uptimeMillis())
+                publish(result, timestamp, SystemClock.uptimeMillis(), image.imageInfo.rotationDegrees)
             } finally {
                 mpImage.close()
             }
@@ -117,7 +118,8 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
     private fun publish(
         result: GestureRecognizerResult,
         timestamp: Long,
-        observedAtMs: Long
+        observedAtMs: Long,
+        rotationDegrees: Int
     ) {
         val freshness = freshnessPolicy.evaluate(timestamp, observedAtMs)
         AirRuntime.recordVisionResult(freshness)
@@ -125,6 +127,11 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             Log.d(TAG, "Vision result rejected: ${freshness.reason}")
             resetTrackingState()
             return
+        }
+        if (lastFrameRotationDegrees != rotationDegrees) {
+            resetTrackingState()
+            lastFrameRotationDegrees = rotationDegrees
+            Log.d(TAG, "Camera landmark rotation: $rotationDegrees degrees clockwise")
         }
         val landmarks = result.landmarks()
         AirRuntime.handsDetected = landmarks.size
@@ -147,7 +154,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             !AirRuntime.motionActive &&
             AirRuntime.state.value.foregroundContext.safety == ForegroundSafety.SAFE
         val pointerActive = AirRuntime.pointerEnabled && controlSafe
-        val handSelection = selectPointerHand(landmarks, handednessList, timestamp)
+        val handSelection = selectPointerHand(landmarks, handednessList, timestamp, rotationDegrees)
         val selectedHand = handSelection?.index?.let(landmarks::getOrNull)
         val gesture = OwnedGestureEvidenceSelector.select(
             result.gestures(),
@@ -163,7 +170,9 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         if (selectedHand != null) {
             for (i in selectedHand.indices) {
                 val lm = selectedHand[i]
-                reusablePointsList.add(Point3D(lm.x(), lm.y(), lm.z()))
+                reusablePointsList.add(
+                    CameraCoordinateTransform.toUpright(lm.x(), lm.y(), lm.z(), rotationDegrees)
+                )
             }
         }
         val selectedPoseEvidence = if (selectedHand != null) {
@@ -264,12 +273,16 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
     private fun selectPointerHand(
         landmarks: List<List<NormalizedLandmark>>,
         physicalHandedness: List<String>,
-        timestampMs: Long
+        timestampMs: Long,
+        rotationDegrees: Int
     ): HandOwnershipTracker.Selection? {
         if (landmarks.isEmpty()) return null
         val observations = landmarks.mapIndexedNotNull { index, hand ->
             if (hand.size <= PINKY_MCP) return@mapIndexedNotNull null
-            val wrist = hand[WRIST]
+            val rawWrist = hand[WRIST]
+            val wrist = CameraCoordinateTransform.toUpright(
+                rawWrist.x(), rawWrist.y(), rawWrist.z(), rotationDegrees
+            )
             val indexMcp = hand[INDEX_MCP]
             val pinkyMcp = hand[PINKY_MCP]
             val palmSize = Point3D(indexMcp.x(), indexMcp.y()).distance2DTo(
@@ -278,8 +291,8 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             HandObservation(
                 index = index,
                 handedness = physicalHandedness.getOrNull(index) ?: "Unknown",
-                centerX = wrist.x(),
-                centerY = wrist.y(),
+                centerX = wrist.x,
+                centerY = wrist.y,
                 palmSize = palmSize
             )
         }
