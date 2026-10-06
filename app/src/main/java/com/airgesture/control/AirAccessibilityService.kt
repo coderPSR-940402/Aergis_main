@@ -73,7 +73,10 @@ class AirAccessibilityService : AccessibilityService() {
 
     fun dispatch(action: AirAction) {
         if (action == AirAction.NONE) return
-        if (!isActionAllowed(action)) return
+        if (!isActionAllowed(action)) {
+            AirRuntime.recordActionDispatchOutcome(ActionDispatchOutcome.POLICY_DENIED)
+            return
+        }
         val dispatchEpoch = AirRuntime.actionEpoch
         // Gesture recognition runs off the main thread. Snapshot the target now;
         // otherwise a queued click can land wherever the cursor moved later.
@@ -86,7 +89,10 @@ class AirAccessibilityService : AccessibilityService() {
             // (for example, after a device-motion or protected-screen event). Check
             // again immediately before injecting instead of trusting the frame-time
             // decision above.
-            if (!isActionAllowed(action, dispatchEpoch)) return@post
+            if (!isActionAllowed(action, dispatchEpoch)) {
+                AirRuntime.recordActionDispatchOutcome(ActionDispatchOutcome.POLICY_DENIED)
+                return@post
+            }
             when (action) {
                 AirAction.NONE -> Unit
                 AirAction.TAP -> performClickAt(targetX, targetY)
@@ -95,12 +101,14 @@ class AirAccessibilityService : AccessibilityService() {
                     mainHandler.postDelayed({
                         if (isActionAllowed(action, dispatchEpoch)) {
                             performClickAt(targetX, targetY)
+                        } else {
+                            AirRuntime.recordActionDispatchOutcome(ActionDispatchOutcome.POLICY_DENIED)
                         }
                     }, DOUBLE_TAP_GAP_MS)
                 }
-                AirAction.BACK -> performGlobalAction(GLOBAL_ACTION_BACK)
-                AirAction.HOME -> performGlobalAction(GLOBAL_ACTION_HOME)
-                AirAction.RECENTS -> performGlobalAction(GLOBAL_ACTION_RECENTS)
+                AirAction.BACK -> recordGlobalAction(GLOBAL_ACTION_BACK)
+                AirAction.HOME -> recordGlobalAction(GLOBAL_ACTION_HOME)
+                AirAction.RECENTS -> recordGlobalAction(GLOBAL_ACTION_RECENTS)
                 AirAction.LONG_PRESS -> performLongPressAt(targetX, targetY)
                 AirAction.SCROLL_UP -> performScroll(up = true, anchorX = targetX, anchorY = targetY)
                 AirAction.SCROLL_DOWN -> performScroll(up = false, anchorX = targetX, anchorY = targetY)
@@ -131,7 +139,7 @@ class AirAccessibilityService : AccessibilityService() {
                 )
             )
             .build()
-        dispatchGesture(gesture, null, mainHandler)
+        dispatchGestureWithOutcome(gesture)
     }
 
     private fun performLongPressAt(x: Float, y: Float) {
@@ -139,7 +147,7 @@ class AirAccessibilityService : AccessibilityService() {
         val gesture = GestureDescription.Builder()
             .addStroke(GestureDescription.StrokeDescription(path, 0L, LONG_PRESS_DURATION_MS))
             .build()
-        dispatchGesture(gesture, null, mainHandler)
+        dispatchGestureWithOutcome(gesture)
     }
 
     private fun performScroll(up: Boolean, anchorX: Float, anchorY: Float) {
@@ -156,7 +164,34 @@ class AirAccessibilityService : AccessibilityService() {
         val gesture = GestureDescription.Builder()
             .addStroke(GestureDescription.StrokeDescription(path, 0L, SCROLL_DURATION_MS))
             .build()
-        dispatchGesture(gesture, null, mainHandler)
+        dispatchGestureWithOutcome(gesture)
+    }
+
+    private fun recordGlobalAction(action: Int) {
+        val accepted = performGlobalAction(action)
+        AirRuntime.recordActionDispatchOutcome(
+            if (accepted) ActionDispatchOutcome.COMPLETED
+            else ActionDispatchOutcome.PLATFORM_REJECTED
+        )
+    }
+
+    private fun dispatchGestureWithOutcome(gesture: GestureDescription) {
+        val accepted = dispatchGesture(
+            gesture,
+            object : GestureResultCallback() {
+                override fun onCompleted(gestureDescription: GestureDescription?) {
+                    AirRuntime.recordActionDispatchOutcome(ActionDispatchOutcome.COMPLETED)
+                }
+
+                override fun onCancelled(gestureDescription: GestureDescription?) {
+                    AirRuntime.recordActionDispatchOutcome(ActionDispatchOutcome.CANCELLED)
+                }
+            },
+            mainHandler
+        )
+        if (!accepted) {
+            AirRuntime.recordActionDispatchOutcome(ActionDispatchOutcome.PLATFORM_REJECTED)
+        }
     }
 
     @Suppress("DEPRECATION")
