@@ -202,7 +202,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 stabilized.x,
                 stabilized.y,
                 true,
-                processed.isClickEngaged
+                processed?.isClickEngaged == true
             )
         } else {
             pointerInitialized = false
