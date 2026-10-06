@@ -7,8 +7,8 @@ Aergis is an Android air-gesture control application. The repository is the acti
 | Property | Current value |
 |---|---|
 | Package | `com.airgesture.control` |
-| Version | `0.10.0-preview` |
-| Version code | `10` |
+| Version | *update with each build* |
+| Version code | *update with each build* |
 | Minimum SDK | `26` |
 | Compile / target SDK | `36` |
 | Java | `17` |
