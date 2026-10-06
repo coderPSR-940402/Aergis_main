@@ -169,6 +169,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 resetTrackingState()
                 return
             }
+            AirRuntime.recordPoseEvidence(processed.poseEvidence)
             // GestureInterpreter owns the single latency-bounded pointer filter. Applying
             // another filter here doubled lag and made fast motion appear to freeze.
             AirRuntime.setRawPointerState(processed.smoothedX, processed.smoothedY, true)
@@ -268,6 +269,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         handOwnership.reset()
         interpreter.reset()
         gestureTransaction.reset()
+        AirRuntime.clearPoseEvidence()
         AirRuntime.setPointerState(AirRuntime.pointerX, AirRuntime.pointerY, false)
         AirAccessibilityService.instance?.updatePointer(0f, 0f, false)
     }

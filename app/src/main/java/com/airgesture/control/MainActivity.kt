@@ -213,6 +213,8 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                     item { CalibrationCard(runtime.pointerTracking) }
+                    item { PracticeCard(runtime.controlMode) }
+                    item { DiagnosticsCard(runtime) }
                     item {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -478,6 +480,76 @@ class MainActivity : ComponentActivity() {
                 ) {
                     Text(stringResource(R.string.calibration_reset_button))
                 }
+            }
+        }
+    }
+
+    @Composable
+    private fun PracticeCard(controlMode: ControlMode) {
+        ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(stringResource(R.string.practice_title), style = MaterialTheme.typography.titleMedium)
+                Text(stringResource(R.string.practice_description))
+                Text(stringResource(R.string.practice_safety_note))
+                Button(
+                    enabled = controlMode == ControlMode.ARMED,
+                    onClick = { AirRuntime.controlMode = ControlMode.READY },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(stringResource(R.string.practice_disarm))
+                }
+            }
+        }
+    }
+
+    @Composable
+    private fun DiagnosticsCard(runtime: AirRuntimeUiState) {
+        val pose = runtime.poseEvidence
+        val vision = runtime.visionTelemetry
+        val dispatch = runtime.actionDispatchTelemetry
+        ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text(stringResource(R.string.diagnostics_title), style = MaterialTheme.typography.titleMedium)
+                Text(stringResource(R.string.diagnostics_vision_counts, vision.acceptedResults, vision.rejectedResults))
+                Text(
+                    stringResource(
+                        R.string.diagnostics_last_rejection,
+                        vision.lastRejectionReason ?: stringResource(R.string.diagnostics_none)
+                    )
+                )
+                if (pose == null) {
+                    Text(stringResource(R.string.diagnostics_pose_waiting))
+                } else {
+                    Text(
+                        stringResource(
+                            R.string.diagnostics_pose_status,
+                            if (pose.accepted) {
+                                stringResource(R.string.diagnostics_accepted)
+                            } else {
+                                stringResource(R.string.diagnostics_rejected)
+                            },
+                            pose.finiteLandmarkCount,
+                            pose.landmarkCount
+                        )
+                    )
+                    Text(stringResource(R.string.diagnostics_pose_reason, pose.rejectionReason.name))
+                }
+                Text(
+                    stringResource(
+                        R.string.diagnostics_dispatch_counts,
+                        dispatch.completed,
+                        dispatch.cancelled,
+                        dispatch.platformRejected,
+                        dispatch.policyDenied
+                    )
+                )
+                Text(stringResource(R.string.diagnostics_privacy_note))
             }
         }
     }

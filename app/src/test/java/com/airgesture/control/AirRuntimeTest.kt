@@ -1,5 +1,7 @@
 package com.airgesture.control
 
+import com.airgesture.control.filtering.PoseGeometryEvidence
+import com.airgesture.control.filtering.PoseGeometryRejectionReason
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -100,6 +102,24 @@ class AirRuntimeTest {
         assertEquals(ActionDispatchOutcome.CANCELLED, telemetry.lastOutcome)
 
         AirRuntime.resetActionDispatchTelemetry()
+    }
+
+    @Test
+    fun poseEvidenceIsPublishedToUiStateAsAggregateData() {
+        val evidence = PoseGeometryEvidence(
+            landmarkCount = 21,
+            finiteLandmarkCount = 21,
+            normalizedPalmWidth = 0.2f,
+            indexBoneToPalmRatio = 0.8f,
+            fingertipToPalmRatio = 0.1f,
+            accepted = true,
+            rejectionReason = PoseGeometryRejectionReason.NONE
+        )
+
+        AirRuntime.recordPoseEvidence(evidence)
+
+        assertEquals(evidence, AirRuntime.uiStateSnapshot().poseEvidence)
+        assertEquals(21, AirRuntime.uiStateSnapshot().poseEvidence?.finiteLandmarkCount)
     }
 
     @Test

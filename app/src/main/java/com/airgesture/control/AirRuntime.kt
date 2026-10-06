@@ -1,6 +1,7 @@
 package com.airgesture.control
 
 import android.content.Context
+import com.airgesture.control.filtering.PoseGeometryEvidence
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -65,6 +66,7 @@ data class AirRuntimeState(
     val rawPointer: PointerSnapshot = PointerSnapshot(0f, 0f, false),
     val visionTelemetry: VisionTelemetry = VisionTelemetry(),
     val actionDispatchTelemetry: ActionDispatchTelemetry = ActionDispatchTelemetry(),
+    val poseEvidence: PoseGeometryEvidence? = null,
     /** Invalidates actions queued under an older session or safety state. */
     val actionEpoch: Long = 0L
 ) {
@@ -91,7 +93,10 @@ data class AirRuntimeUiState(
     val motionActive: Boolean,
     val motionSensorsAvailable: Boolean,
     val foregroundSafety: ForegroundSafety,
-    val safetyReason: String
+    val safetyReason: String,
+    val visionTelemetry: VisionTelemetry,
+    val actionDispatchTelemetry: ActionDispatchTelemetry,
+    val poseEvidence: PoseGeometryEvidence?
 )
 
 private fun AirRuntimeState.toUiState(): AirRuntimeUiState = AirRuntimeUiState(
@@ -107,7 +112,10 @@ private fun AirRuntimeState.toUiState(): AirRuntimeUiState = AirRuntimeUiState(
     motionActive = motionActive,
     motionSensorsAvailable = motionSensorsAvailable,
     foregroundSafety = foregroundContext.safety,
-    safetyReason = motionReason ?: foregroundContext.reason
+    safetyReason = motionReason ?: foregroundContext.reason,
+    visionTelemetry = visionTelemetry,
+    actionDispatchTelemetry = actionDispatchTelemetry,
+    poseEvidence = poseEvidence
 )
 
 object AirRuntime {
@@ -268,6 +276,14 @@ object AirRuntime {
 
     internal fun resetVisionTelemetry() {
         _state.update { it.copy(visionTelemetry = VisionTelemetry()) }
+    }
+
+    internal fun recordPoseEvidence(evidence: PoseGeometryEvidence) {
+        _state.update { it.copy(poseEvidence = evidence) }
+    }
+
+    internal fun clearPoseEvidence() {
+        _state.update { it.copy(poseEvidence = null) }
     }
 
     internal fun recordActionDispatchOutcome(outcome: ActionDispatchOutcome) {
