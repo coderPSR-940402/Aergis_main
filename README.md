@@ -98,3 +98,27 @@ The APK artifact name is tied to the commit SHA, making the build traceable to i
 ## Repository rule
 
 Do not replace the working implementation with unrelated historical Aergis repositories or assume that a remembered APK represents the current product state. The current repository plus its verified CI baseline is the source of truth.
+
+## Installing preview updates
+
+Use the **debug APK** from Aergis CI for device testing. Debug APKs use the
+permanent public preview identity in `ci/aergis-preview.keystore`; CI verifies
+its certificate before uploading an APK. Its password and key password are
+`android`, and its alias is `androiddebugkey`. This is intentionally a public
+test key, **never a production/release signing key**. Keep it unchanged across
+preview builds. Release artifacts remain unsigned and require a separate
+private production signing key.
+
+CI preview version codes are `1000 + GITHUB_RUN_NUMBER`. Install newer CI builds
+over older ones to retain app data, calibration and permissions; local builds
+use version code 1000 and cannot replace a newer CI APK normally. Re-running the
+same CI run retains the same version code and signing identity.
+
+Previously generated CI debug keys were different on each clean runner. If the
+currently installed APK uses one of those old keys, one final uninstall/install
+is needed to enter the permanent preview update chain. An old APK certificate
+alone cannot recover its private signing key.
+
+When returning from diagnostics sharing or saving, Aergis refreshes foreground
+safety when its own window actually regains focus. It does not automatically
+arm control or enable gesture actions. Protected screens still block actions.

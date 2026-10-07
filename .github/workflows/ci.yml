@@ -60,6 +60,9 @@ jobs:
         with:
           cache-provider: basic
 
+      - name: Verify persistent preview signing identity
+        run: python3 tools/test_preview_signing.py
+
       - name: Verify Gradle configuration
         run: ./gradlew --version
 
@@ -84,9 +87,15 @@ jobs:
           test -s "$APK"
           "$AAPT" dump badging "$APK" > apk-badging.txt
           grep -q "package: name='com.airgesture.control'" apk-badging.txt
-          grep -q "versionCode='10'" apk-badging.txt
+          EXPECTED_VERSION_CODE="$((1000 + GITHUB_RUN_NUMBER))"
+          grep -q "versionCode='$EXPECTED_VERSION_CODE'" apk-badging.txt
           grep -q "versionName='0.10.0-preview'" apk-badging.txt
-          echo "Debug APK verification passed"
+          APKSIGNER="${ANDROID_HOME}/build-tools/36.0.0/apksigner"
+          "$APKSIGNER" verify --verbose --print-certs "$APK" > apk-signing.txt
+          EXPECTED_CERT="$(cat ci/preview-certificate.sha256)"
+          ACTUAL_CERT="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' apk-signing.txt)"
+          test "$ACTUAL_CERT" = "$EXPECTED_CERT"
+          echo "Debug APK package, version and persistent signing identity verified"
 
       - name: Verify release APK
         shell: bash
@@ -130,6 +139,7 @@ jobs:
             app/build/outputs/apk/debug/app-debug.apk
             app/build/outputs/apk/release/app-release-unsigned.apk
             apk-sha256.txt
+            apk-signing.txt
             baseline.json
           if-no-files-found: error
 
