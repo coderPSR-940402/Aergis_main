@@ -10,17 +10,36 @@ android {
     namespace = "com.airgesture.control"
     compileSdk = 36
 
+    // CI run numbers increase across main and PR builds of the same workflow.
+    // Re-running a build keeps its version; local builds use the preview floor.
+    val previewBuildNumber = providers.environmentVariable("GITHUB_RUN_NUMBER").orElse("0").get().toInt()
+    require(previewBuildNumber in 0..2_099_999_000) { "Invalid preview build number" }
+
+    signingConfigs {
+        create("preview") {
+            // Public test identity only. Never use this key for production releases.
+            storeFile = rootProject.file("ci/aergis-preview.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     defaultConfig {
         applicationId = "com.airgesture.control"
         minSdk = 26
         targetSdk = 36
         buildConfigField("String", "SOURCE_COMMIT", "\"${System.getenv("GITHUB_SHA") ?: "local-uncommitted"}\"")
-        versionCode = 10
+        versionCode = 1000 + previewBuildNumber
         versionName = "0.10.0-preview"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildFeatures { compose = true; buildConfig = true }
+
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+    }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -29,6 +48,9 @@ android {
 
 
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("preview")
+        }
         release {
             isMinifyEnabled = true
             proguardFiles(

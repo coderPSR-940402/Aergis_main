@@ -128,6 +128,15 @@ class MainActivity : ComponentActivity() {
         refreshSettings()
     }
 
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) {
+            // A chooser/protected-screen event may be the last accessibility event.
+            // Actual window focus proves our own activity is foreground again.
+            AirRuntime.setForegroundContext(ForegroundContextPolicy.evaluate(packageName, javaClass.name))
+        }
+    }
+
     override fun onSaveInstanceState(outState: Bundle) {
         pendingPdf?.let { outState.putString("testing_pending_pdf", it.absolutePath) }
         pendingZip?.let { outState.putString("testing_pending_zip", it.absolutePath) }
