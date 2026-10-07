@@ -62,6 +62,7 @@ class AirAccessibilityService : AccessibilityService() {
         val overlay = pointerOverlay ?: return
         if (!pendingVisible) {
             overlay.hide()
+            TestingTools.event("overlay_applied", org.json.JSONObject().put("visible", false))
             return
         }
         if (!overlay.isVisible) overlay.show()
@@ -71,6 +72,8 @@ class AirAccessibilityService : AccessibilityService() {
             pendingY * display.height,
             pendingClicking
         )
+        TestingTools.event("overlay_applied", org.json.JSONObject().put("visible", overlay.isVisible)
+            .put("x", pendingX).put("y", pendingY).put("clicking", pendingClicking))
     }
 
     fun dispatch(action: AirAction) {

@@ -31,6 +31,14 @@ internal fun TestingToolsCard(onSave: (File) -> Unit, onShare: (DiagnosticExport
                 enabled = testing.mirror || (runtime.running && runtime.cameraReady && AirAccessibilityService.enabled())) {
                 Text(stringResource(if (testing.mirror) R.string.testing_mirror_hide else R.string.testing_mirror_show))
             }
+            Button(onClick = { TestingTools.setFilterMode(
+                if (testing.filterMode == PointerFilterMode.CURRENT) PointerFilterMode.VC49 else PointerFilterMode.CURRENT) }) {
+                Text(stringResource(R.string.testing_filter_mode, testing.filterMode.name))
+            }
+            Text(stringResource(R.string.testing_filter_description))
+            Button(onClick = { TestingTools.nextSegment() }) {
+                Text(stringResource(R.string.testing_segment, testing.segment.name))
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = { TestingTools.start(context) }, enabled = runtime.running && runtime.cameraReady &&
                     testing.status != RecordingStatus.RECORDING && testing.status != RecordingStatus.EXPORTING) {

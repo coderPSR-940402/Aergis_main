@@ -20,7 +20,7 @@ internal object DiagnosticReport {
                 try {
                     content(page.canvas)
                     paint.color = Color.GRAY; paint.textSize = 9f
-                    page.canvas.drawText("Aergis testing report  |  ${file.parentFile?.name}  |  ${number}/2", 36f, 812f, paint)
+                    page.canvas.drawText("Aergis testing report  |  ${file.parentFile?.name}  |  ${number}/3", 36f, 812f, paint)
                 } finally { doc.finishPage(page) }
             }
             fun text(c: android.graphics.Canvas, value: String, x: Float, y: Float, size: Float = 11f, bold: Boolean = false) {
@@ -92,6 +92,27 @@ internal object DiagnosticReport {
                 val error = summary.optString("writeError").takeIf { it != "null" && it.isNotBlank() }
                 if (error != null) y = wrap(c, "Recorder error (logs retained): $error", y + 8f)
                 wrap(c, "Scope: all frames delivered to the analysis callback are eligible for telemetry recording. CameraX may discard camera frames before analysis. Camera JPEGs are sampled at up to 2 fps; this is not full-rate video. Recorder queue losses are counted above. Coordinates and images are local until you choose Share or Save. The ZIP includes metadata.json, summary.json, frames.jsonl, events.jsonl, images and this PDF.", maxOf(y + 20f, 671f))
+            }
+            page(3) { c ->
+                text(c, "Pointer lineage comparison", 36f, 58f, 21f, true)
+                var y = wrap(c, "APK source: ${metadata.optString("sourceCommit", "unspecified")}", 89f)
+                y = wrap(c, "Historical reference: ${metadata.optString("historicalSource", "unspecified")}", y + 4f)
+                y = wrap(c, "Filter at start: ${metadata.optString("filterMode", "CURRENT")}. Both algorithms consume the same input. Units: fraction of screen, not pixels. Jitter requires a labelled stationary segment at one fixed target.", y + 9f)
+                y = wrap(c, "Visibility interruptions: ${summary.optInt("visibilityInterruptions")}. Pointer rejections: ${summary.optJSONObject("pointerRejections") ?: "none"}", y + 9f)
+                val comparisons = summary.optJSONObject("lineageComparison")
+                for (segment in comparisons?.keys()?.asSequence()?.sorted().orEmpty()) {
+                    text(c, segment, 36f, y + 19f, 12f, true); y += 28f
+                    val metrics = comparisons!!.getJSONObject(segment)
+                    for (mode in listOf("current", "vc49")) {
+                        val m = metrics.getJSONObject(mode)
+                        val error = String.format(Locale.US, "%.5f", m.optDouble("meanDistanceToMeasurement"))
+                        val jitter = if (m.optInt("stationarySamples") == 0) "unlabelled" else
+                            String.format(Locale.US, "%.5f", m.optDouble("stationaryJitterRms"))
+                        text(c, "$mode: ${m.optInt("samples")} samples / jitter $jitter / mean distance $error", 36f, y, 10f)
+                        y += 14f
+                    }
+                }
+                wrap(c, "The ZIP contains exact per-frame candidate outputs and overlay/action events. Lower distance to measured landmarks is not automatically better. These metrics cannot establish end-to-end camera/display latency or replace physical-device testing.", maxOf(y + 23f, 705f))
             }
             file.outputStream().use { doc.writeTo(it) }
         } finally { doc.close() }

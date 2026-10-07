@@ -28,7 +28,6 @@ class GestureInterpreter(
     private val pointerFilter: AdaptiveKalmanFilter = AdaptiveKalmanFilter(),
     private val poseEvidenceEvaluator: PoseGeometryEvidenceEvaluator = PoseGeometryEvidenceEvaluator()
 ) {
-    private var previousIndexTip: Point3D? = null
 
     fun interpret(signal: GestureSignal): GestureDecision {
         val source = when (signal.name.lowercase()) {
@@ -44,28 +43,18 @@ class GestureInterpreter(
 
     fun processFrame(landmarks: List<Point3D>, timestampMs: Long, actionsAllowed: Boolean = true): ProcessedGestureResult? {
         if (landmarks.size <= KinematicValidator.INDEX_TIP) {
-            reset()
+            resetActions()
             return null
         }
         val poseEvidence = poseEvidenceEvaluator.evaluate(landmarks)
         val rawIndexTip = landmarks[KinematicValidator.INDEX_TIP]
-        // Invalid palm/pose geometry is unsuitable for constraining a valid fingertip.
-        // Keep pointer feedback independent from the stronger evidence needed for actions.
-        val constrainedTip = if (poseEvidence.accepted) {
-            validator.validateAndConstrainIndexTip(landmarks, previousIndexTip)
-        } else {
-            rawIndexTip
-        }
-        if (!rawIndexTip.x.isFinite() || !rawIndexTip.y.isFinite() ||
-            !constrainedTip.x.isFinite() || !constrainedTip.y.isFinite()
-        ) {
-            // NaN survives clamping and would poison both pointer filters across valid frames.
-            reset()
+        // Position authority is exactly landmark 8; anatomy belongs to the action channel.
+        if (!rawIndexTip.x.isFinite() || !rawIndexTip.y.isFinite()) {
+            resetActions()
             return null
         }
-        val smoothedPoint = smoother.filter(constrainedTip.x, constrainedTip.y, timestampMs)
+        val smoothedPoint = smoother.filter(rawIndexTip.x, rawIndexTip.y, timestampMs)
         val stabilized = pointerFilter.filter(smoothedPoint.x, smoothedPoint.y, timestampMs)
-        previousIndexTip = constrainedTip
         val dNorm = validator.calculateNormalizedFingerDistance(landmarks).coerceIn(0f, 1.5f)
         if (!poseEvidence.accepted || !actionsAllowed) {
             // Rejected geometry or blocked actions must not carry dwell/swipe history forward.
@@ -86,7 +75,6 @@ class GestureInterpreter(
     }
 
     fun reset() {
-        previousIndexTip = null
         smoother.reset()
         resetActions()
         pointerFilter.reset()

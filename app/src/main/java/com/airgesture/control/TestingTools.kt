@@ -19,10 +19,12 @@ import java.util.concurrent.Semaphore
 import java.util.concurrent.atomic.AtomicLong
 import org.json.JSONObject
 
+internal enum class PointerTestSegment { UNLABELLED, STATIONARY, TRAVEL, FAST, REACQUIRE, EDGES, CLICK }
 internal enum class RecordingStatus { IDLE, RECORDING, EXPORTING, READY, ERROR }
-internal data class TestingState(val mirror: Boolean = false, val status: RecordingStatus = RecordingStatus.IDLE,
+internal data class TestingState(val mirror: Boolean = false, val filterMode: PointerFilterMode = PointerFilterMode.CURRENT, val segment: PointerTestSegment = PointerTestSegment.UNLABELLED, val status: RecordingStatus = RecordingStatus.IDLE,
     val frames: Int = 0, val dropped: Long = 0, val message: String? = null, val export: DiagnosticExport? = null)
-internal data class MirrorFrame(val bitmap: Bitmap, val hands: List<List<Point3D>>, val label: String)
+internal data class MirrorFrame(val bitmap: Bitmap, val hands: List<List<Point3D>>, val label: String,
+    val selectedHandIndex: Int? = null, val detail: String = "")
 
 /** Opt-in local testing only. A bounded queue keeps disk and PDF work off the vision thread. */
 internal object TestingTools {
@@ -52,6 +54,18 @@ internal object TestingTools {
         if (!enabled) _mirrorFrame.value = null
     }
 
+    fun setFilterMode(mode: PointerFilterMode) = synchronized(lock) {
+        if (_state.value.filterMode != mode) AirRuntime.invalidatePendingActions()
+        _state.value = _state.value.copy(filterMode = mode)
+        event("filter_mode", JSONObject().put("mode", mode.name))
+    }
+
+    fun nextSegment() = synchronized(lock) {
+        val entries = PointerTestSegment.entries
+        _state.value = _state.value.copy(segment = entries[(state.value.segment.ordinal + 1) % entries.size])
+        event("test_segment", JSONObject().put("segment", state.value.segment.name))
+    }
+
     fun start(context: Context) = synchronized(lock) {
         if (!AirRuntime.running || !AirRuntime.cameraReady || state.value.status in listOf(RecordingStatus.RECORDING, RecordingStatus.EXPORTING)) return@synchronized
         val app = context.applicationContext
@@ -69,7 +83,8 @@ internal object TestingTools {
             val calibration = PointerCalibrationStore(app).activeProfile(runtime.handPreference, landscape)
             val metadata = JSONObject().put("schema", 1).put("startedAtMs", startedAt)
                 .put("startedAt", SimpleDateFormat("yyyy-MM-dd HH:mm:ss Z", Locale.US).format(Date(now)))
-                .put("appVersion", version).put("device", "${Build.MANUFACTURER} ${Build.MODEL}")
+                .put("sourceCommit", BuildConfig.SOURCE_COMMIT).put("historicalSource", "92eb773ab516df8955f987b874c6041b4d6e8cb2")
+                .put("testSegment", state.value.segment.name).put("filterMode", state.value.filterMode.name).put("appVersion", version).put("device", "${Build.MANUFACTURER} ${Build.MODEL}")
                 .put("android", Build.VERSION.RELEASE).put("handPreference", runtime.handPreference.name)
                 .put("orientation", if (landscape) "landscape" else "portrait")
                 .put("calibration", calibration?.let(PointerCalibrationProfileCodec::encode) ?: "Default linear mapping")
@@ -86,6 +101,7 @@ internal object TestingTools {
 
     fun onFrame(context: Context, image: ImageProxy, result: GestureRecognizerResult?, timestamp: Long,
         inferenceMs: Long, trace: JSONObject?, error: String?) {
+        val diagnosticStarted = SystemClock.uptimeMillis()
         val frameSession = synchronized(lock) { session }
         val recording = frameSession != null
         val previewDue = state.value.mirror && (lastPreview == Long.MIN_VALUE || timestamp - lastPreview >= 125)
@@ -101,12 +117,15 @@ internal object TestingTools {
                 lastPreview = timestamp
                 if (bitmap != null && state.value.mirror) _mirrorFrame.value = MirrorFrame(bitmap,
                     DiagnosticFrameData.mirrorHands(result, image.imageInfo.rotationDegrees),
-                    "${if (error != null) "INFERENCE ERROR" else AirRuntime.pointerFeedback.name.replace('_', ' ')} · ${result?.landmarks()?.size ?: 0} hands")
+                    "${if (error != null) "INFERENCE ERROR" else AirRuntime.pointerFeedback.name.replace('_', ' ')} · ${state.value.filterMode.name}",
+                    trace?.optInt("selectedHandIndex", -1)?.takeIf { it >= 0 },
+                    mirrorDetail(trace))
             }
             if (imageDue) lastImage = timestamp
         }
         if (!recording) return
         val frame = DiagnosticFrameData.encode(context, image, result, timestamp, inferenceMs, trace, error)
+        frame.put("diagnosticOverheadMs", SystemClock.uptimeMillis() - diagnosticStarted)
         val cameraSample = if (imageDue) bitmap else null
         synchronized(lock) {
             val current = session ?: return
@@ -137,6 +156,16 @@ internal object TestingTools {
                 } finally { capacity.release() }
             }
         }
+    }
+
+    private fun mirrorDetail(trace: JSONObject?): String {
+        fun coordinate(point: JSONObject?) = if (point == null) "—" else
+            String.format(Locale.US, "%.2f,%.2f", point.optDouble("x"), point.optDouble("y"))
+        val comparison = trace?.optJSONObject("comparison")
+        val pointer = AirRuntime.pointerSnapshot()
+        return "hand ${trace?.optInt("selectedHandIndex", -1)} ${trace?.optString("pointerRejection", "waiting")}\n" +
+            "raw ${coordinate(trace?.optJSONObject("uprightTip"))} map ${coordinate(comparison?.optJSONObject("mappedTip"))}\n" +
+            String.format(Locale.US, "cursor %.2f,%.2f · actions %s", pointer.x, pointer.y, trace?.optBoolean("commandsAllowed") ?: false)
     }
 
     fun event(kind: String, details: JSONObject) = synchronized(lock) {
