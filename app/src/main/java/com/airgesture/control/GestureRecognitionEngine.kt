@@ -208,7 +208,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         )
 
         if (pointerActive && indexTip != null) {
-            val processed = interpreter.processFrame(reusablePointsList, timestamp, actionsAllowed = controlSafe) ?: run {
+            val processed = interpreter.processFrame(reusablePointsList, timestamp, actionsAllowed = commandTracking) ?: run {
                 resetTrackingState()
                 return
             }
@@ -223,7 +223,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             lastPointerAt = timestamp
             AirRuntime.setPointerState(stabilized.x, stabilized.y, true)
 
-            if (controlSafe && processed.poseEvidence.accepted &&
+            if (commandTracking && processed.poseEvidence.accepted &&
                 processed.isClickEngaged &&
                 GestureActionPolicy.isPointerActionEnabled(AirRuntime.gesturesEnabled, AirAction.TAP)
             ) {
