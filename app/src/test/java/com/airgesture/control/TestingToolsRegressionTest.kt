@@ -79,6 +79,81 @@ class TestingToolsRegressionTest {
         } finally { dir.deleteRecursively() }
     }
 
+    @Test fun retryingExportKeepsOriginalRecordingDuration() {
+        val dir = java.nio.file.Files.createTempDirectory("retry-recording").toFile()
+        try {
+            val recording = session(dir)
+            append(recording, frame(1000, "NO_HAND", false))
+            finish(recording)
+            recording.javaClass.getMethod("finish", Long::class.javaPrimitiveType).invoke(recording, 1800L)
+            assertEquals(200L, JSONObject(File(dir, "summary.json").readText()).getLong("durationMs"))
+        } finally { dir.deleteRecursively() }
+    }
+
+    @Test fun movedMirrorStaysReachableAfterScreenRotation() {
+        val cls = type("MirrorGeometry")
+        val method = runCatching { cls.getMethod("windowRect", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType,
+            Int::class.javaPrimitiveType, Int::class.javaPrimitiveType, Int::class.javaPrimitiveType, Int::class.javaPrimitiveType) }.getOrNull()
+        assertNotNull("Mirror needs reachable bounds after rotation", method)
+        val rect = method!!.invoke(cls.getField("INSTANCE").get(null), 800, 900, 200, 276, 700, 400) as android.graphics.Rect
+        assertEquals(android.graphics.Rect(500, 124, 700, 400), rect)
+    }
+
+    @Test fun stopWaitsForFramesAndEventsAndRejectsLaterFrames() {
+        val context = org.robolectric.RuntimeEnvironment.getApplication()
+        File(context.filesDir, "testing-recordings").deleteRecursively()
+        AirRuntime.running = true; AirRuntime.cameraReady = true
+        val cls = type("TestingTools")
+        val tools = cls.getField("INSTANCE").get(null)
+        cls.getMethod("start", android.content.Context::class.java).invoke(tools, context)
+        val proxy = image()
+        val timestamp = android.os.SystemClock.uptimeMillis()
+        val onFrame = cls.getMethod("onFrame", android.content.Context::class.java, androidx.camera.core.ImageProxy::class.java,
+            com.google.mediapipe.tasks.vision.gesturerecognizer.GestureRecognizerResult::class.java,
+            Long::class.javaPrimitiveType, Long::class.javaPrimitiveType, JSONObject::class.java, String::class.java)
+        onFrame.invoke(tools, context, proxy, emptyResult(timestamp), timestamp, 12L, null, null)
+        cls.getMethod("event", String::class.java, JSONObject::class.java).invoke(tools, "action_outcome", JSONObject().put("outcome", "CANCELLED"))
+        cls.getMethod("setMirror", Boolean::class.javaPrimitiveType).invoke(tools, false)
+        cls.getMethod("stop", String::class.java).invoke(tools, "User stopped")
+        onFrame.invoke(tools, context, proxy, null, timestamp + 33, 12L, null, null)
+        val state = cls.getMethod("getState").invoke(tools) as kotlinx.coroutines.flow.StateFlow<*>
+        val deadline = System.nanoTime() + 10_000_000_000L
+        while (state.value!!.javaClass.getMethod("getStatus").invoke(state.value).toString() == "EXPORTING" && System.nanoTime() < deadline) Thread.sleep(10)
+        assertEquals("READY", state.value!!.javaClass.getMethod("getStatus").invoke(state.value).toString())
+        val export = state.value!!.javaClass.getMethod("getExport").invoke(state.value)
+        val zip = export.javaClass.getMethod("getBundle").invoke(export) as File
+        ZipFile(zip).use {
+            val lines = it.getInputStream(it.getEntry("frames.jsonl")).bufferedReader().readLines()
+            assertEquals(1, lines.size)
+            assertEquals("NO_HAND", JSONObject(lines.single()).getString("reason"))
+            assertNotNull(it.getEntry("images/frame-$timestamp.jpg"))
+            val event = JSONObject(it.getInputStream(it.getEntry("events.jsonl")).bufferedReader().readLines().single())
+            assertEquals("CANCELLED", event.getString("outcome"))
+        }
+        AirRuntime.running = false; AirRuntime.cameraReady = false
+    }
+
+    private fun emptyResult(timestamp: Long): com.google.mediapipe.tasks.vision.gesturerecognizer.GestureRecognizerResult {
+        val cls = com.google.mediapipe.tasks.vision.gesturerecognizer.GestureRecognizerResult::class.java
+        val factory = cls.getDeclaredMethod("create", List::class.java, List::class.java, List::class.java, List::class.java, Long::class.javaPrimitiveType)
+        factory.isAccessible = true
+        return factory.invoke(null, emptyList<Any>(), emptyList<Any>(), emptyList<Any>(), emptyList<Any>(), timestamp) as com.google.mediapipe.tasks.vision.gesturerecognizer.GestureRecognizerResult
+    }
+
+    private fun image(): androidx.camera.core.ImageProxy {
+        fun proxy(cls: Class<*>, values: Map<String, Any?>): Any = java.lang.reflect.Proxy.newProxyInstance(cls.classLoader, arrayOf(cls)) { _, method, _ ->
+            if (values.containsKey(method.name)) values[method.name] else when (method.name) {
+                "close" -> null
+                else -> error("Unexpected camera method: ${method.name}")
+            }
+        }
+        val plane = proxy(androidx.camera.core.ImageProxy.PlaneProxy::class.java, mapOf("getBuffer" to ByteBuffer.wrap(ByteArray(16) { -1 }), "getRowStride" to 8, "getPixelStride" to 4))
+        val info = proxy(androidx.camera.core.ImageInfo::class.java, mapOf("getRotationDegrees" to 0, "getTimestamp" to 123456L))
+        return proxy(androidx.camera.core.ImageProxy::class.java, mapOf("getWidth" to 2, "getHeight" to 2,
+            "getPlanes" to arrayOf(plane as androidx.camera.core.ImageProxy.PlaneProxy), "getImageInfo" to info,
+            "getCropRect" to android.graphics.Rect(0, 0, 2, 2))) as androidx.camera.core.ImageProxy
+    }
+
     @Test fun mirrorFitsWholeImageWithoutCropping() {
         val cls = type("MirrorGeometry")
         val rect = cls.getMethod("imageRect", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType,
