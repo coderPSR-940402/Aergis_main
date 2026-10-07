@@ -8,7 +8,7 @@ import org.json.JSONObject
 import java.io.File
 import java.util.Locale
 
-/** Two-page phone-test summary. Exact frame data travels in the accompanying ZIP. */
+/** Three-page phone-test summary. Exact frame data travels in the accompanying ZIP. */
 internal object DiagnosticReport {
     fun write(file: File, metadata: JSONObject, summary: JSONObject) {
         val doc = PdfDocument()

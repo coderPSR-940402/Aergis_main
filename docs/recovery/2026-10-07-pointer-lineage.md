@@ -100,7 +100,7 @@ CURRENT's internal alpha-beta cold-start after 250 ms remains part of its measur
 | Historical swapped axes / mirroring | Previously corrected coordinate conversion | Current rotation→mirror order matches vc49. Preserve current transform; test portrait/landscape and log frame rotation. No second live rotation/mirror added. |
 | Teleport on reacquisition | Full state reset after cursor-grace expiry | Baseline discarded filter history after 130 ms. Recovery hides at the same deadline but retains safe identity/filter history longer; commands remain cancelled. |
 | Click drift | Contact gesture moving measured tip, filter response, render/request timing | Current click target snapshots avoid later queued-coordinate substitution. Logs now include actual overlay application and action-request targets. Historical contact model is not copied before device evidence. |
-| Right/bottom edge tap failure | Accessibility uses exclusive display width/height endpoints | Historical `PointerScreenCoordinateMapper` correctly clamps to width−1/height−1. This remains a separately identified follow-up; it is not misreported as a pointer-disappearance fix. |
+| Right/bottom edge tap failure | Accessibility uses exclusive display width/height endpoints | Historical `PointerScreenCoordinateMapper` correctly clamps to width−1/height−1. Actual dispatch tests reproduced both endpoint failures. The candidate now shares this last-pixel mapping between overlay and injected tap/long-press, and bounds scroll endpoints accordingly. This is distinct from detector disappearance. |
 
 ## D. Recovery matrix
 
@@ -110,7 +110,7 @@ CURRENT's internal alpha-beta cold-start after 250 ms remains part of its measur
 | `PointerMotionFilter` vc49 | Benchmark first; restored as selectable candidate | Preserve proven math/constants for comparison, omit historical nested One Euro shadow workload. Add finite/monotonic boundary protection. No automatic default change. |
 | `PointerTracker` visibility/filter continuity | Adapt | Retain 130 ms cursor grace, immediately cancel action evidence, preserve safe same-owner history up to 500 ms. Do not import its entire click/navigation machine. |
 | `PointerTipContactEstimator` | Benchmark first | World/aspect-correct contact is promising; changes click thresholds/semantics. Current action safety remains authoritative. |
-| `PointerScreenCoordinateMapper` | Restore in a separate incremental fix | Confirmed exclusive-edge dispatch issue; avoid conflating with detector disappearance. |
+| `PointerScreenCoordinateMapper` | Adapt now | Share width−1/height−1 mapping between current overlay and dispatcher; keep current request snapshots and action safety. |
 | `PointerCalibration` / activity | Retain current, adapt principles | Current persistence, comfortable-reach preset, live edits, hand/orientation profiles are already available. |
 | `ControlHandSelector`, `HandIdentitySignature` | Adapt selectively later | Historical signatures help distinguish same-handed replacements; current ownership/action gates should not be replaced without A/B evidence. |
 | `WorldHandGeometryValidator` | Retain current pointer independence; benchmark action use | Anatomy/world validation is useful for gestures/identity, not alternate pointer X/Y. |
@@ -129,7 +129,7 @@ Implementation is on [PR 39](https://github.com/coderPSR-940402/Aergis_main/pull
 - `GestureRecognitionEngine` handles cursor-only gaps, explicitly resets on identity/filter/calibration changes, runs both paths from the same selected tip, and records each pipeline boundary.
 - `GestureInterpreter` makes landmark 8 the direct position input and keeps malformed-tip action cancellation separate from filter reset.
 - `Vc49PointerMotionFilter` recovers the exact production math/constants, without its historical nested shadow dependencies. `PointerLineageComparison` runs the candidate beside current production.
-- `TestingTools`, its card, mirror, and diagnostic classes provide filter selection, labelled test segments, raw/current/vc49 coordinates, local JSONL/ZIP/PDF output, source provenance, visibility/rejection counters, and overlay/action events. Preview remains capped at 8 fps/320 px; camera JPEG samples at 2 fps. PDF/ZIP/image compression stay on the bounded writer queue. Diagnostic overhead is recorded, not assumed negligible.
+- `TestingTools`, its card, mirror, and diagnostic classes provide filter selection, labelled test segments, raw/current/vc49 coordinates, local JSONL/ZIP/PDF output, source provenance, visibility/rejection counters, and overlay/action events, including pixel targets and overlay viewport bounds for clipping/inset diagnosis. Overlay telemetry is allocated only while recording. Preview remains capped at 8 fps/320 px; camera JPEG samples at 2 fps. PDF/ZIP/image compression stay on the bounded writer queue. Diagnostic overhead is recorded, not assumed negligible.
 - The app embeds the CI checkout SHA in `BuildConfig.SOURCE_COMMIT`. PR builds use GitHub's tested merge SHA, so an APK's exact source may differ from the branch-head SHA. The uploaded `baseline.json` and checksums identify the artifact's checkout.
 - `tools/analyze_pointer_recording.py` provides Termux-compatible postprocessing: labelled stationary RMS, measurement error, path/second-difference smoothness, estimated measurement-relative lag, fast-step settling, reacquisition discontinuity, edge reach, invalid/uncompared frames, visibility and overlay events. It does not read application/screen content.
 
@@ -142,6 +142,10 @@ The test-only commit is `91604775d2aa95dd40d63719905b5ac12f65f0e8`. [CI 37630359
 Regression coverage includes actual-engine invalid-tip retention, replacement-hand filter reset, mode switching, VC49 same-hand reacquisition, historical stationary/spike/travel/reversal/cadence contracts, and comparison data surviving PDF/ZIP export. The deterministic comparison exercises stationary, travel, fast step, reversal, edges and dropout scenes. Synthetic visibility tests use the same `PointerVisibilityGrace` policy; they do not pretend to reproduce MediaPipe detector behavior.
 
 Full validation is the existing Aergis CI: unit tests, Android lint, debug assembly, minified release assembly, debug identity verification, release verification, APK checksums and metadata. PR builds cannot advance `baseline-successful-apk`. CodeQL is also monitored. Local Android validation cannot run in this workspace because Gradle distribution network access is blocked; no local build success is claimed.
+
+A second test-only commit, `e892407ff44765f9301e8b19b48ecc0ec97b82f8`, completed the organization lineage inventory and reproduced the exclusive display-edge error. [CI 37633826891](https://github.com/coderPSR-940402/Aergis_main/actions/runs/37633826891) ran 170 tests; only the two new bottom-right tap/edge-scroll contracts failed. The first implementation run [37632923100](https://github.com/coderPSR-940402/Aergis_main/actions/runs/37632923100) passed all 168 tests, lint, both assemblies and APK verification, but its overall run was cancelled by the next commit and is not claimed as a completed green run.
+
+The Robolectric PDF shadow emits blank page canvases; the export regression verifies structured data and PDF page/file generation, not visual Android rendering. Check the three-page layout on the A54.
 
 The final delivery supplies the fresh CI result, exact tested checkout SHA, APK checksum/artifact, and measured synthetic report. Green CI demonstrates software/build contracts; physical pointer quality is unverified until the A54 sequence below.
 
@@ -161,7 +165,7 @@ Failure identification:
 | Hand skeleton / yellow tip disappears; no hand or tip present in raw result | Raw MediaPipe detection/landmark failure |
 | Raw fingertip remains but selected hand is absent/ambiguous/wrong; `HAND_SELECTION_REJECTED` | Hand selection/ownership failure |
 | Raw tip and selected hand remain, but mapped or candidate coordinate is frozen/distorted | Mapping or filtering failure; compare CURRENT vs VC49 from the same frame |
-| Final cursor coordinate is correct but overlay application is hidden/missing/wrong, or action target/outcome differs | Overlay / accessibility dispatch failure |
+| Final cursor coordinate is correct but overlay application is hidden/missing/wrong, lies beyond its recorded viewport, or action target/outcome differs | Overlay / accessibility dispatch failure |
 | Cursor holds briefly, `tracking=false`, and actions are cancelled | Intentional cursor-only grace, not fresh hand evidence |
 
 Save/share the ZIP for frame-level diagnosis. The PDF is the compact human summary. No unrelated screen/application content is collected. The next default-filter decision and any full lower-screen fix depend on this physical evidence.
