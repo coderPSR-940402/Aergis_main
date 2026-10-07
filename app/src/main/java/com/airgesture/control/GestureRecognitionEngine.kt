@@ -1,6 +1,7 @@
 package com.airgesture.control
 
 import android.content.Context
+import android.content.res.Configuration
 import android.os.SystemClock
 import android.util.Log
 import androidx.camera.core.ExperimentalGetImage
@@ -25,7 +26,15 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
     private val closed = AtomicBoolean(false)
     private val mappings = ActionMappingStore(context)
     private val calibrationStore = PointerCalibrationStore(context)
-    private val calibrationProfile = calibrationStore.profile().takeIf { calibrationStore.enabled() }
+    private val pointerMapper = LivePointerMapper {
+        calibrationStore.activeProfile(
+            AirRuntime.handPreference,
+            context.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+        )
+    }
+    private val pointerVisibility = PointerVisibilityGrace()
+    private var lastAppliedCalibration: PointerCalibrationProfile? = null
+    private var lastCalibrationContext: Pair<ControlHandPreference, Boolean>? = null
     private val interpreter = GestureInterpreter(mappings)
     private val poseEvidenceEvaluator = PoseGeometryEvidenceEvaluator()
     private var recognizer: GestureRecognizer? = null
@@ -126,6 +135,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         if (!freshness.accepted) {
             Log.d(TAG, "Vision result rejected: ${freshness.reason}")
             resetTrackingState()
+            AirRuntime.pointerFeedback = PointerFeedback.VISION_REJECTED
             return
         }
         if (lastFrameRotationDegrees != rotationDegrees) {
@@ -199,7 +209,18 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         } else {
             AirRuntime.clearPoseEvidence()
         }
-        val commandTracking = CommandTrackingEligibility.isEligible(
+        val frameCalibration = pointerMapper.snapshot()
+        val calibrationContext = AirRuntime.handPreference to
+            (context.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE)
+        val mappingChanged = frameCalibration != lastAppliedCalibration || calibrationContext != lastCalibrationContext
+        if (mappingChanged) {
+            gestureTransaction.reset()
+            pointerVisibility.reset()
+            AirRuntime.invalidatePendingActions()
+            lastAppliedCalibration = frameCalibration
+            lastCalibrationContext = calibrationContext
+        }
+        val commandTracking = !mappingChanged && CommandTrackingEligibility.isEligible(
             controlSafe = controlSafe,
             handSelected = handSelection != null,
             pointerEnabled = AirRuntime.pointerEnabled,
@@ -210,15 +231,16 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         if (pointerActive && indexTip != null) {
             val processed = interpreter.processFrame(reusablePointsList, timestamp, actionsAllowed = commandTracking) ?: run {
                 resetTrackingState()
+                AirRuntime.pointerFeedback = PointerFeedback.INVALID_TIP
                 return
             }
             AirRuntime.recordPoseEvidence(processed.poseEvidence)
             // GestureInterpreter owns the single latency-bounded pointer filter. Applying
             // another filter here doubled lag and made fast motion appear to freeze.
             AirRuntime.setRawPointerState(processed.smoothedX, processed.smoothedY, true)
-            val stabilized = calibrationProfile?.let {
-                PointerCoordinateMapper.map(processed.smoothedX, processed.smoothedY, it)
-            } ?: PointerCoordinateMapper.map(processed.smoothedX, processed.smoothedY)
+            val stabilized = pointerMapper.map(processed.smoothedX, processed.smoothedY, frameCalibration)
+            pointerVisibility.record(stabilized, observedAtMs)
+            AirRuntime.pointerFeedback = PointerFeedback.TRACKING
             pointerInitialized = true
             lastPointerAt = timestamp
             AirRuntime.setPointerState(stabilized.x, stabilized.y, true)
@@ -236,7 +258,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 SwipeDirection.RIGHT,
                 SwipeDirection.NONE -> AirAction.NONE
             }
-            if (processed.poseEvidence.accepted &&
+            if (commandTracking && processed.poseEvidence.accepted &&
                 GestureActionPolicy.isPointerActionEnabled(AirRuntime.gesturesEnabled, swipeAction)
             ) {
                 AirAccessibilityService.instance?.dispatch(swipeAction)
@@ -251,14 +273,29 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         } else {
             pointerInitialized = false
             lastPointerAt = 0L
-            interpreter.reset()
-            if (!commandTracking) {
-                handOwnership.reset()
-                gestureTransaction.reset()
-            }
-            AirRuntime.setPointerState(AirRuntime.pointerX, AirRuntime.pointerY, false)
+            // Missing evidence cancels actions immediately. Only a genuinely empty detector
+            // result may retain cursor visibility; ambiguity and safety gates still hide it.
+            if (AirRuntime.pointerTracking) AirRuntime.invalidatePendingActions()
+            interpreter.resetActions()
+            gestureTransaction.reset()
+            val held = if (pointerActive && landmarks.isEmpty()) pointerVisibility.heldAt(observedAtMs) else null
             AirRuntime.setRawPointerState(AirRuntime.rawPointerSnapshot().x, AirRuntime.rawPointerSnapshot().y, false)
-            AirAccessibilityService.instance?.updatePointer(0f, 0f, false)
+            if (held != null) {
+                AirRuntime.setPointerState(held.x, held.y, false)
+                AirRuntime.pointerFeedback = PointerFeedback.COASTING
+                AirAccessibilityService.instance?.updatePointer(held.x, held.y, true, false)
+            } else {
+                pointerVisibility.reset()
+                handOwnership.reset()
+                interpreter.reset()
+                AirRuntime.setPointerState(AirRuntime.pointerX, AirRuntime.pointerY, false)
+                AirRuntime.pointerFeedback = when {
+                    !pointerActive -> PointerFeedback.DISABLED
+                    landmarks.size > 1 -> PointerFeedback.AMBIGUOUS
+                    else -> PointerFeedback.NO_HAND
+                }
+                AirAccessibilityService.instance?.updatePointer(0f, 0f, false)
+            }
         }
 
         val decision = if (AirRuntime.gesturesEnabled && gestureName != "None") {
@@ -314,6 +351,10 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
     }
 
     private fun resetTrackingState() {
+        if (AirRuntime.pointerTracking) AirRuntime.invalidatePendingActions()
+        pointerVisibility.reset()
+        AirRuntime.pointerFeedback = PointerFeedback.NO_HAND
+        AirRuntime.setRawPointerState(AirRuntime.rawPointerSnapshot().x, AirRuntime.rawPointerSnapshot().y, false)
         pointerInitialized = false
         lastPointerAt = 0L
         handOwnership.reset()
@@ -347,3 +388,4 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         private const val PINKY_MCP = KinematicValidator.PINKY_MCP
     }
 }
+

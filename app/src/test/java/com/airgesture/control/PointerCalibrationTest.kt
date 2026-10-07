@@ -18,7 +18,11 @@ class PointerCalibrationTest {
         assertTrue(session.addSample(0.90f, 0.92f))
 
         val profile = session.complete()
-        assertEquals(PointerCalibrationProfile.DEFAULT, profile)
+        assertEquals(0.10f, profile!!.left, 0.0001f)
+        assertEquals(0.90f, profile.right, 0.0001f)
+        assertEquals(0.08f, profile.top, 0.0001f)
+        assertEquals(0.92f, profile.bottom, 0.0001f)
+        assertTrue(profile.mirrorX)
         assertEquals(PointerCalibrationSession.State.READY, session.state())
     }
 

@@ -88,8 +88,13 @@ class GestureInterpreter(
     fun reset() {
         previousIndexTip = null
         smoother.reset()
-        clickStateMachine.reset()
-        swipeEngine.reset()
+        resetActions()
         pointerFilter.reset()
     }
+
+    fun resetActions() {
+        clickStateMachine.reset()
+        swipeEngine.reset()
+    }
 }
+

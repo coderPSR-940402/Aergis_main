@@ -16,6 +16,8 @@ data class PointerSnapshot(
     val tracking: Boolean
 )
 
+enum class PointerFeedback { TRACKING, COASTING, NO_HAND, DISABLED, AMBIGUOUS, INVALID_TIP, VISION_REJECTED }
+
 data class VisionTelemetry(
     val totalResults: Long = 0L,
     val acceptedResults: Long = 0L,
@@ -62,6 +64,7 @@ data class AirRuntimeState(
     val lastGesture: String = "None",
     val handedness: String = "Unknown",
     val pointer: PointerSnapshot = PointerSnapshot(0f, 0f, false),
+    val pointerFeedback: PointerFeedback = PointerFeedback.NO_HAND,
     /** Raw normalized vision coordinates, before screen mapping or calibration. */
     val rawPointer: PointerSnapshot = PointerSnapshot(0f, 0f, false),
     val visionTelemetry: VisionTelemetry = VisionTelemetry(),
@@ -89,6 +92,7 @@ data class AirRuntimeUiState(
     val lastGesture: String,
     val handedness: String,
     val pointerTracking: Boolean,
+    val pointerFeedback: PointerFeedback,
     val controlMode: ControlMode,
     val motionActive: Boolean,
     val motionSensorsAvailable: Boolean,
@@ -108,6 +112,7 @@ private fun AirRuntimeState.toUiState(): AirRuntimeUiState = AirRuntimeUiState(
     lastGesture = lastGesture,
     handedness = handedness,
     pointerTracking = pointerTracking,
+    pointerFeedback = pointerFeedback,
     controlMode = controlMode,
     motionActive = motionActive,
     motionSensorsAvailable = motionSensorsAvailable,
@@ -188,7 +193,18 @@ object AirRuntime {
 
     var handPreference: ControlHandPreference
         get() = state.value.handPreference
-        set(value) = _state.update { it.copy(handPreference = value) }
+        set(value) = _state.update {
+            if (it.handPreference == value) it
+            else it.copy(handPreference = value, actionEpoch = it.actionEpoch + 1L)
+        }
+
+    internal fun invalidatePendingActions() {
+        _state.update { it.copy(actionEpoch = it.actionEpoch + 1L) }
+    }
+
+    var pointerFeedback: PointerFeedback
+        get() = state.value.pointerFeedback
+        set(value) = _state.update { it.copy(pointerFeedback = value) }
 
     var visionReady: Boolean
         get() = state.value.visionReady

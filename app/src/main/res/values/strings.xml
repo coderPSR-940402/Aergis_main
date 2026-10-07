@@ -17,11 +17,11 @@
     <string name="calibration_status">Status: %1$s • samples: %2$d</string>
     <string name="calibration_status_enabled">enabled</string>
     <string name="calibration_status_disabled">disabled</string>
-    <string name="calibration_capture_guidance">Move to four stable screen corners, then capture one sample at each corner.</string>
+    <string name="calibration_capture_guidance">Move within your comfortable camera-visible range. Capture its four corners; you may add more samples before applying.</string>
     <string name="calibration_sample_captured">Sample %1$d captured.</string>
     <string name="calibration_sample_rejected">Sample rejected: stable pointer tracking is required.</string>
     <string name="calibration_invalid">Calibration is invalid or lacks sufficient span. Reset and capture four distinct corners.</string>
-    <string name="calibration_enabled">Calibration saved and enabled for the next capture session.</string>
+    <string name="calibration_enabled">Calibration applied immediately and saved for this hand and orientation.</string>
     <string name="calibration_disabled">Calibration disabled; legacy mapping remains active.</string>
     <string name="calibration_reset">Calibration profile reset; legacy mapping remains active.</string>
     <string name="calibration_start">Start</string>
@@ -64,7 +64,7 @@
     <string name="pointer_tracking_active">Tracking</string>
     <string name="pointer_tracking_inactive">No hand</string>
     <string name="motion_status">Device motion: %1$s</string>
-    <string name="motion_active">Control paused</string>
+    <string name="motion_active">Actions paused; pointer remains active</string>
     <string name="motion_inactive">Stable</string>
     <string name="motion_unavailable">Sensors unavailable</string>
     <string name="foreground_status">Foreground safety: %1$s</string>
@@ -95,4 +95,23 @@
     <string name="action_long_press">Long press</string>
     <string name="action_scroll_up">Scroll up</string>
     <string name="action_scroll_down">Scroll down</string>
+    <string name="calibration_context">Profile: %1$s hand • %2$s</string>
+    <string name="orientation_portrait">Portrait</string>
+    <string name="orientation_landscape">Landscape</string>
+    <string name="calibration_reach_guidance">Comfortable Reach maps a smaller camera area to the whole screen. If the pointer still disappears near the bottom, reduce Bottom reach. Changes apply live.</string>
+    <string name="calibration_comfortable">Use Comfortable Reach</string>
+    <string name="calibration_left_bound">Left reach: %1$.2f</string>
+    <string name="calibration_right_bound">Right reach: %1$.2f</string>
+    <string name="calibration_top_bound">Top reach: %1$.2f</string>
+    <string name="calibration_bottom_bound">Bottom reach: %1$.2f</string>
+    <string name="calibration_curve_x">Horizontal response: %1$.2f</string>
+    <string name="calibration_curve_y">Vertical response: %1$.2f</string>
+    <string name="pointer_feedback_tracking">Live fingertip tracking</string>
+    <string name="pointer_feedback_coasting">Brief detection loss — holding cursor; actions paused</string>
+    <string name="pointer_feedback_no_hand">Tracking lost — camera returned no usable fingertip</string>
+    <string name="pointer_feedback_disabled">Pointer paused by mode or foreground screen</string>
+    <string name="pointer_feedback_ambiguous">Tracking ambiguous — choose Left or Right hand</string>
+    <string name="pointer_feedback_invalid_tip">Tracking lost — invalid fingertip measurement</string>
+    <string name="pointer_feedback_vision_rejected">Tracking paused — delayed or invalid camera result</string>
 </resources>
+

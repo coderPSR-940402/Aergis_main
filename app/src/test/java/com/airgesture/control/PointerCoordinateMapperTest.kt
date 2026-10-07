@@ -56,3 +56,4 @@ class PointerCoordinateMapperTest {
         assertEquals(expected, fallback)
     }
 }
+

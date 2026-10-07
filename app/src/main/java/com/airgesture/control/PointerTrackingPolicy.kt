@@ -11,3 +11,4 @@ internal object PointerTrackingPolicy {
     ): Boolean = pointerEnabled && controlMode == ControlMode.ARMED &&
         foregroundSafety == ForegroundSafety.SAFE
 }
+
