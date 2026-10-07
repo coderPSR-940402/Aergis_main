@@ -62,15 +62,24 @@ class AirAccessibilityService : AccessibilityService() {
         val overlay = pointerOverlay ?: return
         if (!pendingVisible) {
             overlay.hide()
+            if (TestingTools.state.value.status == RecordingStatus.RECORDING) {
+                TestingTools.event("overlay_applied", org.json.JSONObject().put("visible", false))
+            }
             return
         }
         if (!overlay.isVisible) overlay.show()
         val display = screenSize()
+        val position = display.map(pendingX, pendingY)
         overlay.updatePosition(
-            pendingX * display.width,
-            pendingY * display.height,
+            position.x,
+            position.y,
             pendingClicking
         )
+        if (TestingTools.state.value.status == RecordingStatus.RECORDING) {
+            TestingTools.event("overlay_applied", org.json.JSONObject().put("visible", overlay.isVisible)
+                .put("x", pendingX).put("y", pendingY).put("pixelX", position.x).put("pixelY", position.y)
+                .put("viewport", overlay.diagnosticBounds()).put("clicking", pendingClicking))
+        }
     }
 
     fun dispatch(action: AirAction) {
@@ -88,8 +97,9 @@ class AirAccessibilityService : AccessibilityService() {
         // otherwise a queued click can land wherever the cursor moved later.
         val display = screenSize()
         val pointer = AirRuntime.pointerSnapshot()
-        val targetX = (pointer.x * display.width).coerceIn(0f, display.width)
-        val targetY = (pointer.y * display.height).coerceIn(0f, display.height)
+        val target = display.map(pointer.x, pointer.y)
+        val targetX = target.x
+        val targetY = target.y
         mainHandler.post {
             // Safety state can change while this action waits for the main thread
             // (for example, after a device-motion or protected-screen event). Check
@@ -158,14 +168,14 @@ class AirAccessibilityService : AccessibilityService() {
 
     private fun performScroll(up: Boolean, anchorX: Float, anchorY: Float) {
         val display = screenSize()
-        val x = anchorX.coerceIn(0f, display.width)
-        val centerY = anchorY.coerceIn(0f, display.height)
+        val x = anchorX.coerceIn(0f, display.maxX)
+        val centerY = anchorY.coerceIn(0f, display.maxY)
         val distance = (display.height * 0.25f).coerceAtLeast(180f)
         val startY = if (up) centerY + distance else centerY - distance
         val endY = if (up) centerY - distance else centerY + distance
         val path = Path().apply {
-            moveTo(x, startY.coerceIn(0f, display.height))
-            lineTo(x, endY.coerceIn(0f, display.height))
+            moveTo(x, startY.coerceIn(0f, display.maxY))
+            lineTo(x, endY.coerceIn(0f, display.maxY))
         }
         val gesture = GestureDescription.Builder()
             .addStroke(GestureDescription.StrokeDescription(path, 0L, SCROLL_DURATION_MS))
@@ -207,7 +217,15 @@ class AirAccessibilityService : AccessibilityService() {
         return ScreenSize(metrics.widthPixels.toFloat(), metrics.heightPixels.toFloat())
     }
 
-    private data class ScreenSize(val width: Float, val height: Float)
+    private data class ScreenSize(val width: Float, val height: Float) {
+        val maxX = (width - 1f).coerceAtLeast(0f)
+        val maxY = (height - 1f).coerceAtLeast(0f)
+
+        /** Display dimensions are exclusive; the cursor and injection share the last pixel. */
+        fun map(x: Float, y: Float) = PointerCoordinateMapper.Point(
+            x.coerceIn(0f, 1f) * maxX, y.coerceIn(0f, 1f) * maxY
+        )
+    }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return

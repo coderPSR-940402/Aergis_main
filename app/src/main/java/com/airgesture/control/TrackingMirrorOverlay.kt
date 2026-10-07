@@ -102,7 +102,7 @@ internal class TrackingMirrorOverlay(private val service: AccessibilityService) 
         override fun onDraw(canvas: Canvas) {
             super.onDraw(canvas)
             val frame = frame
-            val footer = 28 * resources.displayMetrics.density
+            val footer = 70 * resources.displayMetrics.density
             val imageHeight = (height - footer).toInt().coerceAtLeast(1)
             canvas.drawColor(Color.BLACK)
             if (frame != null) {
@@ -110,8 +110,8 @@ internal class TrackingMirrorOverlay(private val service: AccessibilityService) 
                 paint.color = Color.WHITE
                 canvas.drawBitmap(frame.bitmap, null, rect, paint)
                 canvas.save(); canvas.clipRect(rect)
-                for (hand in frame.hands) {
-                    paint.color = Color.CYAN; paint.strokeWidth = 2 * resources.displayMetrics.density
+                for ((handIndex, hand) in frame.hands.withIndex()) {
+                    paint.color = if (handIndex == frame.selectedHandIndex) Color.GREEN else Color.CYAN; paint.strokeWidth = 2 * resources.displayMetrics.density
                     fun valid(index: Int) = hand.getOrNull(index)?.takeIf { it.x.isFinite() && it.y.isFinite() }
                     for ((a, b) in connections) {
                         val start = valid(a) ?: continue; val end = valid(b) ?: continue
@@ -120,7 +120,7 @@ internal class TrackingMirrorOverlay(private val service: AccessibilityService) 
                     }
                     hand.forEachIndexed { index, p ->
                         if (p.x.isFinite() && p.y.isFinite()) {
-                            paint.color = if (index == 8) Color.YELLOW else Color.CYAN
+                            paint.color = if (index == 8) Color.YELLOW else if (handIndex == frame.selectedHandIndex) Color.GREEN else Color.CYAN
                             canvas.drawCircle(rect.left + p.x * rect.width(), rect.top + p.y * rect.height(),
                                 (if (index == 8) 5 else 2) * resources.displayMetrics.density, paint)
                         }
@@ -130,7 +130,11 @@ internal class TrackingMirrorOverlay(private val service: AccessibilityService) 
             }
             paint.color = Color.WHITE; paint.textSize = 10 * resources.displayMetrics.scaledDensity
             canvas.drawText(frame?.label ?: context.getString(R.string.testing_mirror_waiting), 6f,
-                height - 9 * resources.displayMetrics.density, paint)
+                height - 54 * resources.displayMetrics.density, paint)
+            paint.textSize = 9 * resources.displayMetrics.scaledDensity
+            frame?.detail?.lineSequence()?.take(3)?.forEachIndexed { index, line ->
+                canvas.drawText(line, 6f, height - (38 - index * 14) * resources.displayMetrics.density, paint)
+            }
         }
     }
 }

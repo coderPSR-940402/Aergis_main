@@ -24,6 +24,10 @@ internal class DiagnosticSession(val directory: File, private val metadata: JSON
     private var inferenceMax = 0L
     private var lastFrame: JSONObject? = null
     private val reasons = linkedMapOf<String, Int>()
+    private val lineage = linkedMapOf<String, Pair<PointerLineageMetrics, PointerLineageMetrics>>()
+    private val pointerRejections = linkedMapOf<String, Int>()
+    private var lastVisible: Boolean? = null
+    private var visibilityInterruptions = 0
     private val heatmap = IntArray(100)
     var droppedRecords = 0L
     var imageFailures = 0L
@@ -67,6 +71,26 @@ internal class DiagnosticSession(val directory: File, private val metadata: JSON
             if (x.isFinite() && y.isFinite()) heatmap[(y.coerceIn(0.0, 1.0) * 10).toInt().coerceAtMost(9) * 10 +
                 (x.coerceIn(0.0, 1.0) * 10).toInt().coerceAtMost(9)]++
         }
+        val rejection = frame.optString("pointerRejection", "UNSPECIFIED")
+        pointerRejections[rejection] = (pointerRejections[rejection] ?: 0) + 1
+        if (frame.has("cursorVisible")) {
+            val visible = frame.optBoolean("cursorVisible")
+            if (lastVisible == true && !visible) visibilityInterruptions++
+            lastVisible = visible
+        }
+        val comparison = frame.optJSONObject("comparison")
+        fun point(name: String): PointerCoordinateMapper.Point? {
+            val value = comparison?.optJSONObject(name) ?: return null
+            val x = value.optDouble("x"); val y = value.optDouble("y")
+            return if (x.isFinite() && y.isFinite()) PointerCoordinateMapper.Point(x.toFloat(), y.toFloat()) else null
+        }
+        val measured = point("mappedTip"); val current = point("current"); val vc49 = point("vc49")
+        if (measured != null && current != null && vc49 != null) {
+            val segment = frame.optString("testSegment", "UNLABELLED")
+            val metrics = lineage.getOrPut(segment) { PointerLineageMetrics() to PointerLineageMetrics() }
+            metrics.first.sample(measured, current, segment == "STATIONARY")
+            metrics.second.sample(measured, vc49, segment == "STATIONARY")
+        }
         frames++
         lastFrame = frame
         return true
@@ -96,6 +120,13 @@ internal class DiagnosticSession(val directory: File, private val metadata: JSON
             .put("heatmap", JSONArray(heatmap.toList())).put("droppedRecords", droppedRecords)
             .put("imageFailures", imageFailures).put("stopReason", stopReason)
             .put("writeError", writeError ?: JSONObject.NULL).put("lastFrame", lastFrame ?: JSONObject.NULL)
+        val comparisons = JSONObject()
+        lineage.forEach { (segment, metrics) ->
+            comparisons.put(segment, JSONObject().put("current", JSONObject(metrics.first.snapshot() as Map<*, *>))
+                .put("vc49", JSONObject(metrics.second.snapshot() as Map<*, *>)))
+        }
+        summary.put("lineageComparison", comparisons).put("visibilityInterruptions", visibilityInterruptions)
+            .put("pointerRejections", JSONObject(pointerRejections as Map<*, *>))
         File(directory, "summary.json").writeText(summary.toString(2))
         val pdf = File(directory, "report.pdf")
         DiagnosticReport.write(pdf, metadata, summary)

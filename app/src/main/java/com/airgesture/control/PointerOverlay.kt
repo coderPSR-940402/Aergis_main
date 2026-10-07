@@ -72,6 +72,15 @@ class PointerOverlay(private val context: Context) {
         cursor.translationY = y - CursorView.SIZE / 2f
     }
 
+    /** Opt-in recording evidence for clipping/inset failures; no screen pixels are captured. */
+    internal fun diagnosticBounds(): org.json.JSONObject {
+        val root = rootView ?: return org.json.JSONObject()
+        val origin = IntArray(2)
+        root.getLocationOnScreen(origin)
+        return org.json.JSONObject().put("width", root.width).put("height", root.height)
+            .put("originX", origin[0]).put("originY", origin[1])
+    }
+
     private companion object {
         const val TAG = "PointerOverlay"
     }

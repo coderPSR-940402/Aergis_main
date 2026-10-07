@@ -14,12 +14,13 @@ android {
         applicationId = "com.airgesture.control"
         minSdk = 26
         targetSdk = 36
+        buildConfigField("String", "SOURCE_COMMIT", "\"${System.getenv("GITHUB_SHA") ?: "local-uncommitted"}\"")
         versionCode = 10
         versionName = "0.10.0-preview"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
-    buildFeatures { compose = true }
+    buildFeatures { compose = true; buildConfig = true }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

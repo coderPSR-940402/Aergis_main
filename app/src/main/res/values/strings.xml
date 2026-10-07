@@ -128,4 +128,7 @@
     <string name="testing_retry">Retry export</string>
     <string name="testing_saved">Report saved</string>
     <string name="testing_start_camera">Start the camera session to enable the mirror and recording.</string>
+    <string name="testing_filter_mode">Pointer filter: %1$s • switch</string>
+    <string name="testing_filter_description">Compare CURRENT and VC49 with gestures off. Selection lasts for this app session.</string>
+    <string name="testing_segment">Test segment: %1$s • next</string>
 </resources>
