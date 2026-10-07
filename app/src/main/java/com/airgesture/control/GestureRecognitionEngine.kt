@@ -153,7 +153,10 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         val controlSafe = AirRuntime.controlMode == ControlMode.ARMED &&
             !AirRuntime.motionActive &&
             AirRuntime.state.value.foregroundContext.safety == ForegroundSafety.SAFE
-        val pointerActive = AirRuntime.pointerEnabled && controlSafe
+        val pointerActive = PointerTrackingPolicy.isActive(
+            AirRuntime.pointerEnabled, AirRuntime.controlMode, AirRuntime.motionActive,
+            AirRuntime.state.value.foregroundContext.safety
+        )
         val handSelection = selectPointerHand(landmarks, handednessList, timestamp, rotationDegrees)
         val selectedHand = handSelection?.index?.let(landmarks::getOrNull)
         val gesture = OwnedGestureEvidenceSelector.select(

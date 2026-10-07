@@ -42,7 +42,7 @@ class GestureInterpreter(
         return GestureDecision(mappings?.mapping(source) ?: source, signal.score)
     }
 
-    fun processFrame(landmarks: List<Point3D>, timestampMs: Long): ProcessedGestureResult? {
+    fun processFrame(landmarks: List<Point3D>, timestampMs: Long, actionsAllowed: Boolean = true): ProcessedGestureResult? {
         if (landmarks.size <= KinematicValidator.INDEX_TIP) {
             reset()
             return null
