@@ -46,6 +46,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
     private val freshnessPolicy = VisionResultFreshnessPolicy()
     private var recognizerFailureCount = 0
     private var nextRecognizerRetryAt = 0L
+    private var diagnosticTrace: org.json.JSONObject? = null
 
     // Reusable buffers to avoid heap allocations per frame
     private val reusablePointsList = ArrayList<Point3D>(21)
@@ -60,6 +61,10 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
     @ExperimentalGetImage
     fun analyze(image: ImageProxy) {
         if (closed.get()) return
+        val diagnosticStartedAt = SystemClock.uptimeMillis()
+        var diagnosticResult: GestureRecognizerResult? = null
+        var diagnosticError: String? = null
+        diagnosticTrace = if (TestingTools.needsFrames()) org.json.JSONObject() else null
         try {
             val timestamp = SystemClock.uptimeMillis()
             ensureRecognizer(timestamp)
@@ -75,11 +80,13 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                     imageProcessingOptions,
                     timestamp
                 )
+                diagnosticResult = result
                 publish(result, timestamp, SystemClock.uptimeMillis(), image.imageInfo.rotationDegrees)
             } finally {
                 mpImage.close()
             }
         } catch (t: Throwable) {
+            diagnosticError = t.message ?: t.javaClass.simpleName
             Log.e(TAG, "Gesture recognition failed for frame", t)
             AirRuntime.visionError = t.message ?: t.javaClass.simpleName
             AirRuntime.visionReady = false
@@ -89,6 +96,12 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             nextRecognizerRetryAt = SystemClock.uptimeMillis() +
                 VisionRetryPolicy.delayForFailure(recognizerFailureCount)
             resetTrackingState()
+        } finally {
+            if (TestingTools.needsFrames()) runCatching {
+                TestingTools.onFrame(context, image, diagnosticResult, diagnosticStartedAt,
+                    SystemClock.uptimeMillis() - diagnosticStartedAt, diagnosticTrace, diagnosticError)
+            }.onFailure { Log.w(TAG, "Testing frame capture failed", it) }
+            diagnosticTrace = null
         }
     }
 
@@ -131,6 +144,8 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         rotationDegrees: Int
     ) {
         val freshness = freshnessPolicy.evaluate(timestamp, observedAtMs)
+        diagnosticTrace?.put("freshness", org.json.JSONObject().put("reason", freshness.reason.name)
+            .put("ageMs", freshness.ageMs).put("gapMs", freshness.gapMs))
         AirRuntime.recordVisionResult(freshness)
         if (!freshness.accepted) {
             Log.d(TAG, "Vision result rejected: ${freshness.reason}")
@@ -189,6 +204,8 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         AirRuntime.lastGesture = gestureName
         val indexTip = selectedHand?.getOrNull(INDEX_TIP)
         val commandOwnerId = handSelection?.ownerId
+        diagnosticTrace?.put("selectedHandIndex", pointerHandIndex ?: org.json.JSONObject.NULL)
+            ?.put("commandOwnerId", commandOwnerId ?: org.json.JSONObject.NULL)
 
         reusablePointsList.clear()
         if (selectedHand != null) {
@@ -227,6 +244,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             indexTipPresent = indexTip != null,
             poseEvidence = selectedPoseEvidence
         )
+        diagnosticTrace?.put("commandsAllowed", commandTracking)
 
         if (pointerActive && indexTip != null) {
             val processed = interpreter.processFrame(reusablePointsList, timestamp, actionsAllowed = commandTracking) ?: run {
@@ -388,4 +406,3 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         private const val PINKY_MCP = KinematicValidator.PINKY_MCP
     }
 }
-

@@ -21,6 +21,7 @@ class AirAccessibilityService : AccessibilityService() {
     @Volatile private var pendingVisible = false
     @Volatile private var pendingClicking = false
     private var pointerOverlay: PointerOverlay? = null
+    private var trackingMirror: TrackingMirrorOverlay? = null
     private val windowManager: WindowManager by lazy {
         getSystemService(WINDOW_SERVICE) as WindowManager
     }
@@ -29,6 +30,7 @@ class AirAccessibilityService : AccessibilityService() {
         super.onServiceConnected()
         instance = this
         pointerOverlay = PointerOverlay(this)
+        trackingMirror = TrackingMirrorOverlay(this)
         AirRuntime.setForegroundContext(ForegroundContextPolicy.evaluate(null, null))
     }
 
@@ -73,6 +75,10 @@ class AirAccessibilityService : AccessibilityService() {
 
     fun dispatch(action: AirAction) {
         if (action == AirAction.NONE) return
+        if (TestingTools.state.value.status == RecordingStatus.RECORDING) {
+            TestingTools.event("action_requested", org.json.JSONObject().put("action", action.name)
+                .put("target", DiagnosticFrameData.pointer(AirRuntime.pointerSnapshot())).put("epoch", AirRuntime.actionEpoch))
+        }
         if (!isActionAllowed(action)) {
             AirRuntime.recordActionDispatchOutcome(ActionDispatchOutcome.POLICY_DENIED)
             return
@@ -210,7 +216,13 @@ class AirAccessibilityService : AccessibilityService() {
         )
     }
 
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        trackingMirror?.reposition()
+    }
+
     override fun onInterrupt() {
+        TestingTools.setMirror(false)
         mainHandler.removeCallbacksAndMessages(null)
         updateScheduled.set(false)
         AirRuntime.controlMode = ControlMode.READY
@@ -219,6 +231,8 @@ class AirAccessibilityService : AccessibilityService() {
     }
 
     override fun onDestroy() {
+        trackingMirror?.close()
+        trackingMirror = null
         if (instance === this) instance = null
         mainHandler.removeCallbacksAndMessages(null)
         updateScheduled.set(false)

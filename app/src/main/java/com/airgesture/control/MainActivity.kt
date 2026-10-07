@@ -39,6 +39,12 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.core.content.FileProvider
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
 
 class MainActivity : ComponentActivity() {
     private var pointerEnabled by mutableStateOf(true)
@@ -53,6 +59,51 @@ class MainActivity : ComponentActivity() {
     private var calibrationDraft by mutableStateOf(PointerCalibrationProfile.COMFORTABLE_REACH)
     private var calibrationMessage by mutableStateOf<String?>(null)
     private val calibrationSession = PointerCalibrationSession()
+    private var pendingPdf: File? = null
+    private var pendingZip: File? = null
+    private val savePdf = registerForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
+        val file = pendingPdf
+        pendingPdf = null
+        if (uri != null && file != null) writeReport(file, uri)
+    }
+    private val saveZip = registerForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+        val file = pendingZip
+        pendingZip = null
+        if (uri != null && file != null) writeReport(file, uri)
+    }
+
+    private fun saveReport(file: File) {
+        val prefix = "Aergis-${file.parentFile?.name}"
+        if (file.extension == "pdf") { pendingPdf = file; savePdf.launch("$prefix.pdf") }
+        else { pendingZip = file; saveZip.launch("$prefix.zip") }
+    }
+
+    private fun writeReport(file: File, uri: Uri) {
+        lifecycleScope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching {
+                val output = contentResolver.openOutputStream(uri) ?: error("Could not open selected destination")
+                output.use { target -> file.inputStream().use { it.copyTo(target) } }
+            } }
+            android.widget.Toast.makeText(this@MainActivity,
+                if (result.isSuccess) getString(R.string.testing_saved) else "Save failed: ${result.exceptionOrNull()?.message}",
+                android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun shareReport(report: DiagnosticExport) {
+        runCatching {
+            val uris = arrayListOf(report.pdf, report.bundle).map { FileProvider.getUriForFile(this, "$packageName.testing-files", it) }
+            val clip = android.content.ClipData.newUri(contentResolver, "Aergis report", uris.first())
+            clip.addItem(android.content.ClipData.Item(uris.last()))
+            val intent = Intent(Intent.ACTION_SEND_MULTIPLE).apply {
+                type = "*/*"
+                putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(uris))
+                clipData = clip
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            startActivity(Intent.createChooser(intent, getString(R.string.testing_share)))
+        }.onFailure { android.widget.Toast.makeText(this, "Share failed: ${it.message}", android.widget.Toast.LENGTH_LONG).show() }
+    }
 
     private val cameraPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) {
@@ -65,13 +116,22 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        pendingPdf = savedInstanceState?.getString("testing_pending_pdf")?.let(::File)
+        pendingZip = savedInstanceState?.getString("testing_pending_zip")?.let(::File)
         refreshSettings()
+        TestingTools.restoreLatest(this)
         setContent { AirGestureScreen() }
     }
 
     override fun onResume() {
         super.onResume()
         refreshSettings()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        pendingPdf?.let { outState.putString("testing_pending_pdf", it.absolutePath) }
+        pendingZip?.let { outState.putString("testing_pending_zip", it.absolutePath) }
+        super.onSaveInstanceState(outState)
     }
 
     private fun refreshSettings() {
@@ -239,6 +299,7 @@ class MainActivity : ComponentActivity() {
                             isError = runtime.motionActive || runtime.foregroundSafety == ForegroundSafety.PROTECTED
                         )
                     }
+                    item { TestingToolsCard(::saveReport, ::shareReport) }
                     item { CalibrationCard(runtime.pointerTracking) }
                     item { PracticeCard(runtime.controlMode) }
                     item { DiagnosticsCard(runtime) }
@@ -697,4 +758,3 @@ class MainActivity : ComponentActivity() {
         }
     }
 }
-
