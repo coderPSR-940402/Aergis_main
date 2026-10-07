@@ -6,16 +6,16 @@ import android.content.Context
 class PointerCalibrationStore(context: Context) {
     private val preferences = context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
 
-    fun profile(): PointerCalibrationProfile =
+    fun profile(hand: ControlHandPreference = ControlHandPreference.EITHER, landscape: Boolean = false): PointerCalibrationProfile =
         PointerCalibrationProfileCodec.decode(preferences.getString(KEY_PROFILE, null))
             ?: PointerCalibrationProfile.DEFAULT
 
-    fun hasValidProfile(): Boolean =
+    fun hasValidProfile(hand: ControlHandPreference = ControlHandPreference.EITHER, landscape: Boolean = false): Boolean =
         PointerCalibrationProfileCodec.decode(preferences.getString(KEY_PROFILE, null)) != null
 
-    fun enabled(): Boolean = preferences.getBoolean(KEY_ENABLED, false) && hasValidProfile()
+    fun enabled(hand: ControlHandPreference = ControlHandPreference.EITHER, landscape: Boolean = false): Boolean = preferences.getBoolean(KEY_ENABLED, false) && hasValidProfile()
 
-    fun save(profile: PointerCalibrationProfile): Boolean {
+    fun save(profile: PointerCalibrationProfile, hand: ControlHandPreference = ControlHandPreference.EITHER, landscape: Boolean = false): Boolean {
         if (!profile.isValid()) return false
         preferences.edit()
             .putString(KEY_PROFILE, PointerCalibrationProfileCodec.encode(profile))
@@ -24,13 +24,13 @@ class PointerCalibrationStore(context: Context) {
         return true
     }
 
-    fun setEnabled(enabled: Boolean): Boolean {
+    fun setEnabled(enabled: Boolean, hand: ControlHandPreference = ControlHandPreference.EITHER, landscape: Boolean = false): Boolean {
         if (enabled && !hasValidProfile()) return false
         preferences.edit().putBoolean(KEY_ENABLED, enabled).apply()
         return true
     }
 
-    fun reset() {
+    fun reset(hand: ControlHandPreference = ControlHandPreference.EITHER, landscape: Boolean = false) {
         preferences.edit()
             .remove(KEY_PROFILE)
             .remove(KEY_ENABLED)
@@ -43,3 +43,4 @@ class PointerCalibrationStore(context: Context) {
         const val KEY_ENABLED = "pointer_profile_enabled"
     }
 }
+

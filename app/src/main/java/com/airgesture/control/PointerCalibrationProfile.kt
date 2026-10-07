@@ -12,7 +12,9 @@ data class PointerCalibrationProfile(
     val right: Float = DEFAULT_RIGHT,
     val top: Float = DEFAULT_TOP,
     val bottom: Float = DEFAULT_BOTTOM,
-    val mirrorX: Boolean = true
+    val mirrorX: Boolean = true,
+    val curveX: Float = 1f,
+    val curveY: Float = 1f
 ) {
     fun isValid(): Boolean =
         schemaVersion == CURRENT_SCHEMA_VERSION &&
@@ -34,5 +36,7 @@ data class PointerCalibrationProfile(
         const val DEFAULT_BOTTOM = 0.92f
         private const val MIN_ACTIVE_SPAN = 0.10f
         val DEFAULT = PointerCalibrationProfile()
+        val COMFORTABLE_REACH = DEFAULT
     }
 }
+

@@ -25,7 +25,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
     private val closed = AtomicBoolean(false)
     private val mappings = ActionMappingStore(context)
     private val calibrationStore = PointerCalibrationStore(context)
-    private val calibrationProfile = calibrationStore.profile().takeIf { calibrationStore.enabled() }
+    private val pointerMapper = LivePointerMapper { calibrationStore.profile().takeIf { calibrationStore.enabled() } }
     private val interpreter = GestureInterpreter(mappings)
     private val poseEvidenceEvaluator = PoseGeometryEvidenceEvaluator()
     private var recognizer: GestureRecognizer? = null
@@ -216,9 +216,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             // GestureInterpreter owns the single latency-bounded pointer filter. Applying
             // another filter here doubled lag and made fast motion appear to freeze.
             AirRuntime.setRawPointerState(processed.smoothedX, processed.smoothedY, true)
-            val stabilized = calibrationProfile?.let {
-                PointerCoordinateMapper.map(processed.smoothedX, processed.smoothedY, it)
-            } ?: PointerCoordinateMapper.map(processed.smoothedX, processed.smoothedY)
+            val stabilized = pointerMapper.map(processed.smoothedX, processed.smoothedY)
             pointerInitialized = true
             lastPointerAt = timestamp
             AirRuntime.setPointerState(stabilized.x, stabilized.y, true)
@@ -347,3 +345,4 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         private const val PINKY_MCP = KinematicValidator.PINKY_MCP
     }
 }
+
