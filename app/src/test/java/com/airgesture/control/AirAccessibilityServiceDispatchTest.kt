@@ -2,7 +2,6 @@ package com.airgesture.control
 
 import android.os.Looper
 import android.content.Context
-import android.graphics.PathMeasure
 import android.graphics.RectF
 import android.util.DisplayMetrics
 import android.view.WindowManager
@@ -151,12 +150,14 @@ class AirAccessibilityServiceDispatchTest {
         service.dispatch(AirAction.SCROLL_UP)
         shadowOf(Looper.getMainLooper()).idle()
 
-        val path = PathMeasure(shadow.gesturesDispatched.single().description().getStroke(0).path, false)
-        val position = FloatArray(2)
-        for (distance in listOf(0f, path.length)) {
-            assertTrue(path.getPosTan(distance, position, null))
-            assertEquals((metrics.widthPixels - 1).toFloat(), position[0], 0.01f)
-            assertTrue(position[1] in 0f..(metrics.heightPixels - 1).toFloat())
-        }
+        // Legacy Robolectric PathMeasure.getPosTan synthesizes 0..1 values.
+        // Bounds inspect the actual dispatched path, including both scroll endpoints.
+        val bounds = RectF()
+        shadow.gesturesDispatched.single().description().getStroke(0).path.computeBounds(bounds, true)
+        assertEquals((metrics.widthPixels - 1).toFloat(), bounds.left, 0.01f)
+        assertEquals(bounds.left, bounds.right, 0.01f)
+        assertTrue(bounds.top in 0f..(metrics.heightPixels - 1).toFloat())
+        assertTrue(bounds.bottom in 0f..(metrics.heightPixels - 1).toFloat())
+        assertTrue(bounds.bottom > bounds.top)
     }
 }
