@@ -27,11 +27,12 @@ class PointerCalibrationSession(
     }
 
     fun addSample(x: Float, y: Float): Boolean {
-        if (state != State.COLLECTING || !x.isFinite() || !y.isFinite()) return false
+        if ((state != State.COLLECTING && state != State.READY) || !x.isFinite() || !y.isFinite()) return false
         if (x !in 0f..1f || y !in 0f..1f) return false
         sampleCount++
-        minX = min(minX, x)
-        maxX = max(maxX, x)
+        val mappedX = if (mirrorX) 1f - x else x
+        minX = min(minX, mappedX)
+        maxX = max(maxX, mappedX)
         minY = min(minY, y)
         maxY = max(maxY, y)
         state = if (sampleCount >= minimumSamples) State.READY else State.COLLECTING

@@ -1,5 +1,8 @@
 package com.airgesture.control
 
+import kotlin.math.abs
+import kotlin.math.pow
+
 /** Converts MediaPipe normalized coordinates into screen-normalized coordinates. */
 object PointerCoordinateMapper {
     private const val ACTIVE_LEFT = 0.02f
@@ -30,7 +33,14 @@ object PointerCoordinateMapper {
         val normalizedY =
             ((sourceY - calibration.top) / (calibration.bottom - calibration.top))
                 .coerceIn(0f, 1f)
-        return Point(normalizedX, normalizedY)
+        return Point(response(normalizedX, calibration.curveX), response(normalizedY, calibration.curveY))
+    }
+
+    private fun response(value: Float, curve: Float): Float {
+        if (curve == 1f) return value
+        val signed = value * 2f - 1f
+        val magnitude = abs(signed).toDouble().pow(curve.toDouble()).toFloat()
+        return (0.5f + (if (signed < 0f) -magnitude else magnitude) * 0.5f).coerceIn(0f, 1f)
     }
 
     data class Point(val x: Float, val y: Float)

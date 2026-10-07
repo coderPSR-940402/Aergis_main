@@ -3,8 +3,8 @@ package com.airgesture.control
 /**
  * User-calibrated normalized pointer bounds.
  *
- * The profile is intentionally opt-in: the legacy mapper remains the default until
- * replay and device evidence support enabling calibrated mapping in production.
+ * Bounds describe comfortable reach in upright, mirrored user coordinates.
+ * A curve above 1 reduces movement near the center while retaining screen edges.
  */
 data class PointerCalibrationProfile(
     val schemaVersion: Int = CURRENT_SCHEMA_VERSION,
@@ -23,20 +23,25 @@ data class PointerCalibrationProfile(
             top in 0f..1f &&
             bottom in 0f..1f &&
             right - left >= MIN_ACTIVE_SPAN &&
-            bottom - top >= MIN_ACTIVE_SPAN
+            bottom - top >= MIN_ACTIVE_SPAN &&
+            curveX in MIN_CURVE..MAX_CURVE && curveY in MIN_CURVE..MAX_CURVE
 
     fun validatedOrDefault(): PointerCalibrationProfile =
         if (isValid()) this else DEFAULT
 
     companion object {
-        const val CURRENT_SCHEMA_VERSION = 2
+        const val CURRENT_SCHEMA_VERSION = 3
         const val DEFAULT_LEFT = 0.10f
         const val DEFAULT_RIGHT = 0.90f
         const val DEFAULT_TOP = 0.08f
         const val DEFAULT_BOTTOM = 0.92f
-        private const val MIN_ACTIVE_SPAN = 0.10f
+        const val MIN_ACTIVE_SPAN = 0.10f
+        const val MIN_CURVE = 0.75f
+        const val MAX_CURVE = 1.80f
         val DEFAULT = PointerCalibrationProfile()
-        val COMFORTABLE_REACH = DEFAULT
+        // Starting point for the reported lower-frame loss; users can tune every bound live.
+        val COMFORTABLE_REACH = PointerCalibrationProfile(
+            left = 0.15f, right = 0.85f, top = 0.12f, bottom = 0.65f
+        )
     }
 }
-

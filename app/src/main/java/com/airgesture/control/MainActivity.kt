@@ -2,6 +2,7 @@ package com.airgesture.control
 
 import android.Manifest
 import android.content.Intent
+import android.content.res.Configuration
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
@@ -9,7 +10,9 @@ import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -20,6 +23,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -29,6 +33,8 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -44,6 +50,7 @@ class MainActivity : ComponentActivity() {
     private var calibrationState by mutableStateOf(PointerCalibrationSession.State.IDLE)
     private var calibrationSampleCount by mutableIntStateOf(0)
     private var calibrationEnabled by mutableStateOf(false)
+    private var calibrationDraft by mutableStateOf(PointerCalibrationProfile.COMFORTABLE_REACH)
     private var calibrationMessage by mutableStateOf<String?>(null)
     private val calibrationSession = PointerCalibrationSession()
 
@@ -72,7 +79,7 @@ class MainActivity : ComponentActivity() {
         pointerEnabled = mappings.pointerEnabled()
         gesturesEnabled = mappings.gesturesEnabled()
         handPreference = mappings.handPreference()
-        calibrationEnabled = PointerCalibrationStore(this).enabled()
+        refreshCalibrationSettings()
         AirRuntime.handPreference = handPreference
         accessibilityEnabled = AirAccessibilityService.enabled()
     }
@@ -118,6 +125,26 @@ class MainActivity : ComponentActivity() {
         mappingsVersion++
     }
 
+    private fun isLandscape(): Boolean = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+
+    private fun refreshCalibrationSettings() {
+        val store = PointerCalibrationStore(this)
+        calibrationEnabled = store.enabled(handPreference, isLandscape())
+        calibrationDraft = if (store.hasValidProfile(handPreference, isLandscape())) {
+            store.profile(handPreference, isLandscape())
+        } else {
+            PointerCalibrationProfile.COMFORTABLE_REACH
+        }
+    }
+
+    private fun applyCalibration(profile: PointerCalibrationProfile) {
+        if (PointerCalibrationStore(this).save(profile, handPreference, isLandscape())) {
+            calibrationDraft = profile
+            calibrationEnabled = true
+            calibrationMessage = getString(R.string.calibration_enabled)
+        }
+    }
+
     private fun startCalibration() {
         calibrationSession.start()
         calibrationState = calibrationSession.state()
@@ -127,7 +154,7 @@ class MainActivity : ComponentActivity() {
 
     private fun captureCalibrationSample() {
         val rawPointer = AirRuntime.rawPointerSnapshot()
-        val accepted = calibrationSession.addSample(rawPointer.x, rawPointer.y)
+        val accepted = rawPointer.tracking && calibrationSession.addSample(rawPointer.x, rawPointer.y)
         calibrationState = calibrationSession.state()
         calibrationSampleCount = calibrationSession.sampleCount()
         calibrationMessage = if (accepted) {
@@ -145,18 +172,18 @@ class MainActivity : ComponentActivity() {
             calibrationMessage = getString(R.string.calibration_invalid)
             return
         }
-        calibrationEnabled = PointerCalibrationStore(this).save(profile)
-        calibrationMessage = getString(R.string.calibration_enabled)
+        applyCalibration(profile.copy(curveX = calibrationDraft.curveX, curveY = calibrationDraft.curveY))
     }
 
     private fun disableCalibration() {
-        PointerCalibrationStore(this).setEnabled(false)
+        PointerCalibrationStore(this).setEnabled(false, handPreference, isLandscape())
         calibrationEnabled = false
         calibrationMessage = getString(R.string.calibration_disabled)
     }
 
     private fun resetCalibration() {
-        PointerCalibrationStore(this).reset()
+        PointerCalibrationStore(this).reset(handPreference, isLandscape())
+        calibrationDraft = PointerCalibrationProfile.COMFORTABLE_REACH
         calibrationSession.reset()
         calibrationState = calibrationSession.state()
         calibrationSampleCount = calibrationSession.sampleCount()
@@ -261,6 +288,11 @@ class MainActivity : ComponentActivity() {
                                     handPreference = selected
                                     ActionMappingStore(this@MainActivity).setHandPreference(selected)
                                     AirRuntime.handPreference = selected
+                                    calibrationSession.reset()
+                                    calibrationState = calibrationSession.state()
+                                    calibrationSampleCount = 0
+                                    calibrationMessage = null
+                                    refreshCalibrationSettings()
                                 }
                             )
                         }
@@ -309,6 +341,17 @@ class MainActivity : ComponentActivity() {
                                 )
                             )
                         )
+                    }
+                    item {
+                        Text(stringResource(when (runtime.pointerFeedback) {
+                            PointerFeedback.TRACKING -> R.string.pointer_feedback_tracking
+                            PointerFeedback.COASTING -> R.string.pointer_feedback_coasting
+                            PointerFeedback.NO_HAND -> R.string.pointer_feedback_no_hand
+                            PointerFeedback.DISABLED -> R.string.pointer_feedback_disabled
+                            PointerFeedback.AMBIGUOUS -> R.string.pointer_feedback_ambiguous
+                            PointerFeedback.INVALID_TIP -> R.string.pointer_feedback_invalid_tip
+                            PointerFeedback.VISION_REJECTED -> R.string.pointer_feedback_vision_rejected
+                        }))
                     }
                     item {
                         Text(
@@ -415,6 +458,7 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     private fun CalibrationCard(pointerTracking: Boolean) {
+        val preview by AirRuntime.state.collectAsStateWithLifecycle()
         ElevatedCard(modifier = Modifier.fillMaxWidth()) {
             Column(
                 modifier = Modifier.fillMaxWidth().padding(16.dp),
@@ -435,7 +479,51 @@ class MainActivity : ComponentActivity() {
                         calibrationSampleCount
                     )
                 )
+                Text(stringResource(
+                    R.string.calibration_context,
+                    stringResource(when (handPreference) {
+                        ControlHandPreference.LEFT -> R.string.hand_left
+                        ControlHandPreference.RIGHT -> R.string.hand_right
+                        ControlHandPreference.EITHER -> R.string.hand_either
+                    }),
+                    stringResource(if (isLandscape()) R.string.orientation_landscape else R.string.orientation_portrait)
+                ))
+                Text(stringResource(R.string.calibration_reach_guidance))
+                Canvas(modifier = Modifier.fillMaxWidth().height(120.dp)) {
+                    drawRect(Color(0xFF263238))
+                    if (preview.pointerTracking || preview.pointerFeedback == PointerFeedback.COASTING) {
+                        drawCircle(
+                            color = if (preview.pointerTracking) Color(0xFF00E5FF) else Color.Gray,
+                            radius = 6.dp.toPx(),
+                            center = Offset(preview.pointerX * size.width, preview.pointerY * size.height)
+                        )
+                    }
+                }
                 calibrationMessage?.let { Text(it) }
+                Button(
+                    onClick = { applyCalibration(PointerCalibrationProfile.COMFORTABLE_REACH) },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text(stringResource(R.string.calibration_comfortable)) }
+                CalibrationSlider(R.string.calibration_left_bound, calibrationDraft.left, 0f..1f) {
+                    applyCalibration(calibrationDraft.copy(left = it.coerceAtMost(calibrationDraft.right - PointerCalibrationProfile.MIN_ACTIVE_SPAN)))
+                }
+                CalibrationSlider(R.string.calibration_right_bound, calibrationDraft.right, 0f..1f) {
+                    applyCalibration(calibrationDraft.copy(right = it.coerceAtLeast(calibrationDraft.left + PointerCalibrationProfile.MIN_ACTIVE_SPAN)))
+                }
+                CalibrationSlider(R.string.calibration_top_bound, calibrationDraft.top, 0f..1f) {
+                    applyCalibration(calibrationDraft.copy(top = it.coerceAtMost(calibrationDraft.bottom - PointerCalibrationProfile.MIN_ACTIVE_SPAN)))
+                }
+                CalibrationSlider(R.string.calibration_bottom_bound, calibrationDraft.bottom, 0f..1f) {
+                    applyCalibration(calibrationDraft.copy(bottom = it.coerceAtLeast(calibrationDraft.top + PointerCalibrationProfile.MIN_ACTIVE_SPAN)))
+                }
+                CalibrationSlider(R.string.calibration_curve_x, calibrationDraft.curveX,
+                    PointerCalibrationProfile.MIN_CURVE..PointerCalibrationProfile.MAX_CURVE) {
+                    applyCalibration(calibrationDraft.copy(curveX = it))
+                }
+                CalibrationSlider(R.string.calibration_curve_y, calibrationDraft.curveY,
+                    PointerCalibrationProfile.MIN_CURVE..PointerCalibrationProfile.MAX_CURVE) {
+                    applyCalibration(calibrationDraft.copy(curveY = it))
+                }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -448,7 +536,8 @@ class MainActivity : ComponentActivity() {
                     }
                     Button(
                         onClick = { captureCalibrationSample() },
-                        enabled = calibrationState == PointerCalibrationSession.State.COLLECTING &&
+                        enabled = (calibrationState == PointerCalibrationSession.State.COLLECTING ||
+                            calibrationState == PointerCalibrationSession.State.READY) &&
                             pointerTracking,
                         modifier = Modifier.weight(1f)
                     ) {
@@ -482,6 +571,12 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    @Composable
+    private fun CalibrationSlider(label: Int, value: Float, range: ClosedFloatingPointRange<Float>, onChanged: (Float) -> Unit) {
+        Text(stringResource(label, value))
+        Slider(value = value.coerceIn(range), onValueChange = onChanged, valueRange = range)
     }
 
     @Composable
@@ -602,3 +697,4 @@ class MainActivity : ComponentActivity() {
         }
     }
 }
+

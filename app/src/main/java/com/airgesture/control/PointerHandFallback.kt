@@ -15,3 +15,4 @@ internal object PointerHandFallback {
                     candidate.handedness.equals(preference.name, ignoreCase = true))
         }.singleOrNull()?.index
 }
+

@@ -10,22 +10,27 @@ internal object PointerCalibrationProfileCodec {
             profile.right,
             profile.top,
             profile.bottom,
-            profile.mirrorX
+            profile.mirrorX,
+            profile.curveX,
+            profile.curveY
         ).joinToString(separator = "|")
     }
 
     fun decode(encoded: String?): PointerCalibrationProfile? {
         if (encoded.isNullOrBlank()) return null
         val parts = encoded.split('|')
-        if (parts.size != 6) return null
+        val legacy = parts.size == 6 && parts[0] == "2"
+        if (!legacy && (parts.size != 8 || parts[0] != "3")) return null
         return runCatching {
             PointerCalibrationProfile(
-                schemaVersion = parts[0].toInt(),
+                schemaVersion = PointerCalibrationProfile.CURRENT_SCHEMA_VERSION,
                 left = parts[1].toFloat(),
                 right = parts[2].toFloat(),
                 top = parts[3].toFloat(),
                 bottom = parts[4].toFloat(),
-                mirrorX = parts[5].toBooleanStrict()
+                mirrorX = parts[5].toBooleanStrict(),
+                curveX = if (legacy) 1f else parts[6].toFloat(),
+                curveY = if (legacy) 1f else parts[7].toFloat()
             ).takeIf { it.isValid() }
         }.getOrNull()
     }
