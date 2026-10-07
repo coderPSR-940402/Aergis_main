@@ -42,14 +42,20 @@ class GestureInterpreter(
         return GestureDecision(mappings?.mapping(source) ?: source, signal.score)
     }
 
-    fun processFrame(landmarks: List<Point3D>, timestampMs: Long): ProcessedGestureResult? {
+    fun processFrame(landmarks: List<Point3D>, timestampMs: Long, actionsAllowed: Boolean = true): ProcessedGestureResult? {
         if (landmarks.size <= KinematicValidator.INDEX_TIP) {
             reset()
             return null
         }
         val poseEvidence = poseEvidenceEvaluator.evaluate(landmarks)
         val rawIndexTip = landmarks[KinematicValidator.INDEX_TIP]
-        val constrainedTip = validator.validateAndConstrainIndexTip(landmarks, previousIndexTip)
+        // Invalid palm/pose geometry is unsuitable for constraining a valid fingertip.
+        // Keep pointer feedback independent from the stronger evidence needed for actions.
+        val constrainedTip = if (poseEvidence.accepted) {
+            validator.validateAndConstrainIndexTip(landmarks, previousIndexTip)
+        } else {
+            rawIndexTip
+        }
         if (!rawIndexTip.x.isFinite() || !rawIndexTip.y.isFinite() ||
             !constrainedTip.x.isFinite() || !constrainedTip.y.isFinite()
         ) {
@@ -61,8 +67,8 @@ class GestureInterpreter(
         val stabilized = pointerFilter.filter(smoothedPoint.x, smoothedPoint.y, timestampMs)
         previousIndexTip = constrainedTip
         val dNorm = validator.calculateNormalizedFingerDistance(landmarks).coerceIn(0f, 1.5f)
-        if (!poseEvidence.accepted) {
-            // Rejected geometry must not carry click dwell or swipe history into a later frame.
+        if (!poseEvidence.accepted || !actionsAllowed) {
+            // Rejected geometry or blocked actions must not carry dwell/swipe history forward.
             clickStateMachine.reset()
             swipeEngine.reset()
             return ProcessedGestureResult(
