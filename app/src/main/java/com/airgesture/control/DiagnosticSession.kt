@@ -13,6 +13,7 @@ internal class DiagnosticSession(val directory: File, private val metadata: JSON
     private var writer: java.io.BufferedWriter? = null
     private var events: java.io.BufferedWriter? = null
     private var closed = false
+    private var stoppedAtMs: Long? = null
     private var frames = 0
     private var tracked = 0
     private var images = 0
@@ -77,6 +78,7 @@ internal class DiagnosticSession(val directory: File, private val metadata: JSON
     }
 
     fun finish(endedAtMs: Long): DiagnosticExport {
+        val stoppedAt = stoppedAtMs ?: endedAtMs.also { stoppedAtMs = it }
         if (!closed) {
             // Closing is attempted independently; a write failure cannot prevent log preservation.
             runCatching { writer?.close() }
@@ -85,9 +87,9 @@ internal class DiagnosticSession(val directory: File, private val metadata: JSON
             events = null
             closed = true
         }
-        val startedAt = metadata.optLong("startedAtMs", firstTimestamp ?: endedAtMs)
+        val startedAt = metadata.optLong("startedAtMs", firstTimestamp ?: stoppedAt)
         val summary = JSONObject().put("frames", frames).put("tracked", tracked).put("cameraSamples", images)
-            .put("durationMs", (endedAtMs - startedAt).coerceAtLeast(0L))
+            .put("durationMs", (stoppedAt - startedAt).coerceAtLeast(0L))
             .put("trackingPercent", if (frames == 0) 0.0 else tracked * 100.0 / frames)
             .put("maximumFrameGapMs", maximumGap).put("meanInferenceMs", if (frames == 0) 0.0 else inferenceTotal.toDouble() / frames)
             .put("maximumInferenceMs", inferenceMax).put("reasons", JSONObject(reasons as Map<*, *>))
