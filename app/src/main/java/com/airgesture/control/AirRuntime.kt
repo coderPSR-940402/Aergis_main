@@ -303,7 +303,9 @@ object AirRuntime {
     }
 
     internal fun recordActionDispatchOutcome(outcome: ActionDispatchOutcome) {
-        TestingTools.event("action_outcome", org.json.JSONObject().put("outcome", outcome.name).put("epoch", actionEpoch))
+        if (TestingTools.state.value.status == RecordingStatus.RECORDING) {
+            TestingTools.event("action_outcome", org.json.JSONObject().put("outcome", outcome.name).put("epoch", actionEpoch))
+        }
         _state.update { current ->
             val telemetry = current.actionDispatchTelemetry
             val updated = when (outcome) {

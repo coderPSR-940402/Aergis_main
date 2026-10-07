@@ -35,6 +35,13 @@ internal object DiagnosticCameraImage {
 }
 
 internal object MirrorGeometry {
+    fun windowRect(x: Int, y: Int, width: Int, height: Int, screenWidth: Int, screenHeight: Int): android.graphics.Rect {
+        val w = width.coerceIn(1, screenWidth.coerceAtLeast(1))
+        val h = height.coerceIn(1, screenHeight.coerceAtLeast(1))
+        val left = x.coerceIn(0, (screenWidth - w).coerceAtLeast(0))
+        val top = y.coerceIn(0, (screenHeight - h).coerceAtLeast(0))
+        return android.graphics.Rect(left, top, left + w, top + h)
+    }
     fun imageRect(width: Int, height: Int, imageWidth: Int, imageHeight: Int): RectF {
         if (width <= 0 || height <= 0 || imageWidth <= 0 || imageHeight <= 0) return RectF()
         val scale = min(width.toFloat() / imageWidth, height.toFloat() / imageHeight)

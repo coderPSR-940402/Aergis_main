@@ -68,6 +68,7 @@ internal class TrackingMirrorOverlay(private val service: AccessibilityService) 
         scope.launch {
             TestingTools.state.collect { state ->
                 if (state.mirror && !attached) {
+                    reposition()
                     runCatching { manager.addView(root, params); attached = true }.onFailure { TestingTools.setMirror(false) }
                 } else if (!state.mirror && attached) hide()
             }
@@ -81,6 +82,13 @@ internal class TrackingMirrorOverlay(private val service: AccessibilityService) 
         if (attached) runCatching { manager.removeView(root) }
         attached = false
         camera.frame = null
+    }
+
+    fun reposition() {
+        val display = service.resources.displayMetrics
+        val rect = MirrorGeometry.windowRect(params.x, params.y, dp(200), dp(276), display.widthPixels, display.heightPixels)
+        params.x = rect.left; params.y = rect.top; params.width = rect.width(); params.height = rect.height()
+        if (attached) runCatching { manager.updateViewLayout(root, params) }
     }
 
     fun close() { scope.cancel(); hide(); TestingTools.setMirror(false) }

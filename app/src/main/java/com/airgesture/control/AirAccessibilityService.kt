@@ -75,8 +75,10 @@ class AirAccessibilityService : AccessibilityService() {
 
     fun dispatch(action: AirAction) {
         if (action == AirAction.NONE) return
-        TestingTools.event("action_requested", org.json.JSONObject().put("action", action.name)
-            .put("target", DiagnosticFrameData.pointer(AirRuntime.pointerSnapshot())).put("epoch", AirRuntime.actionEpoch))
+        if (TestingTools.state.value.status == RecordingStatus.RECORDING) {
+            TestingTools.event("action_requested", org.json.JSONObject().put("action", action.name)
+                .put("target", DiagnosticFrameData.pointer(AirRuntime.pointerSnapshot())).put("epoch", AirRuntime.actionEpoch))
+        }
         if (!isActionAllowed(action)) {
             AirRuntime.recordActionDispatchOutcome(ActionDispatchOutcome.POLICY_DENIED)
             return
@@ -212,6 +214,11 @@ class AirAccessibilityService : AccessibilityService() {
         AirRuntime.setForegroundContext(
             ForegroundContextPolicy.evaluate(event.packageName, event.className)
         )
+    }
+
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        trackingMirror?.reposition()
     }
 
     override fun onInterrupt() {

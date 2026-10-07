@@ -116,6 +116,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        pendingPdf = savedInstanceState?.getString("testing_pending_pdf")?.let(::File)
+        pendingZip = savedInstanceState?.getString("testing_pending_zip")?.let(::File)
         refreshSettings()
         TestingTools.restoreLatest(this)
         setContent { AirGestureScreen() }
@@ -124,6 +126,12 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         refreshSettings()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        pendingPdf?.let { outState.putString("testing_pending_pdf", it.absolutePath) }
+        pendingZip?.let { outState.putString("testing_pending_zip", it.absolutePath) }
+        super.onSaveInstanceState(outState)
     }
 
     private fun refreshSettings() {

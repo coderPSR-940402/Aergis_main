@@ -14,7 +14,7 @@ import java.nio.ByteBuffer
 import java.util.zip.ZipFile
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35])
+@Config(sdk = [35], shadows = [TestPdfDocumentShadow::class])
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class TestingToolsRegressionTest {
     // Reflection lets the initial regression run fail as an assertion when the feature is absent.
@@ -103,6 +103,7 @@ class TestingToolsRegressionTest {
         val context = org.robolectric.RuntimeEnvironment.getApplication()
         File(context.filesDir, "testing-recordings").deleteRecursively()
         AirRuntime.running = true; AirRuntime.cameraReady = true
+        AirRuntime.pointerFeedback = PointerFeedback.NO_HAND
         val cls = type("TestingTools")
         val tools = cls.getField("INSTANCE").get(null)
         cls.getMethod("start", android.content.Context::class.java).invoke(tools, context)
@@ -148,7 +149,7 @@ class TestingToolsRegressionTest {
             }
         }
         val plane = proxy(androidx.camera.core.ImageProxy.PlaneProxy::class.java, mapOf("getBuffer" to ByteBuffer.wrap(ByteArray(16) { -1 }), "getRowStride" to 8, "getPixelStride" to 4))
-        val info = proxy(androidx.camera.core.ImageInfo::class.java, mapOf("getRotationDegrees" to 0, "getTimestamp" to 123456L))
+        val info = proxy(androidx.camera.core.ImageInfo::class.java, mapOf<String, Any?>("getRotationDegrees" to 0, "getTimestamp" to 123456L))
         return proxy(androidx.camera.core.ImageProxy::class.java, mapOf("getWidth" to 2, "getHeight" to 2,
             "getPlanes" to arrayOf(plane as androidx.camera.core.ImageProxy.PlaneProxy), "getImageInfo" to info,
             "getCropRect" to android.graphics.Rect(0, 0, 2, 2))) as androidx.camera.core.ImageProxy
