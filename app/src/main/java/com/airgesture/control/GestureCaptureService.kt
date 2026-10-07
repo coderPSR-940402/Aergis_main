@@ -136,6 +136,8 @@ class GestureCaptureService : Service(), LifecycleOwner, SensorEventListener {
     }
 
     override fun onDestroy() {
+        TestingTools.stop("Camera session stopped")
+        TestingTools.setMirror(false)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_PAUSE)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_STOP)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)

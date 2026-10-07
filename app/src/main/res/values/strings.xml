@@ -113,5 +113,19 @@
     <string name="pointer_feedback_ambiguous">Tracking ambiguous — choose Left or Right hand</string>
     <string name="pointer_feedback_invalid_tip">Tracking lost — invalid fingertip measurement</string>
     <string name="pointer_feedback_vision_rejected">Tracking paused — delayed or invalid camera result</string>
+    <string name="testing_title">Testing tools</string>
+    <string name="testing_description">See the camera and hand landmarks. Recording saves frame data and camera snapshots locally (2 fps, not video). Stop creates a PDF and detailed ZIP. Limit: 10 minutes.</string>
+    <string name="testing_mirror_show">Show tracking mirror</string>
+    <string name="testing_mirror_hide">Hide mirror</string>
+    <string name="testing_mirror_drag">Tracking · drag here</string>
+    <string name="testing_mirror_waiting">Waiting for camera frames…</string>
+    <string name="testing_record_start">Start recording</string>
+    <string name="testing_record_stop">Stop and export</string>
+    <string name="testing_record_counts">%1$d frames · %2$d recorder drops</string>
+    <string name="testing_save_pdf">Save PDF</string>
+    <string name="testing_save_zip">Save ZIP</string>
+    <string name="testing_share">Share report and data</string>
+    <string name="testing_retry">Retry export</string>
+    <string name="testing_saved">Report saved</string>
+    <string name="testing_start_camera">Start the camera session to enable the mirror and recording.</string>
 </resources>
-
