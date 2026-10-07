@@ -85,6 +85,23 @@ class CalibrationEngineIntegrationTest {
         assertFalse(AirRuntime.pointerTracking)
     }
 
+    @Test
+    fun isolatedInvalidTipCoastsWithoutFreshActionEvidence() {
+        publish(hand(), 1000L)
+        val previous = AirRuntime.pointerSnapshot()
+        val epoch = AirRuntime.actionEpoch
+        publish(hand().toMutableList().apply {
+            this[8] = NormalizedLandmark.create(Float.NaN, 0.65f, 0f)
+        }, 1033L)
+        assertEquals(PointerFeedback.COASTING, AirRuntime.pointerFeedback)
+        assertFalse(AirRuntime.pointerTracking)
+        assertEquals(previous.x, AirRuntime.pointerX, 0f)
+        assertEquals(previous.y, AirRuntime.pointerY, 0f)
+        assertTrue(AirRuntime.actionEpoch > epoch)
+        publish(hand(), 1066L)
+        assertTrue(AirRuntime.pointerTracking)
+    }
+
     private fun hand(): List<NormalizedLandmark> = MutableList(21) {
         NormalizedLandmark.create(0.5f, 0.5f, 0f)
     }.apply {
