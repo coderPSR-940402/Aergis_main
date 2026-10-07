@@ -18,9 +18,11 @@ GitHub repository searches were run under both connected identities, and each na
 | [mrpsrabe-coder/AIR-GESTURE-CONTROL](https://github.com/mrpsrabe-coder/AIR-GESTURE-CONTROL) | Earlier private lineage | Current snapshot uses palm/MCP translation anchor and bounded age prediction; not the desired vc49 authority contract |
 | [mrpsrabe-coder/AERMOTUS](https://github.com/mrpsrabe-coder/AERMOTUS) | Separate private lineage | Current snapshot follows fingertip with anatomy/straightness/bend-conditioned acceptance; still contains predictive filtering; requested vc49 commit is not in this repository |
 | [AERMOTUS-9404025043089/AERMOTUS](https://github.com/AERMOTUS-9404025043089/AERMOTUS) | Primary behavioral reference | Exact requested commit verified through historical account; direct landmark 8 authority, calibrated non-predictive production filter, separate contact channel |
+| [AERGISAIRG/Aergis](https://github.com/AERGISAIRG/Aergis) | Public organization lineage discovered by name search | Direct landmark-8 estimator and R18 kinematic filter; read access only under current account; no superior device evidence |
+| [AERGIS-airges/AirGestureControl_Aergis](https://github.com/AERGIS-airges/AirGestureControl_Aergis) | Public organization lineage with current-account administrative access | Direct landmark-8 estimator and R18 kinematic filter; candidate for later comparison |
 | [coderPSR-940402/RABEDEV-AERGIS](https://github.com/coderPSR-940402/RABEDEV-AERGIS) | Later historical experiment | Keeps narrow landmark-8 estimator but replaces production filter with `PointerKinematicFilter` (R18); benchmark first, no physical evidence supplied that it beats vc49 |
 
-Reference repository tree snapshots inspected: AIR-GESTURE-CONTROL `0542cced84b0f97336bd1c409e5061209ed4601d`; mrpsrabe-coder/AERMOTUS `4423f70a5eabea226d458b7c8c394803652d23e2`; RABEDEV-AERGIS `fd12aa6ff23a02053c4ed27b656bdc9ee9b0534c`. These are tree object IDs, not claimed APK source commits.
+Reference repository tree snapshots inspected: AIR-GESTURE-CONTROL `0542cced84b0f97336bd1c409e5061209ed4601d`; mrpsrabe-coder/AERMOTUS `4423f70a5eabea226d458b7c8c394803652d23e2`; RABEDEV-AERGIS `fd12aa6ff23a02053c4ed27b656bdc9ee9b0534c`. Additional trees: AERGISAIRG/Aergis `6c6a7b7d2b0cc57c2096ab6d12c782f01fbc9d5d`; AERGIS-airges/AirGestureControl_Aergis `d4cc023ffbc42e976dda38ca6e55b92ede4659a2`. These are tree object IDs, not claimed APK source commits. The organization demo-repository is not a pointer product and is excluded.
 
 ## B. Runtime comparison
 

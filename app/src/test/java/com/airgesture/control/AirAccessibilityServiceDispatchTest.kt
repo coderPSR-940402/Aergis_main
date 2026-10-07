@@ -1,6 +1,11 @@
 package com.airgesture.control
 
 import android.os.Looper
+import android.content.Context
+import android.graphics.PathMeasure
+import android.graphics.RectF
+import android.util.DisplayMetrics
+import android.view.WindowManager
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -115,5 +120,43 @@ class AirAccessibilityServiceDispatchTest {
         val telemetry = AirRuntime.state.value.actionDispatchTelemetry
         assertTrue(shadow.gesturesDispatched.isEmpty())
         assertEquals(1L, telemetry.policyDenied)
+    }
+
+    @Test
+    @Suppress("DEPRECATION")
+    fun bottomRightTapUsesLastPixelAndKeepsItsRequestedTarget() {
+        val metrics = DisplayMetrics()
+        (service.getSystemService(Context.WINDOW_SERVICE) as WindowManager)
+            .defaultDisplay.getRealMetrics(metrics)
+        AirRuntime.setPointerState(1f, 1f, tracking = true)
+
+        service.dispatch(AirAction.TAP)
+        AirRuntime.setPointerState(0.2f, 0.2f, tracking = true)
+        shadowOf(Looper.getMainLooper()).idle()
+
+        val stroke = shadow.gesturesDispatched.single().description().getStroke(0)
+        val bounds = RectF()
+        stroke.path.computeBounds(bounds, true)
+        assertEquals((metrics.widthPixels - 1).toFloat(), bounds.left, 0.01f)
+        assertEquals((metrics.heightPixels - 1).toFloat(), bounds.top, 0.01f)
+    }
+
+    @Test
+    @Suppress("DEPRECATION")
+    fun edgeScrollStaysInsideDisplayAtBothEndpoints() {
+        val metrics = DisplayMetrics()
+        (service.getSystemService(Context.WINDOW_SERVICE) as WindowManager)
+            .defaultDisplay.getRealMetrics(metrics)
+        AirRuntime.setPointerState(1f, 1f, tracking = true)
+        service.dispatch(AirAction.SCROLL_UP)
+        shadowOf(Looper.getMainLooper()).idle()
+
+        val path = PathMeasure(shadow.gesturesDispatched.single().description().getStroke(0).path, false)
+        val position = FloatArray(2)
+        for (distance in listOf(0f, path.length)) {
+            assertTrue(path.getPosTan(distance, position, null))
+            assertEquals((metrics.widthPixels - 1).toFloat(), position[0], 0.01f)
+            assertTrue(position[1] in 0f..(metrics.heightPixels - 1).toFloat())
+        }
     }
 }
