@@ -11,15 +11,17 @@ import java.util.Locale
 /** Two-page phone-test summary. Exact frame data travels in the accompanying ZIP. */
 internal object DiagnosticReport {
     fun write(file: File, metadata: JSONObject, summary: JSONObject) {
-        PdfDocument().use { doc ->
+        val doc = PdfDocument()
+        try {
             val paint = Paint(Paint.ANTI_ALIAS_FLAG)
             fun page(number: Int, content: (android.graphics.Canvas) -> Unit) {
                 val page = doc.startPage(PdfDocument.PageInfo.Builder(595, 842, number).create())
                 page.canvas.drawColor(Color.WHITE)
-                content(page.canvas)
-                paint.color = Color.GRAY; paint.textSize = 9f
-                page.canvas.drawText("Aergis testing report  |  ${file.parentFile?.name}  |  ${number}/2", 36f, 812f, paint)
-                doc.finishPage(page)
+                try {
+                    content(page.canvas)
+                    paint.color = Color.GRAY; paint.textSize = 9f
+                    page.canvas.drawText("Aergis testing report  |  ${file.parentFile?.name}  |  ${number}/2", 36f, 812f, paint)
+                } finally { doc.finishPage(page) }
             }
             fun text(c: android.graphics.Canvas, value: String, x: Float, y: Float, size: Float = 11f, bold: Boolean = false) {
                 paint.color = Color.rgb(25, 35, 50); paint.textSize = size
@@ -92,6 +94,6 @@ internal object DiagnosticReport {
                 wrap(c, "Scope: all frames delivered to the analysis callback are eligible for telemetry recording. CameraX may discard camera frames before analysis. Camera JPEGs are sampled at up to 2 fps; this is not full-rate video. Recorder queue losses are counted above. Coordinates and images are local until you choose Share or Save. The ZIP includes metadata.json, summary.json, frames.jsonl, events.jsonl, images and this PDF.", maxOf(y + 20f, 671f))
             }
             file.outputStream().use { doc.writeTo(it) }
-        }
+        } finally { doc.close() }
     }
 }
