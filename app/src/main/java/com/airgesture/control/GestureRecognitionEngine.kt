@@ -158,7 +158,18 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             AirRuntime.state.value.foregroundContext.safety
         )
         val handSelection = selectPointerHand(landmarks, handednessList, timestamp, rotationDegrees)
-        val selectedHand = handSelection?.index?.let(landmarks::getOrNull)
+        val pointerHandIndex = handSelection?.index ?: PointerHandFallback.selectIndex(
+            landmarks.mapIndexed { index, hand ->
+                val tip = hand.getOrNull(INDEX_TIP)
+                PointerHandCandidate(
+                    index,
+                    handednessList.getOrNull(index) ?: "Unknown",
+                    tip?.let { Point3D(it.x(), it.y(), it.z()) }
+                )
+            },
+            AirRuntime.handPreference
+        )
+        val selectedHand = pointerHandIndex?.let(landmarks::getOrNull)
         val gesture = OwnedGestureEvidenceSelector.select(
             result.gestures(),
             handSelection?.index
@@ -197,7 +208,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         )
 
         if (pointerActive && indexTip != null) {
-            val processed = interpreter.processFrame(reusablePointsList, timestamp) ?: run {
+            val processed = interpreter.processFrame(reusablePointsList, timestamp, actionsAllowed = controlSafe) ?: run {
                 resetTrackingState()
                 return
             }
@@ -212,7 +223,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             lastPointerAt = timestamp
             AirRuntime.setPointerState(stabilized.x, stabilized.y, true)
 
-            if (processed.poseEvidence.accepted &&
+            if (controlSafe && processed.poseEvidence.accepted &&
                 processed.isClickEngaged &&
                 GestureActionPolicy.isPointerActionEnabled(AirRuntime.gesturesEnabled, AirAction.TAP)
             ) {
