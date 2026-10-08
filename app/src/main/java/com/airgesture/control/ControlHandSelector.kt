@@ -1,19 +1,22 @@
 package com.airgesture.control
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
 @Composable
 fun ControlHandSelector(selected: ControlHandPreference, onSelected: (ControlHandPreference) -> Unit) {
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         ControlHandPreference.entries.forEach { option ->
             FilterChip(
                 selected = selected == option,
                 onClick = { onSelected(option) },
+                modifier = Modifier.heightIn(min = 48.dp),
                 label = { Text(stringResource(option.labelRes())) }
             )
         }
