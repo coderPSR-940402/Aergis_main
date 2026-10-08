@@ -137,8 +137,11 @@ The detector requires an open hand gesture before a new pinch, continuous
 contact confirmation, and separation between presses. The cursor anchors
 before contact; small closure movements do not move the target. Dragging starts
 only after deliberate movement following confirmation. Ordinary pointer motion
-no longer dispatches automatic scroll swipes. Existing classifier mappings are
-unchanged and are suppressed during a pointer pinch to avoid competing actions.
+no longer dispatches automatic scroll swipes. Saved classifier mappings are
+unchanged. While pointer control is active, pinch touch is the exclusive source
+of taps, long presses and scrolling, so an aiming pose cannot trigger a legacy
+classifier double-tap. Classifier system actions remain available outside a
+pointer pinch; all classifier actions pause during a pinch.
 
 Tracking loss, disarming, disabled gestures, unsafe foreground context, phone
 motion or display changes cancel the held touch. A freshness watchdog also

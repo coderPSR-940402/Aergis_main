@@ -33,6 +33,16 @@ class GesturePipelineTest {
         assertFalse(GestureActionPolicy.isClassifierActionEnabled(false, AirAction.BACK))
     }
 
+    @Test fun pointerControlMakesPinchTheExclusiveTouchActionSource() {
+        for (action in listOf(AirAction.TAP, AirAction.DOUBLE_TAP, AirAction.LONG_PRESS,
+            AirAction.SCROLL_UP, AirAction.SCROLL_DOWN)) {
+            assertFalse(GestureActionPolicy.isClassifierActionEnabled(true, action, pointerControlActive = true))
+            assertTrue(GestureActionPolicy.isClassifierActionEnabled(true, action, pointerControlActive = false))
+        }
+        assertTrue(GestureActionPolicy.isClassifierActionEnabled(true, AirAction.BACK, pointerControlActive = true))
+        assertTrue(GestureActionPolicy.isClassifierActionEnabled(true, AirAction.HOME, pointerControlActive = true))
+    }
+
     @Test
     fun clickRequiresContinuousContactAndDoesNotRepeatUntilRelease() {
         val machine = ClickHysteresisStateMachine(

@@ -343,7 +343,10 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         }
 
         val decision = if (AirRuntime.gesturesEnabled && !pinchInProgress && gestureName != "None") {
-            interpreter.interpret(GestureSignal(gestureName, gestureScore))
+            val classified = interpreter.interpret(GestureSignal(gestureName, gestureScore))
+            if (GestureActionPolicy.isClassifierActionEnabled(true, classified.action, pointerActive)) {
+                classified
+            } else GestureDecision(AirAction.NONE, 0f)
         } else {
             GestureDecision(AirAction.NONE, 0f)
         }
@@ -357,7 +360,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             )
         )
         if (confirmedAction != null &&
-            GestureActionPolicy.isClassifierActionEnabled(AirRuntime.gesturesEnabled, confirmedAction)
+            GestureActionPolicy.isClassifierActionEnabled(AirRuntime.gesturesEnabled, confirmedAction, pointerActive)
         ) {
             AirAccessibilityService.instance?.dispatch(confirmedAction)
         }
