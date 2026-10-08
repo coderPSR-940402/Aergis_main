@@ -22,7 +22,8 @@ import org.json.JSONObject
 internal enum class PointerTestSegment { UNLABELLED, STATIONARY, TRAVEL, FAST, REACQUIRE, EDGES, CLICK }
 internal enum class RecordingStatus { IDLE, RECORDING, EXPORTING, READY, ERROR }
 internal data class TestingState(val mirror: Boolean = false, val filterMode: PointerFilterMode = PointerFilterMode.CURRENT, val segment: PointerTestSegment = PointerTestSegment.UNLABELLED, val status: RecordingStatus = RecordingStatus.IDLE,
-    val frames: Int = 0, val dropped: Long = 0, val message: String? = null, val export: DiagnosticExport? = null)
+    val frames: Int = 0, val dropped: Long = 0, val message: String? = null, val export: DiagnosticExport? = null,
+    val recordings: List<SavedRecording> = emptyList(), val canRetry: Boolean = false)
 internal data class MirrorFrame(val bitmap: Bitmap?, val hands: List<List<Point3D>>, val label: String,
     val selectedHandIndex: Int? = null, val detail: String = "", val timestampMs: Long = 0L,
     val calibration: PointerCalibrationProfile? = null) {
@@ -76,7 +77,8 @@ internal object TestingTools {
             val root = File(app.filesDir, "testing-recordings").apply { mkdirs() }
             // Recordings are calibration evidence. Never silently delete previous or failed sessions.
             val now = System.currentTimeMillis()
-            val directory = File(root, SimpleDateFormat("yyyyMMdd-HHmmss-SSS", Locale.US).format(Date(now)))
+            val directory = File(root, SimpleDateFormat("yyyyMMdd-HHmmss-SSS", Locale.US).format(Date(now)) +
+                "-" + java.util.UUID.randomUUID().toString().take(8))
             startedAt = SystemClock.uptimeMillis()
             val runtime = AirRuntime.state.value
             @Suppress("DEPRECATION")
@@ -98,7 +100,7 @@ internal object TestingTools {
             session = DiagnosticSession(directory, metadata, MAX_FRAMES)
             failedSession = null; accepted = 0; dropped.set(0); imageFailures.set(0); lastImage = Long.MIN_VALUE
             _state.value = _state.value.copy(status = RecordingStatus.RECORDING, frames = 0, dropped = 0,
-                message = "Recording locally: frame data + camera samples (2 fps).", export = null)
+                message = "Recording locally: frame data + camera samples (2 fps).", export = null, canRetry = false)
         }.onFailure { _state.value = _state.value.copy(status = RecordingStatus.ERROR, message = it.message ?: "Could not start recording") }
     }
 
@@ -217,17 +219,18 @@ internal object TestingTools {
             runCatching {
                 current.droppedRecords = dropped.get()
                 current.imageFailures = imageFailures.get()
-                current.finish(endedAt)
-            }.onSuccess {
+                current.finish(endedAt) to RecordingLibrary.list(current.directory.parentFile!!)
+            }.onSuccess { (export, recordings) ->
                 synchronized(lock) {
                     failedSession = null
-                    _state.value = _state.value.copy(status = RecordingStatus.READY, export = it, frames = accepted,
-                        dropped = dropped.get(), message = "Report ready. Save PDF, save ZIP or share.")
+                    _state.value = _state.value.copy(status = RecordingStatus.READY, export = export, frames = accepted,
+                        dropped = dropped.get(), message = "Report ready. Save PDF, save ZIP or share.",
+                        recordings = recordings, canRetry = false)
                 }
             }.onFailure {
                 synchronized(lock) {
                     failedSession = current
-                    _state.value = _state.value.copy(status = RecordingStatus.ERROR, message = "Export failed; logs retained. ${it.message}")
+                    _state.value = _state.value.copy(status = RecordingStatus.ERROR, message = "Export failed; logs retained. ${it.message}", canRetry = true)
                 }
             }
         }
@@ -240,12 +243,42 @@ internal object TestingTools {
         export(current, SystemClock.uptimeMillis())
     }
 
-    fun restoreLatest(context: Context) = synchronized(lock) {
-        if (state.value.status != RecordingStatus.IDLE) return@synchronized
-        val latest = File(context.filesDir, "testing-recordings").listFiles()?.filter {
-            File(it, "recording.zip").isFile && File(it, "report.pdf").isFile
-        }?.maxByOrNull { it.lastModified() } ?: return@synchronized
-        _state.value = _state.value.copy(status = RecordingStatus.READY,
-            export = DiagnosticExport(File(latest, "report.pdf"), File(latest, "recording.zip")), message = "Previous report available.")
+    fun refreshRecordings(context: Context, restoreLatest: Boolean = false) {
+        val root = File(context.applicationContext.filesDir, "testing-recordings")
+        writer.execute {
+            runCatching { RecordingLibrary.list(root) }.onSuccess { recordings ->
+                synchronized(lock) {
+                    _state.value = _state.value.copy(recordings = recordings)
+                    if (restoreLatest && state.value.status == RecordingStatus.IDLE) {
+                        recordings.firstOrNull { it.complete }?.let { openRecording(context, it.id) }
+                    }
+                }
+            }.onFailure {
+                synchronized(lock) { _state.value = _state.value.copy(message = "Could not read recordings: ${it.message}") }
+            }
+        }
     }
+
+    fun openRecording(context: Context, id: String) = synchronized(lock) {
+        if (state.value.status in listOf(RecordingStatus.RECORDING, RecordingStatus.EXPORTING)) return@synchronized
+        val root = File(context.applicationContext.filesDir, "testing-recordings")
+        failedSession = null
+        _state.value = _state.value.copy(status = RecordingStatus.EXPORTING, export = null, frames = 0,
+            dropped = 0, canRetry = false, message = "Opening recording…")
+        writer.execute {
+            runCatching { RecordingLibrary.open(root, id) to RecordingLibrary.list(root) }.onSuccess { (export, recordings) ->
+                synchronized(lock) {
+                    _state.value = _state.value.copy(status = RecordingStatus.READY, export = export,
+                        recordings = recordings, message = "Recording $id ready. Save or share the report and images.")
+                }
+            }.onFailure {
+                synchronized(lock) {
+                    _state.value = _state.value.copy(status = RecordingStatus.ERROR,
+                        message = "Could not open $id; original files retained. ${it.message}")
+                }
+            }
+        }
+    }
+
+    fun restoreLatest(context: Context) = refreshRecordings(context, restoreLatest = true)
 }

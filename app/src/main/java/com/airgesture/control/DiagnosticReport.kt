@@ -54,7 +54,10 @@ internal object DiagnosticReport {
                 text(c, "${summary.optInt("frames")} frames   |   ${decimal("trackingPercent")}% tracked   |   ${summary.optInt("cameraSamples")} camera samples", 36f, 140f, 14f, true)
                 text(c, "Inference: ${decimal("meanInferenceMs")} ms average / ${summary.optLong("maximumInferenceMs")} ms max", 36f, 163f)
                 text(c, "Largest analyzed-frame gap: ${summary.optLong("maximumFrameGapMs")} ms", 36f, 182f)
-                text(c, "Recorder drops: ${summary.optLong("droppedRecords")}   |   Camera sample failures: ${summary.optLong("imageFailures")}", 36f, 201f)
+                fun count(key: String) = if (summary.isNull(key)) "unknown (recovered)" else summary.optLong(key).toString()
+                text(c, "Recorder drops: ${count("droppedRecords")}   |   Camera sample failures: ${count("imageFailures")}", 36f, 201f)
+                if (summary.optBoolean("recovered")) text(c,
+                    "Recovered: ${summary.optInt("unreadableFrameRecords")} unreadable frame records; original logs retained.", 36f, 220f, 10f)
                 text(c, "Pointer feedback", 36f, 238f, 14f, true)
                 var y = 261f
                 val reasons = summary.getJSONObject("reasons")
@@ -100,7 +103,12 @@ internal object DiagnosticReport {
                 y = wrap(c, "Filter at start: ${metadata.optString("filterMode", "CURRENT")}. Both algorithms consume the same input. Units: fraction of screen, not pixels. Jitter requires a labelled stationary segment at one fixed target.", y + 9f)
                 y = wrap(c, "Visibility interruptions: ${summary.optInt("visibilityInterruptions")}. Pointer rejections: ${summary.optJSONObject("pointerRejections") ?: "none"}", y + 9f)
                 val comparisons = summary.optJSONObject("lineageComparison")
-                for (segment in comparisons?.keys()?.asSequence()?.sorted().orEmpty()) {
+                val runs = comparisons?.keys()?.asSequence()?.sorted()?.toList().orEmpty()
+                for (segment in runs) {
+                    if (y > 625f) {
+                        wrap(c, "Additional contiguous runs omitted from this preview. All ${runs.size} runs are in summary.json in the ZIP.", y + 15f)
+                        break
+                    }
                     text(c, segment, 36f, y + 19f, 12f, true); y += 28f
                     val metrics = comparisons!!.getJSONObject(segment)
                     for (mode in listOf("current", "vc49")) {

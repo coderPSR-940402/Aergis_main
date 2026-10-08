@@ -99,3 +99,24 @@ threshold set used.
 - A valid ordered replay case may not become rejected without a documented product decision.
 - No benchmark result may be reported without commit SHA, device/test conditions, trace ID, and evidence type.
 - Two consecutive refinement iterations without objective improvement cause the slice to be deferred or reverted.
+
+## Recording run boundaries (2026-10 audit)
+
+Android `summary.json` and the Python comparison analyzer treat each contiguous
+labelled run separately. A missing/invalid comparison, owner change, filter or
+calibration change, action epoch change, camera rotation, non-increasing timestamp,
+or gap exceeding 150 ms starts a new run. Repeated labels use `#2`, `#3`, etc.; do
+not average their stationary target positions together. The PDF previews as many
+runs as fit; the ZIP summary retains all runs.
+
+Reacquisition discontinuity is separate from within-run path/jitter: the analyzer
+compares the last output before a short dropout with the recovered output only
+for the same owner/filter/calibration/rotation within 500 ms. An action-epoch
+change caused by the dropout itself does not imply a different hand.
+
+FAST first arrival is the first output within 0.02 normalized units of a measured
+step target, searched within 500 ms by the analyzer. It is not sustained settling.
+A missing observation is null, never an inferred zero. Synthetic benchmark JSON
+schema 2 includes source commit, evidence type, scope and a `scenarios` object.
+Malformed raw records remain in recovered ZIPs and are counted by the analyzer;
+comparisons never bridge unreadable frame records.

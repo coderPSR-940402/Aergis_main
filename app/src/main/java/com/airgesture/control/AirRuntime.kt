@@ -145,7 +145,10 @@ object AirRuntime {
 
     var pointerEnabled: Boolean
         get() = state.value.pointerEnabled
-        set(value) = _state.update { it.copy(pointerEnabled = value) }
+        set(value) = _state.update {
+            if (it.pointerEnabled == value) it
+            else it.copy(pointerEnabled = value, actionEpoch = it.actionEpoch + 1L)
+        }
 
     var gesturesEnabled: Boolean
         get() = state.value.gesturesEnabled
@@ -171,7 +174,7 @@ object AirRuntime {
     fun setMotionState(state: MotionState) {
         _state.update {
             if (it.motionActive == state.active && it.motionReason == state.reason) {
-                it
+                it.copy(motionMagnitude = state.magnitude)
             } else {
                 it.copy(
                     motionActive = state.active,

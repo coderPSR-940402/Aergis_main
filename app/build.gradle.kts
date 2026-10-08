@@ -1,4 +1,7 @@
 import java.net.URL
+import java.io.File
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
 
 plugins {
@@ -69,53 +72,53 @@ val gestureModelUrl = "https://storage.googleapis.com/mediapipe-models/gesture_r
 val gestureModelSha256 = "97952348cf6a6a4915c2ea1496b4b37ebabc50cbbf80571435643c455f2b0482"
 val gestureModelFile = layout.projectDirectory.file("src/main/assets/gesture_recognizer.task").asFile
 
+fun validGestureModel(file: File): Boolean {
+    if (!file.isFile || file.length() != 8_373_440L) return false
+    val digest = MessageDigest.getInstance("SHA-256")
+    file.inputStream().use { input ->
+        val buffer = ByteArray(1024 * 1024)
+        while (true) {
+            val read = input.read(buffer)
+            if (read < 0) break
+            digest.update(buffer, 0, read)
+        }
+    }
+    return digest.digest().joinToString("") { "%02x".format(it.toInt() and 0xff) } == gestureModelSha256
+}
+
 tasks.register("prepareGestureModel") {
     outputs.file(gestureModelFile)
+    outputs.upToDateWhen { validGestureModel(gestureModelFile) }
     doLast {
-        gestureModelFile.parentFile.mkdirs()
-        if (!gestureModelFile.exists() || gestureModelFile.length() == 0L) {
-            logger.lifecycle("Downloading the exact MediaPipe gesture model used by the 0.10.0-preview APK")
+        if (!validGestureModel(gestureModelFile)) {
+            gestureModelFile.parentFile.mkdirs()
+            val temporary = File.createTempFile("gesture-model-", ".partial", gestureModelFile.parentFile)
+            logger.lifecycle("Downloading and verifying the pinned MediaPipe gesture model")
             try {
                 val connection = URL(gestureModelUrl).openConnection().apply {
                     connectTimeout = 30_000
                     readTimeout = 120_000
                 }
                 connection.getInputStream().use { input ->
-                    gestureModelFile.outputStream().use { output -> input.copyTo(output) }
+                    temporary.outputStream().use { output -> input.copyTo(output) }
                 }
+                check(validGestureModel(temporary)) { "Downloaded gesture model failed size/SHA-256 verification" }
+                Files.move(temporary.toPath(), gestureModelFile.toPath(),
+                    StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
             } catch (e: Exception) {
-                throw GradleException("Could not download gesture model: ${e.message}", e)
+                throw GradleException("Could not prepare gesture model: ${e.message}", e)
+            } finally {
+                temporary.delete()
             }
         }
-        if (gestureModelFile.exists() && gestureModelFile.length() > 0L) {
-            val digest = MessageDigest.getInstance("SHA-256")
-            gestureModelFile.inputStream().use { input ->
-                val buffer = ByteArray(1024 * 1024)
-                while (true) {
-                    val read = input.read(buffer)
-                    if (read < 0) break
-                    digest.update(buffer, 0, read)
-                }
-            }
-            val actual = digest.digest().joinToString("") { byte ->
-                "%02x".format(byte.toInt() and 0xff)
-            }
-            check(actual == gestureModelSha256) {
-                "gesture_recognizer.task SHA-256 mismatch: expected $gestureModelSha256, got $actual"
-            }
-            check(gestureModelFile.length() == 8_373_440L) {
-                "gesture_recognizer.task size mismatch: expected 8373440 bytes, got ${gestureModelFile.length()}"
-            }
-        } else {
-            throw GradleException("Gesture model asset missing or empty; refusing to build a non-functional APK.")
-        }
+        check(validGestureModel(gestureModelFile)) { "Gesture model verification failed; refusing to build" }
     }
 }
 
 tasks.named("preBuild").configure { dependsOn("prepareGestureModel") }
 
 dependencies {
-    implementation(platform("androidx.compose:compose-bom:2026.06.00"))
+    implementation(platform("androidx.compose:compose-bom:2026.06.01"))
     implementation("androidx.activity:activity-compose:1.13.0")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.ui:ui")

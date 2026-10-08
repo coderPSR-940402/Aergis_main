@@ -14,3 +14,10 @@
 *.aab
 *.apks
 /app/src/main/assets/gesture_recognizer.task
+
+# Python tooling
+__pycache__/
+*.py[cod]
+
+# Kotlin compiler state
+.kotlin/
