@@ -32,6 +32,10 @@ User approval received for ONE foundation commit:
 
 Then push the isolated branch and open a draft PR against main to run existing Actions. Monitor unit tests, lint, debug/release builds and APK checks. Correct failures within this UI scope. Provide the successful debug APK for Galaxy A54 testing. Do not merge until CI and device behavior are verified; do not advance the baseline marker manually.
 
+## PR verification follow-up
+Draft PR #42 published the foundation as `285bfa2a805c51bd69b8ca91c13a8b6586ecc382`.
+Aergis CI #208 and CodeQL reached compilation and failed at the ControlScreen string-resource reference with `NONE_APPLICABLE`: generated class R cannot be used as an expression. The other UI files explicitly import the app R class; ControlScreen used a package wildcard. Add the explicit app R import as the smallest correction, following the working pattern. User approved continuing the CI correction on 2026-10-08. The failing compiler run is the regression evidence; the next Actions run must verify the correction, all tests, lint and APKs before any success claim.
+
 ## Later implementation units
 1. Guided tracking/calibration flow using existing sample/profile APIs.
 2. Gesture action picker/details using existing mappings, plus better practice guidance.
