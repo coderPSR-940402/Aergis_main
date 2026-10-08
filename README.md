@@ -122,3 +122,33 @@ alone cannot recover its private signing key.
 When returning from diagnostics sharing or saving, Aergis refreshes foreground
 safety when its own window actually regains focus. It does not automatically
 arm control or enable gesture actions. Protected screens still block actions.
+
+## Pointer touch controls
+
+Aim with the index fingertip. With control armed and gesture actions enabled,
+bring the **thumb and middle fingertip** together:
+
+- Pinch briefly, then separate: tap at the held pointer position.
+- Keep pinched and hold still: the receiving app gets a native long press.
+- Move deliberately while pinched: drag/scroll as if moving a finger on the screen.
+- Separate to finish the touch and resume aiming.
+
+The detector requires an open hand gesture before a new pinch, continuous
+contact confirmation, and separation between presses. The cursor anchors
+before contact; small closure movements do not move the target. Dragging starts
+only after deliberate movement following confirmation. Ordinary pointer motion
+no longer dispatches automatic scroll swipes. Existing classifier mappings are
+unchanged and are suppressed during a pointer pinch to avoid competing actions.
+
+Tracking loss, disarming, disabled gestures, unsafe foreground context, phone
+motion or display changes cancel the held touch. A freshness watchdog also
+handles camera stalls. Native touch cancellation uses an undispatched-stroke
+continuation: Android rejects it and cancels the previous touch without injecting
+another tap. This follows AOSP `MotionEventInjector` continuation validation and
+requires physical-device verification alongside tap, long press and scrolling.
+
+UI clients can observe `AirRuntime.state` / `AirRuntime.uiState` through the
+additive `pointerInteraction` phase: `IDLE`, `AIMING`, `PINCHING`, `PRESSED`,
+`HOLDING`, `DRAGGING`. `HOLDING` reports elapsed pinch time, not confirmation
+that the receiving application handles long press. No visual layout changes
+are required. Calibration and both existing pointer filters remain intact.

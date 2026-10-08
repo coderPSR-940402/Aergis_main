@@ -1,101 +1,66 @@
 package com.airgesture.control.pointer
 
+/** Thumb-middle contact. Tracking must observe separation before accepting a click. */
 class ClickHysteresisStateMachine(
     private val engageThreshold: Float = 0.18f,
-    private val releaseThreshold: Float = 0.32f,
-    private val dwellRequiredFrames: Int = 2,
-    private val refractoryPeriodMs: Long = 150L,
-    private val minApproachVelocity: Float = -0.5f
+    private val releaseThreshold: Float = 0.45f,
+    private val confirmationMs: Long = 60L,
+    private val refractoryPeriodMs: Long = 150L
 ) {
-    enum class State {
-        IDLE,
-        ENGAGING,
-        CLICKED,
-        REFRACTORY
-    }
+    enum class State { IDLE, ENGAGING, CLICKED, REFRACTORY }
 
     private var currentState = State.IDLE
-    private var dwellCounter = 0
-    private var lastRefractoryStartTime = 0L
-    private var lastDNorm = 1.0f
-    private var lastTimestampMs = 0L
+    private var observedOpen = false
+    private var contactSince: Long? = null
+    private var lastClickAt: Long? = null
+    private var lastTimestampMs: Long? = null
+
+    val isPointerLocked: Boolean
+        get() = currentState == State.ENGAGING || currentState == State.CLICKED
 
     fun processFrame(dNorm: Float, timestampMs: Long): Boolean {
-        val safeDNorm = dNorm.coerceAtLeast(0f)
-        if (lastTimestampMs > 0L && timestampMs <= lastTimestampMs) {
-            lastTimestampMs = timestampMs
-            lastDNorm = safeDNorm
+        val previous = lastTimestampMs
+        if (!dNorm.isFinite() || dNorm < 0f || timestampMs < 0L ||
+            (previous != null && (timestampMs <= previous || timestampMs - previous > MAX_GAP_MS))) {
+            reset()
             return false
         }
-
-        val dt = if (lastTimestampMs > 0L) {
-            (timestampMs - lastTimestampMs) / 1000.0f
-        } else {
-            0.033f
-        }
         lastTimestampMs = timestampMs
+        val coolingDown = lastClickAt?.let { timestampMs - it < refractoryPeriodMs } ?: false
 
-        val approachVelocity = if (dt > 0.001f) {
-            (safeDNorm - lastDNorm) / dt
-        } else {
-            0.0f
+        if (dNorm >= releaseThreshold) {
+            observedOpen = true
+            contactSince = null
+            currentState = if (coolingDown) State.REFRACTORY else State.IDLE
+            return false
         }
-        lastDNorm = safeDNorm
+        if (currentState == State.CLICKED) return false
+        if (!observedOpen || coolingDown) return false
 
-        return when (currentState) {
-            State.REFRACTORY -> {
-                if (timestampMs - lastRefractoryStartTime >= refractoryPeriodMs) {
-                    currentState = State.IDLE
-                    dwellCounter = 0
-                }
-                false
-            }
-
-            State.IDLE -> {
-                if (isEngaging(safeDNorm, approachVelocity)) {
-                    dwellCounter = 1
-                    currentState = State.ENGAGING
-                }
-                false
-            }
-
-            State.ENGAGING -> {
-                if (safeDNorm < engageThreshold) {
-                    dwellCounter++
-                    if (dwellCounter >= dwellRequiredFrames.coerceAtLeast(1)) {
-                        currentState = State.CLICKED
-                        return true
-                    }
-                } else {
-                    currentState = State.IDLE
-                    dwellCounter = 0
-                }
-                false
-            }
-
-            State.CLICKED -> {
-                if (safeDNorm > releaseThreshold) {
-                    currentState = State.REFRACTORY
-                    lastRefractoryStartTime = timestampMs
-                    dwellCounter = 0
-                }
-                false
-            }
+        // Lock before contact, rather than after the finger movement has shifted the target.
+        currentState = State.ENGAGING
+        if (dNorm >= engageThreshold) {
+            contactSince = null
+            return false
         }
+        val start = contactSince ?: timestampMs.also { contactSince = it }
+        if (timestampMs - start < confirmationMs) return false
+
+        currentState = State.CLICKED
+        observedOpen = false
+        lastClickAt = timestampMs
+        return true
     }
 
     fun getCurrentState(): State = currentState
 
     fun reset() {
         currentState = State.IDLE
-        dwellCounter = 0
-        lastRefractoryStartTime = 0L
-        lastDNorm = 1.0f
-        lastTimestampMs = 0L
+        observedOpen = false
+        contactSince = null
+        lastClickAt = null
+        lastTimestampMs = null
     }
 
-    private fun isEngaging(dNorm: Float, approachVelocity: Float): Boolean {
-        if (dNorm >= engageThreshold) return false
-        return approachVelocity <= minApproachVelocity || dNorm <= engageThreshold * 0.75f
-    }
+    private companion object { const val MAX_GAP_MS = 250L }
 }

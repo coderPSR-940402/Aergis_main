@@ -34,20 +34,21 @@ class GesturePipelineTest {
     }
 
     @Test
-    fun clickRequiresDwellAndDoesNotRepeatUntilRelease() {
+    fun clickRequiresContinuousContactAndDoesNotRepeatUntilRelease() {
         val machine = ClickHysteresisStateMachine(
             engageThreshold = 0.18f,
             releaseThreshold = 0.32f,
-            dwellRequiredFrames = 2,
+            confirmationMs = 60L,
             refractoryPeriodMs = 150L
         )
 
-        assertFalse(machine.processFrame(0.10f, 0L))
-        assertTrue(machine.processFrame(0.10f, 33L))
-        assertFalse(machine.processFrame(0.10f, 66L))
+        assertFalse(machine.processFrame(0.80f, 1L))
+        assertFalse(machine.processFrame(0.10f, 34L))
+        assertTrue(machine.processFrame(0.10f, 94L))
+        assertFalse(machine.processFrame(0.10f, 127L))
         assertEquals(ClickHysteresisStateMachine.State.CLICKED, machine.getCurrentState())
 
-        assertFalse(machine.processFrame(0.40f, 99L))
+        assertFalse(machine.processFrame(0.40f, 160L))
         assertEquals(ClickHysteresisStateMachine.State.REFRACTORY, machine.getCurrentState())
         assertFalse(machine.processFrame(0.40f, 260L))
         assertEquals(ClickHysteresisStateMachine.State.IDLE, machine.getCurrentState())
