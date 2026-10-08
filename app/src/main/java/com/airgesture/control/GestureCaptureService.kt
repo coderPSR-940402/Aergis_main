@@ -11,8 +11,13 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import android.hardware.display.DisplayManager
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.util.Size
+import android.view.Display
+import android.view.Surface
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ExperimentalGetImage
 import androidx.camera.core.ImageAnalysis
@@ -29,6 +34,15 @@ class GestureCaptureService : Service(), LifecycleOwner, SensorEventListener {
     private var executor: ExecutorService? = null
     private var cameraProvider: ProcessCameraProvider? = null
     private var visionEngine: GestureRecognitionEngine? = null
+    private var analysis: ImageAnalysis? = null
+    private var stopping = false
+    private val displayListener = object : DisplayManager.DisplayListener {
+        override fun onDisplayAdded(displayId: Int) = Unit
+        override fun onDisplayRemoved(displayId: Int) = Unit
+        override fun onDisplayChanged(displayId: Int) {
+            if (!stopping && displayId == Display.DEFAULT_DISPLAY) updateCameraRotation()
+        }
+    }
     private val lifecycleRegistry = LifecycleRegistry(this)
     private val motionMonitor = DeviceMotionCancellation()
     private lateinit var sensorManager: SensorManager
@@ -58,6 +72,7 @@ class GestureCaptureService : Service(), LifecycleOwner, SensorEventListener {
                 AirRuntime.visionError = it.message ?: it.javaClass.simpleName
             }
         registerMotionSensors()
+        getSystemService(DisplayManager::class.java).registerDisplayListener(displayListener, Handler(Looper.getMainLooper()))
         setupCamera()
     }
 
@@ -110,23 +125,25 @@ class GestureCaptureService : Service(), LifecycleOwner, SensorEventListener {
         val exec = executor ?: return
         val future = ProcessCameraProvider.getInstance(this)
         future.addListener({
+            if (stopping) return@addListener
             runCatching {
                 val provider = future.get()
                 cameraProvider = provider
-                val analysis = ImageAnalysis.Builder()
+                val useCase = ImageAnalysis.Builder()
                     .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
                     .setTargetResolution(Size(960, 540))
+                    .setTargetRotation(displayRotation())
                     .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                     .build()
-                analysis.setAnalyzer(exec) { image ->
+                analysis = useCase
+                useCase.setAnalyzer(exec) { image ->
                     try {
                         visionEngine?.analyze(image)
                     } finally {
                         image.close()
                     }
                 }
-                provider.unbindAll()
-                provider.bindToLifecycle(this, CameraSelector.DEFAULT_FRONT_CAMERA, analysis)
+                provider.bindToLifecycle(this, CameraSelector.DEFAULT_FRONT_CAMERA, useCase)
                 AirRuntime.cameraReady = true
             }.onFailure {
                 AirRuntime.cameraReady = false
@@ -135,20 +152,42 @@ class GestureCaptureService : Service(), LifecycleOwner, SensorEventListener {
         }, ContextCompat.getMainExecutor(this))
     }
 
+    private fun displayRotation(): Int = getSystemService(DisplayManager::class.java)
+        .getDisplay(Display.DEFAULT_DISPLAY)?.rotation ?: Surface.ROTATION_0
+
+    private fun updateCameraRotation() {
+        val useCase = analysis ?: return
+        val rotation = displayRotation()
+        if (useCase.targetRotation != rotation) {
+            AirRuntime.invalidatePendingActions()
+            AirAccessibilityService.instance?.cancelPointerTouch()
+            useCase.targetRotation = rotation
+        }
+    }
+
     override fun onDestroy() {
+        stopping = true
+        val engine = visionEngine
+        engine?.stop()
+        visionEngine = null
+        getSystemService(DisplayManager::class.java).unregisterDisplayListener(displayListener)
         TestingTools.stop("Camera session stopped")
         TestingTools.setMirror(false)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_PAUSE)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_STOP)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
-        cameraProvider?.unbindAll()
+        analysis?.let { useCase -> useCase.clearAnalyzer(); cameraProvider?.unbind(useCase) }
+        analysis = null
         cameraProvider = null
         if (::sensorManager.isInitialized) sensorManager.unregisterListener(this)
         AirRuntime.setMotionState(motionMonitor.reset())
         AirRuntime.motionSensorsAvailable = false
-        visionEngine?.close()
-        visionEngine = null
-        executor?.shutdownNow()
+        // GPU creation, inference and native disposal all belong to the same executor.
+        // stop() already prevents an old frame from publishing into a restarted session.
+        executor?.let { exec ->
+            exec.execute { runCatching { engine?.close() } }
+            exec.shutdown()
+        }
         executor = null
         AirRuntime.cameraReady = false
         AirRuntime.running = false

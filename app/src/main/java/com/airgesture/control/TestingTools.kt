@@ -23,8 +23,11 @@ internal enum class PointerTestSegment { UNLABELLED, STATIONARY, TRAVEL, FAST, R
 internal enum class RecordingStatus { IDLE, RECORDING, EXPORTING, READY, ERROR }
 internal data class TestingState(val mirror: Boolean = false, val filterMode: PointerFilterMode = PointerFilterMode.CURRENT, val segment: PointerTestSegment = PointerTestSegment.UNLABELLED, val status: RecordingStatus = RecordingStatus.IDLE,
     val frames: Int = 0, val dropped: Long = 0, val message: String? = null, val export: DiagnosticExport? = null)
-internal data class MirrorFrame(val bitmap: Bitmap, val hands: List<List<Point3D>>, val label: String,
-    val selectedHandIndex: Int? = null, val detail: String = "")
+internal data class MirrorFrame(val bitmap: Bitmap?, val hands: List<List<Point3D>>, val label: String,
+    val selectedHandIndex: Int? = null, val detail: String = "", val timestampMs: Long = 0L,
+    val calibration: PointerCalibrationProfile? = null) {
+    fun isLive(nowMs: Long): Boolean = bitmap != null && nowMs - timestampMs in 0L..1000L
+}
 
 /** Opt-in local testing only. A bounded queue keeps disk and PDF work off the vision thread. */
 internal object TestingTools {
@@ -71,8 +74,7 @@ internal object TestingTools {
         val app = context.applicationContext
         runCatching {
             val root = File(app.filesDir, "testing-recordings").apply { mkdirs() }
-            val existing = root.listFiles()?.filter { it.isDirectory }?.sortedByDescending { it.lastModified() } ?: emptyList()
-            existing.drop(4).forEach { it.deleteRecursively() }
+            // Recordings are calibration evidence. Never silently delete previous or failed sessions.
             val now = System.currentTimeMillis()
             val directory = File(root, SimpleDateFormat("yyyyMMdd-HHmmss-SSS", Locale.US).format(Date(now)))
             startedAt = SystemClock.uptimeMillis()
@@ -90,6 +92,7 @@ internal object TestingTools {
                 .put("calibration", calibration?.let(PointerCalibrationProfileCodec::encode) ?: "Default linear mapping")
                 .put("model", "MediaPipe gesture_recognizer float16/1")
                 .put("imageSamplingFps", 2).put("previewFps", 8).put("maximumDurationMs", MAX_DURATION_MS)
+                .put("cameraSampleMaxEdge", 960).put("jpegQuality", 90)
                 .put("maximumFrames", MAX_FRAMES).put("initialActions", runtime.actionDispatchTelemetry.toString())
                 .put("scope", "All analyzed-frame metadata; sampled camera JPEGs, not full-rate video.")
             session = DiagnosticSession(directory, metadata, MAX_FRAMES)
@@ -107,25 +110,40 @@ internal object TestingTools {
         val previewDue = state.value.mirror && (lastPreview == Long.MIN_VALUE || timestamp - lastPreview >= 125)
         val imageDue = recording && (lastImage == Long.MIN_VALUE || timestamp - lastImage >= 500)
         var bitmap: Bitmap? = null
+        var imageError: String? = null
         if (previewDue || imageDue) {
             bitmap = runCatching {
                 val plane = image.planes.first()
                 DiagnosticCameraImage.decodeRgba(plane.buffer, image.width, image.height, plane.rowStride,
-                    plane.pixelStride, image.imageInfo.rotationDegrees, 320)
-            }.getOrElse { if (imageDue) imageFailures.incrementAndGet(); null }
+                    plane.pixelStride, image.imageInfo.rotationDegrees, if (imageDue) 960 else 480)
+            }.getOrElse {
+                imageError = it.message ?: it.javaClass.simpleName
+                if (imageDue) imageFailures.incrementAndGet()
+                null
+            }
             if (previewDue) {
                 lastPreview = timestamp
-                if (bitmap != null && state.value.mirror) _mirrorFrame.value = MirrorFrame(bitmap,
-                    DiagnosticFrameData.mirrorHands(result, image.imageInfo.rotationDegrees),
-                    "${if (error != null) "INFERENCE ERROR" else AirRuntime.pointerFeedback.name.replace('_', ' ')} · ${state.value.filterMode.name}",
-                    trace?.optInt("selectedHandIndex", -1)?.takeIf { it >= 0 },
-                    mirrorDetail(trace))
+                synchronized(lock) {
+                    if (state.value.mirror) _mirrorFrame.value = MirrorFrame(bitmap,
+                        if (bitmap == null) emptyList() else DiagnosticFrameData.mirrorHands(result, image.imageInfo.rotationDegrees),
+                        when {
+                            bitmap == null -> context.getString(R.string.testing_mirror_unavailable)
+                            error != null -> context.getString(R.string.testing_mirror_inference_error)
+                            result == null -> context.getString(R.string.testing_mirror_model_wait)
+                            else -> "${AirRuntime.pointerFeedback.name.replace('_', ' ')} · ${AirRuntime.lastGesture}"
+                        },
+                        trace?.optInt("selectedHandIndex", -1)?.takeIf { it >= 0 },
+                        imageError ?: mirrorDetail(trace), timestamp,
+                        PointerCalibrationStore(context).activeProfile(AirRuntime.handPreference,
+                            context.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE))
+                }
             }
             if (imageDue) lastImage = timestamp
         }
         if (!recording) return
         val frame = DiagnosticFrameData.encode(context, image, result, timestamp, inferenceMs, trace, error)
         frame.put("diagnosticOverheadMs", SystemClock.uptimeMillis() - diagnosticStarted)
+            .put("cameraSampleRequested", imageDue).put("imageError", imageError ?: JSONObject.NULL)
         val cameraSample = if (imageDue) bitmap else null
         synchronized(lock) {
             val current = session ?: return
@@ -141,7 +159,7 @@ internal object TestingTools {
                     val jpeg = cameraSample?.let { sample ->
                         runCatching {
                             ByteArrayOutputStream().use { output ->
-                                check(sample.compress(Bitmap.CompressFormat.JPEG, 75, output))
+                                check(sample.compress(Bitmap.CompressFormat.JPEG, 90, output))
                                 output.toByteArray()
                             }
                         }.getOrElse { imageFailures.incrementAndGet(); null }
@@ -163,9 +181,14 @@ internal object TestingTools {
             String.format(Locale.US, "%.2f,%.2f", point.optDouble("x"), point.optDouble("y"))
         val comparison = trace?.optJSONObject("comparison")
         val pointer = AirRuntime.pointerSnapshot()
-        return "hand ${trace?.optInt("selectedHandIndex", -1)} ${trace?.optString("pointerRejection", "waiting")}\n" +
+        val selected = trace?.optInt("selectedHandIndex", -1)?.takeIf { it >= 0 }?.toString() ?: "—"
+        val pinch = trace?.optDouble("thumbMiddleDistance")?.takeIf { it.isFinite() }
+            ?.let { String.format(Locale.US, "%.2f", it) } ?: "—"
+        return "hand $selected · ${trace?.optString("pointerRejection", "waiting") ?: "waiting"}\n" +
             "raw ${coordinate(trace?.optJSONObject("uprightTip"))} map ${coordinate(comparison?.optJSONObject("mappedTip"))}\n" +
-            String.format(Locale.US, "cursor %.2f,%.2f · actions %s", pointer.x, pointer.y, trace?.optBoolean("commandsAllowed") ?: false)
+            "pinch $pinch palm · ${AirRuntime.pointerInteraction.name}\n" +
+            String.format(Locale.US, "cursor %.2f,%.2f · actions %s", pointer.x, pointer.y,
+                AirRuntime.gesturesEnabled && (trace?.optBoolean("commandsAllowed") == true))
     }
 
     fun event(kind: String, details: JSONObject) = synchronized(lock) {

@@ -129,7 +129,7 @@ class TestingToolsRegressionTest {
         val cls = type("TestingTools")
         val tools = cls.getField("INSTANCE").get(null)
         cls.getMethod("start", android.content.Context::class.java).invoke(tools, context)
-        val proxy = image()
+        val proxy = image(640, 360)
         val timestamp = android.os.SystemClock.uptimeMillis()
         val onFrame = cls.getMethod("onFrame", android.content.Context::class.java, androidx.camera.core.ImageProxy::class.java,
             com.google.mediapipe.tasks.vision.gesturerecognizer.GestureRecognizerResult::class.java,
@@ -150,6 +150,9 @@ class TestingToolsRegressionTest {
             assertEquals(1, lines.size)
             assertEquals("NO_HAND", JSONObject(lines.single()).getString("reason"))
             assertNotNull(it.getEntry("images/frame-$timestamp.jpg"))
+            val sample = it.getInputStream(it.getEntry("images/frame-$timestamp.jpg")).use(android.graphics.BitmapFactory::decodeStream)
+            assertEquals("Recording must preserve detail beyond the old 320px preview", 640, sample!!.width)
+            assertEquals(360, sample.height)
             val event = JSONObject(it.getInputStream(it.getEntry("events.jsonl")).bufferedReader().readLines().single())
             assertEquals("CANCELLED", event.getString("outcome"))
         }
@@ -163,18 +166,18 @@ class TestingToolsRegressionTest {
         return factory.invoke(null, emptyList<Any>(), emptyList<Any>(), emptyList<Any>(), emptyList<Any>(), timestamp) as com.google.mediapipe.tasks.vision.gesturerecognizer.GestureRecognizerResult
     }
 
-    private fun image(): androidx.camera.core.ImageProxy {
+    private fun image(width: Int = 2, height: Int = 2): androidx.camera.core.ImageProxy {
         fun proxy(cls: Class<*>, values: Map<String, Any?>): Any = java.lang.reflect.Proxy.newProxyInstance(cls.classLoader, arrayOf(cls)) { _, method, _ ->
             if (values.containsKey(method.name)) values[method.name] else when (method.name) {
                 "close" -> null
                 else -> error("Unexpected camera method: ${method.name}")
             }
         }
-        val plane = proxy(androidx.camera.core.ImageProxy.PlaneProxy::class.java, mapOf("getBuffer" to ByteBuffer.wrap(ByteArray(16) { -1 }), "getRowStride" to 8, "getPixelStride" to 4))
+        val plane = proxy(androidx.camera.core.ImageProxy.PlaneProxy::class.java, mapOf("getBuffer" to ByteBuffer.wrap(ByteArray(width * height * 4) { -1 }), "getRowStride" to width * 4, "getPixelStride" to 4))
         val info = proxy(androidx.camera.core.ImageInfo::class.java, mapOf<String, Any?>("getRotationDegrees" to 0, "getTimestamp" to 123456L))
-        return proxy(androidx.camera.core.ImageProxy::class.java, mapOf("getWidth" to 2, "getHeight" to 2,
+        return proxy(androidx.camera.core.ImageProxy::class.java, mapOf("getWidth" to width, "getHeight" to height,
             "getPlanes" to arrayOf(plane as androidx.camera.core.ImageProxy.PlaneProxy), "getImageInfo" to info,
-            "getCropRect" to android.graphics.Rect(0, 0, 2, 2))) as androidx.camera.core.ImageProxy
+            "getCropRect" to android.graphics.Rect(0, 0, width, height))) as androidx.camera.core.ImageProxy
     }
 
     @Test fun mirrorFitsWholeImageWithoutCropping() {
@@ -197,5 +200,61 @@ class TestingToolsRegressionTest {
         assertEquals(android.graphics.Color.BLUE, bitmap.getPixel(1, 0))
         assertEquals(android.graphics.Color.GREEN, bitmap.getPixel(0, 1))
         assertEquals(android.graphics.Color.WHITE, bitmap.getPixel(1, 1))
+    }
+
+    @Test fun previewReadsWholePlaneAfterAnotherConsumerAdvancesBuffer() {
+        val buffer = ByteBuffer.wrap(byteArrayOf(-1, 0, 0, -1, 0, -1, 0, -1))
+        buffer.position(buffer.limit())
+        val bitmap = DiagnosticCameraImage.decodeRgba(buffer, 2, 1, 8, 4, 0, 320)
+        assertEquals(android.graphics.Color.GREEN, bitmap.getPixel(0, 0))
+        assertEquals(android.graphics.Color.RED, bitmap.getPixel(1, 0))
+        assertEquals("Preview must not mutate another consumer's position", buffer.limit(), buffer.position())
+    }
+
+    @Test fun corruptCameraPlaneReplacesOldPreviewWithVisibleError() {
+        val context = org.robolectric.RuntimeEnvironment.getApplication()
+        TestingTools.setMirror(true)
+        try {
+            val image = image()
+            TestingTools.onFrame(context, image, null, 1000, 0, null, null)
+            assertNotNull(TestingTools.mirrorFrame.value)
+            image.planes[0].buffer.limit(1)
+            TestingTools.onFrame(context, image, null, 1200, 0, null, null)
+            val failed = TestingTools.mirrorFrame.value
+            assertNotNull("A decode failure must be visible", failed)
+            assertNull("Never leave a previous image looking live", failed!!.bitmap)
+            assertTrue(failed.label.contains("unavailable", ignoreCase = true))
+            assertTrue(failed.detail.isNotBlank())
+        } finally { TestingTools.setMirror(false) }
+    }
+
+    @Test fun startingRecordingPreservesOlderAndUnexportedSessions() {
+        val context = org.robolectric.RuntimeEnvironment.getApplication()
+        val root = File(context.filesDir, "testing-recordings").apply { deleteRecursively(); mkdirs() }
+        val recordings = (0..5).map { index ->
+            File(root, "valuable-$index").apply { mkdirs(); File(this, "frames.jsonl").writeText("recorded evidence"); setLastModified(index + 1L) }
+        }
+        AirRuntime.running = true; AirRuntime.cameraReady = true
+        try {
+            TestingTools.start(context)
+            assertTrue("Starting a new session must not delete valuable recordings", recordings.all { File(it, "frames.jsonl").isFile })
+        } finally {
+            TestingTools.stop()
+            val deadline = System.nanoTime() + 10_000_000_000L
+            while (TestingTools.state.value.status == RecordingStatus.EXPORTING && System.nanoTime() < deadline) Thread.sleep(10)
+            AirRuntime.running = false; AirRuntime.cameraReady = false
+        }
+    }
+
+    @Test fun unmirroredCalibrationBoundsAreReflectedIntoTheMirror() {
+        val method = runCatching { MirrorGeometry::class.java.getMethod("calibrationRect", RectF::class.java,
+            PointerCalibrationProfile::class.java) }.getOrNull()
+        assertNotNull("Mirror must show the actual calibrated reach", method)
+        val profile = PointerCalibrationProfile(left = .1f, right = .6f, top = .2f, bottom = .8f, mirrorX = false)
+        val rect = method!!.invoke(MirrorGeometry, RectF(10f, 20f, 210f, 120f), profile) as RectF
+        assertEquals(90f, rect.left, .001f)
+        assertEquals(190f, rect.right, .001f)
+        assertEquals(40f, rect.top, .001f)
+        assertEquals(100f, rect.bottom, .001f)
     }
 }
