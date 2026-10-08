@@ -8,7 +8,7 @@
 **Spec:** `docs/superpowers/specs/2026-10-08-ui-experience-design.md`
 
 ## Constraints
-- Branch work/ui-experience; baseline 19bfa6805bbee746712e00a0b11a1153e47c9c78; never move the baseline marker manually.
+- Branch work/ui-experience. At the start of work, and whenever resuming unchecked tasks, resolve `baseline-successful-apk` and use that commit as the functional reference. Any recorded SHA is historical evidence only; never move the baseline marker manually.
 - Edit experience files only. No engine, dispatch, filter, calibration equation, service, CI or dependency changes.
 - 48dp minimum targets, scalable text, system insets and explicit state labels.
 - No infinite animations, blur, shaders, bitmap assets or fabricated functionality.
@@ -41,7 +41,7 @@ Files: `MainActivity.kt`, `TestingToolsCard.kt`.
 - [ ] Keep diagnostic filter comparisons explicitly experimental; do not add media/profile/pro/future controls.
 
 ## Task 4: Review and handoff
-- [ ] Verify XML, resource references, contrast, `git diff --check`, callback/engine boundary and unchanged baseline SHA.
+- [ ] Verify XML, resource references, contrast, `git diff --check`, callback/engine boundary, and that the functional baseline was resolved from `baseline-successful-apk` for this work session rather than pinned to a historical SHA.
 - [ ] Self-review implementation against all original UI controls and the spec.
 - [ ] Record local Gradle result accurately. Prepare one foundation commit for approval; do not commit or push yet.
 - [ ] After approval, one commit and draft PR trigger Actions; fix failures before presenting an APK. Device validation precedes merge and later redesign units.
