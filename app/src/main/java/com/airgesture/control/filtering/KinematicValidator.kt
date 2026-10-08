@@ -4,6 +4,7 @@ class KinematicValidator {
 
     companion object {
         const val WRIST = 0
+        const val THUMB_TIP = 4
         const val INDEX_MCP = 5
         const val INDEX_TIP = 8
         const val MIDDLE_TIP = 12
@@ -18,11 +19,11 @@ class KinematicValidator {
 
         val indexMcp = landmarks[INDEX_MCP]
         val pinkyMcp = landmarks[PINKY_MCP]
-        val indexTip = landmarks[INDEX_TIP]
+        val thumbTip = landmarks[THUMB_TIP]
         val middleTip = landmarks[MIDDLE_TIP]
 
         val palmWidth = indexMcp.distance2DTo(pinkyMcp).coerceAtLeast(MIN_PALM_WIDTH_PX)
-        val fingertipDistance = indexTip.distance2DTo(middleTip)
+        val fingertipDistance = thumbTip.distance2DTo(middleTip)
 
         return fingertipDistance / palmWidth
     }

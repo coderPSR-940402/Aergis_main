@@ -9,7 +9,6 @@ import androidx.camera.core.ImageProxy
 import com.airgesture.control.filtering.KinematicValidator
 import com.airgesture.control.filtering.Point3D
 import com.airgesture.control.filtering.PoseGeometryEvidenceEvaluator
-import com.airgesture.control.pointer.SwipeDirection
 import com.google.mediapipe.framework.image.MediaImageBuilder
 import com.google.mediapipe.tasks.components.containers.NormalizedLandmark
 import com.google.mediapipe.tasks.core.BaseOptions
@@ -36,6 +35,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
     private var lastAppliedCalibration: PointerCalibrationProfile? = null
     private var lastCalibrationContext: Pair<ControlHandPreference, Boolean>? = null
     private val interpreter = GestureInterpreter(mappings)
+    private val pinchPointer = PointerPinchController()
     private val poseEvidenceEvaluator = PoseGeometryEvidenceEvaluator()
     private var recognizer: GestureRecognizer? = null
     private var activeDelegate = "UNAVAILABLE"
@@ -238,6 +238,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             (context.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE)
         val mappingChanged = frameCalibration != lastAppliedCalibration || calibrationContext != lastCalibrationContext
         if (mappingChanged) {
+            resetPointerTouch()
             gestureTransaction.reset()
             pointerVisibility.reset()
             interpreter.reset()
@@ -252,6 +253,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             (selectedHand != null && lastPointerHandedness != null && selectedHandedness != lastPointerHandedness)
         val filterChanged = filterMode != lastFilterMode
         if (ownerChanged || filterChanged) {
+            resetPointerTouch()
             interpreter.reset()
             lineageComparison.reset()
             pointerVisibility.reset()
@@ -275,8 +277,10 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         diagnosticTrace?.put("commandsAllowed", commandTracking)?.put("delegate", activeDelegate)
             ?.put("commandPoseReason", selectedPoseEvidence?.rejectionReason?.name ?: "NO_POSE")
 
+        var pinchInProgress = false
         if (pointerActive && indexTip != null) {
-            val processed = interpreter.processFrame(reusablePointsList, timestamp, actionsAllowed = commandTracking) ?: run {
+            val touchAllowed = commandTracking && AirRuntime.gesturesEnabled
+            val processed = interpreter.processFrame(reusablePointsList, timestamp, actionsAllowed = touchAllowed) ?: run {
                 handlePointerGap(observedAtMs, pointerActive, landmarks.size <= 1,
                     "NON_FINITE_OR_MISSING_TIP", PointerFeedback.INVALID_TIP)
                 return
@@ -287,43 +291,40 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             val mappedTip = pointerMapper.map(rawTip.x, rawTip.y, frameCalibration)
             val currentPoint = pointerMapper.map(processed.smoothedX, processed.smoothedY, frameCalibration)
             val comparison = lineageComparison.update(mappedTip, currentPoint, timestamp)
-            val stabilized = comparison.selected(filterMode)
+            val candidate = comparison.selected(filterMode)
+            val stabilized = if (touchAllowed && processed.poseEvidence.accepted) {
+                val interaction = pinchPointer.update(candidate, processed.isPinchApproaching,
+                    processed.isPinchPressed, timestamp)
+                pinchInProgress = processed.isPinchApproaching
+                AirRuntime.pointerInteraction = interaction.phase
+                AirAccessibilityService.instance?.updatePointerTouch(
+                    interaction.point.x, interaction.point.y, processed.isPinchPressed)
+                interaction.point
+            } else {
+                resetPointerTouch()
+                candidate
+            }
             fun point(p: PointerCoordinateMapper.Point) = org.json.JSONObject()
                 .put("x", DiagnosticFrameData.number(p.x)).put("y", DiagnosticFrameData.number(p.y))
             diagnosticTrace?.put("uprightTip", point(PointerCoordinateMapper.Point(rawTip.x, rawTip.y)))
                 ?.put("currentFilteredUpright", point(PointerCoordinateMapper.Point(processed.smoothedX, processed.smoothedY)))
                 ?.put("comparison", org.json.JSONObject().put("mappedTip", point(mappedTip))
                     .put("current", point(comparison.current)).put("vc49", point(comparison.vc49)))
+                ?.put("pointerInteraction", AirRuntime.pointerInteraction.name)
+                ?.put("thumbMiddleDistance", DiagnosticFrameData.number(processed.normalizedDistance))
+                ?.put("pinchPressed", processed.isPinchPressed)
                 ?.put("cursorVisible", true)?.put("pointerRejection", "NONE")
             pointerVisibility.record(stabilized, observedAtMs)
             AirRuntime.pointerFeedback = PointerFeedback.TRACKING
             lastPointerAt = timestamp
             AirRuntime.setPointerState(stabilized.x, stabilized.y, true)
 
-            if (commandTracking && processed.poseEvidence.accepted &&
-                processed.isClickEngaged &&
-                GestureActionPolicy.isPointerActionEnabled(AirRuntime.gesturesEnabled, AirAction.TAP)
-            ) {
-                AirAccessibilityService.instance?.dispatch(AirAction.TAP)
-            }
-            val swipeAction = when (processed.detectedSwipe) {
-                SwipeDirection.UP -> AirAction.SCROLL_UP
-                SwipeDirection.DOWN -> AirAction.SCROLL_DOWN
-                SwipeDirection.LEFT,
-                SwipeDirection.RIGHT,
-                SwipeDirection.NONE -> AirAction.NONE
-            }
-            if (commandTracking && processed.poseEvidence.accepted &&
-                GestureActionPolicy.isPointerActionEnabled(AirRuntime.gesturesEnabled, swipeAction)
-            ) {
-                AirAccessibilityService.instance?.dispatch(swipeAction)
-            }
-
+            // Scrolling requires deliberate pinch-and-drag. Aiming alone is not a swipe.
             AirAccessibilityService.instance?.updatePointer(
                 stabilized.x,
                 stabilized.y,
                 true,
-                processed.isClickEngaged
+                processed.isPinchPressed
             )
         } else {
             val reason = when {
@@ -341,8 +342,11 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 })
         }
 
-        val decision = if (AirRuntime.gesturesEnabled && gestureName != "None") {
-            interpreter.interpret(GestureSignal(gestureName, gestureScore))
+        val decision = if (AirRuntime.gesturesEnabled && !pinchInProgress && gestureName != "None") {
+            val classified = interpreter.interpret(GestureSignal(gestureName, gestureScore))
+            if (GestureActionPolicy.isClassifierActionEnabled(true, classified.action, pointerActive)) {
+                classified
+            } else GestureDecision(AirAction.NONE, 0f)
         } else {
             GestureDecision(AirAction.NONE, 0f)
         }
@@ -351,12 +355,12 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 action = decision.action,
                 confidence = decision.confidence,
                 timestampMs = timestamp,
-                tracking = commandTracking,
+                tracking = commandTracking && !pinchInProgress,
                 ownershipId = commandOwnerId
             )
         )
         if (confirmedAction != null &&
-            GestureActionPolicy.isClassifierActionEnabled(AirRuntime.gesturesEnabled, confirmedAction)
+            GestureActionPolicy.isClassifierActionEnabled(AirRuntime.gesturesEnabled, confirmedAction, pointerActive)
         ) {
             AirAccessibilityService.instance?.dispatch(confirmedAction)
         }
@@ -399,6 +403,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
     /** Retention changes cursor visibility only. Missing evidence immediately cancels all actions. */
     private fun handlePointerGap(now: Long, pointerActive: Boolean, coastAllowed: Boolean,
         reason: String, feedback: PointerFeedback) {
+        resetPointerTouch()
         AirRuntime.invalidatePendingActions()
         interpreter.resetActions()
         gestureTransaction.reset()
@@ -424,6 +429,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
     }
 
     private fun resetTrackingState() {
+        resetPointerTouch()
         if (AirRuntime.pointerTracking) AirRuntime.invalidatePendingActions()
         pointerVisibility.reset()
         AirRuntime.pointerFeedback = PointerFeedback.NO_HAND
@@ -438,6 +444,12 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         AirRuntime.clearPoseEvidence()
         AirRuntime.setPointerState(AirRuntime.pointerX, AirRuntime.pointerY, false)
         AirAccessibilityService.instance?.updatePointer(0f, 0f, false)
+    }
+
+    private fun resetPointerTouch() {
+        pinchPointer.reset()
+        AirRuntime.pointerInteraction = PointerInteractionPhase.IDLE
+        AirAccessibilityService.instance?.cancelPointerTouch()
     }
 
     override fun close() {

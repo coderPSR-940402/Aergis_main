@@ -17,7 +17,15 @@ object GestureActionPolicy {
         }
     }
 
-    fun isClassifierActionEnabled(gesturesEnabled: Boolean, action: AirAction): Boolean {
-        return gesturesEnabled && action != AirAction.NONE
+    fun isClassifierActionEnabled(gesturesEnabled: Boolean, action: AirAction,
+        pointerControlActive: Boolean = false): Boolean {
+        if (!gesturesEnabled || action == AirAction.NONE) return false
+        // Pointer aiming commonly resembles Pointing_Up. Its legacy double-tap
+        // mapping must not compete with a deliberate pinch touch session.
+        if (!pointerControlActive) return true
+        return when (action) {
+            AirAction.BACK, AirAction.HOME, AirAction.RECENTS -> true
+            else -> false
+        }
     }
 }

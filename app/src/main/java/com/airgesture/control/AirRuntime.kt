@@ -65,6 +65,7 @@ data class AirRuntimeState(
     val handedness: String = "Unknown",
     val pointer: PointerSnapshot = PointerSnapshot(0f, 0f, false),
     val pointerFeedback: PointerFeedback = PointerFeedback.NO_HAND,
+    val pointerInteraction: PointerInteractionPhase = PointerInteractionPhase.IDLE,
     /** Raw normalized vision coordinates, before screen mapping or calibration. */
     val rawPointer: PointerSnapshot = PointerSnapshot(0f, 0f, false),
     val visionTelemetry: VisionTelemetry = VisionTelemetry(),
@@ -100,7 +101,8 @@ data class AirRuntimeUiState(
     val safetyReason: String,
     val visionTelemetry: VisionTelemetry,
     val actionDispatchTelemetry: ActionDispatchTelemetry,
-    val poseEvidence: PoseGeometryEvidence?
+    val poseEvidence: PoseGeometryEvidence?,
+    val pointerInteraction: PointerInteractionPhase = PointerInteractionPhase.IDLE
 )
 
 private fun AirRuntimeState.toUiState(): AirRuntimeUiState = AirRuntimeUiState(
@@ -120,7 +122,8 @@ private fun AirRuntimeState.toUiState(): AirRuntimeUiState = AirRuntimeUiState(
     safetyReason = motionReason ?: foregroundContext.reason,
     visionTelemetry = visionTelemetry,
     actionDispatchTelemetry = actionDispatchTelemetry,
-    poseEvidence = poseEvidence
+    poseEvidence = poseEvidence,
+    pointerInteraction = pointerInteraction
 )
 
 object AirRuntime {
@@ -205,6 +208,10 @@ object AirRuntime {
     var pointerFeedback: PointerFeedback
         get() = state.value.pointerFeedback
         set(value) = _state.update { it.copy(pointerFeedback = value) }
+
+    var pointerInteraction: PointerInteractionPhase
+        get() = state.value.pointerInteraction
+        internal set(value) = _state.update { it.copy(pointerInteraction = value) }
 
     var visionReady: Boolean
         get() = state.value.visionReady

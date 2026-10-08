@@ -57,6 +57,9 @@ class PointerContinuityTest {
     @Test
     fun motionFramesClearClickDwellWithoutResettingPointerFilters() {
         val interpreter = GestureInterpreter()
+        interpreter.processFrame(closePose().toMutableList().apply {
+            this[KinematicValidator.THUMB_TIP] = Point3D(0.2f, 0.5f)
+        }, 0L)
         interpreter.processFrame(closePose(), 1L)
         val moving = interpreter.processFrame(closePose(), 34L, actionsAllowed = false)!!
         assertTrue(moving.smoothedX.isFinite())
@@ -97,6 +100,7 @@ class PointerContinuityTest {
         this[KinematicValidator.INDEX_MCP] = Point3D(0.4f, 0.5f)
         this[KinematicValidator.PINKY_MCP] = Point3D(0.6f, 0.5f)
         this[KinematicValidator.INDEX_TIP] = Point3D(0.55f, 0.5f)
+        this[KinematicValidator.THUMB_TIP] = Point3D(0.55f, 0.5f)
         this[KinematicValidator.MIDDLE_TIP] = Point3D(0.56f, 0.5f)
     }
 }
