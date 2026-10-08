@@ -7,40 +7,33 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.Canvas
+import com.airgesture.control.ui.*
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material3.Button
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.core.content.FileProvider
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.flow.sample
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -116,6 +109,10 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge(
+            statusBarStyle = androidx.activity.SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = androidx.activity.SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
+        )
         pendingPdf = savedInstanceState?.getString("testing_pending_pdf")?.let(::File)
         pendingZip = savedInstanceState?.getString("testing_pending_zip")?.let(::File)
         refreshSettings()
@@ -266,261 +263,166 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     private fun AirGestureScreen() {
-        val runtime by AirRuntime.uiState.collectAsStateWithLifecycle(
-            initialValue = AirRuntime.uiStateSnapshot()
-        )
+        AergisTheme {
+            AergisShell(gesturesEnabled) { destination, navigate ->
+                when (destination) {
+                    AergisDestination.CONTROL -> ControlScreen(
+                        accessibilityEnabled = accessibilityEnabled,
+                        pointerEnabled = pointerEnabled,
+                        gesturesEnabled = gesturesEnabled,
+                        startError = sessionStartError,
+                        onCapture = { if (AirRuntime.running) stopSession() else startSession() },
+                        onArm = {
+                            AirRuntime.controlMode = if (AirRuntime.controlMode == ControlMode.ARMED) {
+                                ControlMode.READY
+                            } else {
+                                ControlMode.ARMED
+                            }
+                        },
+                        onAccessibility = ::openAccessibilitySettings,
+                        onNavigate = navigate
+                    )
+                    AergisDestination.TRACKING -> TrackingScreen()
+                    AergisDestination.GESTURES -> GesturesScreen()
+                    AergisDestination.SETTINGS -> SettingsScreen()
+                }
+            }
+        }
+    }
 
-        MaterialTheme {
-            Surface(modifier = Modifier.fillMaxSize()) {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp)
-                ) {
-                    item {
-                        Column(
-                            modifier = Modifier.fillMaxWidth().padding(top = 24.dp, bottom = 8.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Text(stringResource(R.string.app_name), style = MaterialTheme.typography.headlineLarge)
-                            Text(stringResource(R.string.app_tagline))
-                        }
-                    }
-                    item {
-                        StatusCard(
-                            title = stringResource(R.string.session_status_title),
-                            message = stringResource(
-                                if (runtime.running) R.string.session_active else R.string.session_stopped
-                            )
+    @OptIn(kotlinx.coroutines.FlowPreview::class)
+    @Composable
+    private fun TrackingScreen() {
+        // Diagnostic numbers refresh at 4 Hz; the pointer preview has its own draw-phase state.
+        val flow = remember { AirRuntime.uiState.sample(250L) }
+        val runtime by flow.collectAsStateWithLifecycle(initialValue = AirRuntime.uiStateSnapshot())
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            item { AergisSection(stringResource(R.string.ui_tracking_title), stringResource(R.string.ui_tracking_screen_description)) }
+            item {
+                AergisPanel {
+                    AergisStatusChip(stringResource(if (runtime.pointerTracking) R.string.ui_tracking_live else R.string.ui_waiting_for_hand),
+                        if (runtime.pointerTracking) AergisColors.Cyan else AergisColors.Muted)
+                    Text(stringResource(runtime.pointerFeedback.label()), style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(R.string.hands_detected, runtime.handsDetected))
+                    Text(stringResource(R.string.tracking_hand, runtime.handedness))
+                    Text(stringResource(R.string.gesture, runtime.lastGesture))
+                    Text(stringResource(R.string.camera_status, stringResource(if (runtime.cameraReady) R.string.status_ready else R.string.status_not_active)))
+                    Text(stringResource(R.string.vision_status, stringResource(if (runtime.visionReady) R.string.status_ready else R.string.status_not_ready)))
+                    Text(stringResource(R.string.motion_status, stringResource(when {
+                        !runtime.motionSensorsAvailable -> R.string.motion_unavailable
+                        runtime.motionActive -> R.string.motion_active
+                        else -> R.string.motion_inactive
+                    })))
+                    Text(stringResource(R.string.foreground_status, stringResource(when (runtime.foregroundSafety) {
+                        ForegroundSafety.SAFE -> R.string.foreground_safe
+                        ForegroundSafety.PROTECTED -> R.string.foreground_protected
+                        ForegroundSafety.UNKNOWN -> R.string.foreground_unknown
+                    })))
+                    runtime.visionError?.let { Text(it, color = AergisColors.Error) }
+                }
+            }
+            item { CalibrationCard(runtime.pointerTracking) }
+            item { PracticeCard(runtime.controlMode) }
+            item { TestingToolsCard(::saveReport, ::shareReport) }
+            item { DiagnosticsCard(runtime) }
+        }
+    }
+
+    @Composable
+    private fun GesturesScreen() {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            item { AergisSection(stringResource(R.string.ui_gestures_title), stringResource(R.string.ui_gestures_screen_description)) }
+            item {
+                AergisPanel {
+                    AergisStatusChip(stringResource(R.string.ui_implemented), AergisColors.Success)
+                    Text(stringResource(R.string.ui_pointer_gestures), style = MaterialTheme.typography.titleMedium)
+                    Text(stringResource(R.string.ui_pointer_gestures_description), color = AergisColors.Muted)
+                }
+            }
+            item { Text(stringResource(R.string.ui_mapping_cycle), color = AergisColors.Muted, style = MaterialTheme.typography.bodyMedium) }
+            item { MappingRow(R.string.mapping_thumb_up, AirAction.TAP) }
+            item { MappingRow(R.string.mapping_victory, AirAction.BACK) }
+            item { MappingRow(R.string.mapping_open_palm, AirAction.HOME) }
+            item { MappingRow(R.string.mapping_fist, AirAction.RECENTS) }
+            item { MappingRow(R.string.mapping_pointing_up, AirAction.DOUBLE_TAP) }
+            item {
+                AergisPanel {
+                    Text(stringResource(R.string.practice_title), style = MaterialTheme.typography.titleMedium)
+                    Text(stringResource(R.string.practice_description), color = AergisColors.Muted)
+                    Text(stringResource(R.string.practice_safety_note), style = MaterialTheme.typography.bodyMedium, color = AergisColors.Muted)
+                }
+            }
+        }
+    }
+
+    @Composable
+    private fun SettingsScreen() {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            item { AergisSection(stringResource(R.string.ui_settings), stringResource(R.string.ui_settings_screen_description)) }
+            item {
+                AergisPanel {
+                    AergisSettingRow(stringResource(R.string.pointer_mode), stringResource(R.string.pointer_mode_description), pointerEnabled) {
+                        pointerEnabled = it
+                        ActionMappingStore(this@MainActivity).setPointerEnabled(it)
+                        AirRuntime.pointerEnabled = it
+                        AirAccessibilityService.instance?.updatePointer(
+                            AirRuntime.pointerX,
+                            AirRuntime.pointerY,
+                            it && AirRuntime.pointerTracking
                         )
                     }
-                    item {
-                        StatusCard(
-                            title = stringResource(
-                                R.string.control_mode_title,
-                                when (runtime.controlMode) {
-                                    ControlMode.OFF -> stringResource(R.string.session_stopped)
-                                    ControlMode.READY -> stringResource(R.string.control_mode_ready)
-                                    ControlMode.ARMED -> stringResource(R.string.control_mode_armed)
-                                    ControlMode.PAUSED -> stringResource(R.string.control_mode_paused)
-                                }
-                            ),
-                            message = stringResource(R.string.control_mode_description),
-                            isError = runtime.motionActive || runtime.foregroundSafety == ForegroundSafety.PROTECTED
-                        )
+                    androidx.compose.material3.HorizontalDivider(color = AergisColors.Outline)
+                    AergisSettingRow(stringResource(R.string.gesture_actions), stringResource(R.string.gesture_actions_description), gesturesEnabled) {
+                        gesturesEnabled = it
+                        ActionMappingStore(this@MainActivity).setGesturesEnabled(it)
+                        AirRuntime.gesturesEnabled = it
                     }
-                    item { TestingToolsCard(::saveReport, ::shareReport) }
-                    item { CalibrationCard(runtime.pointerTracking) }
-                    item { PracticeCard(runtime.controlMode) }
-                    item { DiagnosticsCard(runtime) }
-                    item {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(stringResource(R.string.pointer_mode))
-                                Text(stringResource(R.string.pointer_mode_description))
-                            }
-                            Switch(checked = pointerEnabled, onCheckedChange = {
-                                pointerEnabled = it
-                                ActionMappingStore(this@MainActivity).setPointerEnabled(it)
-                                AirRuntime.pointerEnabled = it
-                                AirAccessibilityService.instance?.updatePointer(
-                                    AirRuntime.pointerX,
-                                    AirRuntime.pointerY,
-                                    it && AirRuntime.pointerTracking
-                                )
-                            })
+                }
+            }
+            item {
+                AergisPanel {
+                    Text(stringResource(R.string.tracking_hand_preference), style = MaterialTheme.typography.titleMedium)
+                    Text(stringResource(R.string.ui_hand_preference_description), color = AergisColors.Muted, style = MaterialTheme.typography.bodyMedium)
+                    ControlHandSelector(
+                        selected = handPreference,
+                        onSelected = { selected ->
+                            handPreference = selected
+                            ActionMappingStore(this@MainActivity).setHandPreference(selected)
+                            AirRuntime.handPreference = selected
+                            calibrationSession.reset()
+                            calibrationState = calibrationSession.state()
+                            calibrationSampleCount = 0
+                            calibrationMessage = null
+                            refreshCalibrationSettings()
                         }
-                    }
-                    item {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(stringResource(R.string.gesture_actions))
-                                Text(stringResource(R.string.gesture_actions_description))
-                            }
-                            Switch(checked = gesturesEnabled, onCheckedChange = {
-                                gesturesEnabled = it
-                                ActionMappingStore(this@MainActivity).setGesturesEnabled(it)
-                                AirRuntime.gesturesEnabled = it
-                            })
-                        }
-                    }
-                    item {
-                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text(stringResource(R.string.tracking_hand_preference))
-                            ControlHandSelector(
-                                selected = handPreference,
-                                onSelected = { selected ->
-                                    handPreference = selected
-                                    ActionMappingStore(this@MainActivity).setHandPreference(selected)
-                                    AirRuntime.handPreference = selected
-                                    calibrationSession.reset()
-                                    calibrationState = calibrationSession.state()
-                                    calibrationSampleCount = 0
-                                    calibrationMessage = null
-                                    refreshCalibrationSettings()
-                                }
-                            )
-                        }
-                    }
-                    item {
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text(
-                                stringResource(
-                                    R.string.accessibility_status,
-                                    stringResource(
-                                        if (accessibilityEnabled) R.string.status_enabled else R.string.status_not_enabled
-                                    )
-                                )
-                            )
-                            Text(
-                                stringResource(
-                                    R.string.vision_status,
-                                    stringResource(
-                                        if (runtime.visionReady) R.string.status_ready else R.string.status_not_ready
-                                    )
-                                )
-                            )
-                            Text(
-                                stringResource(
-                                    R.string.camera_status,
-                                    stringResource(
-                                        if (runtime.cameraReady) R.string.status_ready else R.string.status_not_active
-                                    )
-                                )
-                            )
-                        }
-                    }
-                    item { Text(stringResource(R.string.hands_detected, runtime.handsDetected)) }
-                    item { Text(stringResource(R.string.tracking_hand, runtime.handedness)) }
-                    item { Text(stringResource(R.string.gesture, runtime.lastGesture)) }
-                    item {
-                        Text(
-                            stringResource(
-                                R.string.pointer_tracking,
-                                stringResource(
-                                    if (runtime.pointerTracking) {
-                                        R.string.pointer_tracking_active
-                                    } else {
-                                        R.string.pointer_tracking_inactive
-                                    }
-                                )
-                            )
-                        )
-                    }
-                    item {
-                        Text(stringResource(when (runtime.pointerFeedback) {
-                            PointerFeedback.TRACKING -> R.string.pointer_feedback_tracking
-                            PointerFeedback.COASTING -> R.string.pointer_feedback_coasting
-                            PointerFeedback.NO_HAND -> R.string.pointer_feedback_no_hand
-                            PointerFeedback.DISABLED -> R.string.pointer_feedback_disabled
-                            PointerFeedback.AMBIGUOUS -> R.string.pointer_feedback_ambiguous
-                            PointerFeedback.INVALID_TIP -> R.string.pointer_feedback_invalid_tip
-                            PointerFeedback.VISION_REJECTED -> R.string.pointer_feedback_vision_rejected
-                        }))
-                    }
-                    item {
-                        Text(
-                            stringResource(
-                                R.string.motion_status,
-                                stringResource(
-                                    when {
-                                        !runtime.motionSensorsAvailable -> R.string.motion_unavailable
-                                        runtime.motionActive -> R.string.motion_active
-                                        else -> R.string.motion_inactive
-                                    }
-                                )
-                            )
-                        )
-                        Text(
-                            stringResource(
-                                R.string.foreground_status,
-                                stringResource(
-                                    when (runtime.foregroundSafety) {
-                                        ForegroundSafety.SAFE -> R.string.foreground_safe
-                                        ForegroundSafety.PROTECTED -> R.string.foreground_protected
-                                        ForegroundSafety.UNKNOWN -> R.string.foreground_unknown
-                                    }
-                                )
-                            )
-                        )
-                    }
-                    runtime.visionError?.let { error ->
-                        item {
-                            StatusCard(
-                                title = stringResource(R.string.vision_error_title),
-                                message = error,
-                                isError = true
-                            )
-                        }
-                    }
-                    sessionStartError?.let { error ->
-                        item {
-                            StatusCard(
-                                title = stringResource(R.string.session_start_error_title),
-                                message = error,
-                                isError = true
-                            )
-                        }
-                    }
-                    item {
-                        Text(
-                            stringResource(R.string.gesture_mappings),
-                            style = MaterialTheme.typography.titleMedium,
-                            modifier = Modifier.padding(top = 8.dp)
-                        )
-                    }
-                    item { MappingRow(R.string.mapping_thumb_up, AirAction.TAP) }
-                    item { MappingRow(R.string.mapping_victory, AirAction.BACK) }
-                    item { MappingRow(R.string.mapping_open_palm, AirAction.HOME) }
-                    item { MappingRow(R.string.mapping_fist, AirAction.RECENTS) }
-                    item { MappingRow(R.string.mapping_pointing_up, AirAction.DOUBLE_TAP) }
-                    item {
-                        Button(
-                            onClick = { if (runtime.running) stopSession() else startSession() },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(stringResource(if (runtime.running) R.string.stop_capture else R.string.start_capture))
-                        }
-                    }
-                    item {
-                        Button(
-                            enabled = runtime.running &&
-                                (runtime.controlMode == ControlMode.ARMED || !runtime.motionActive),
-                            onClick = {
-                                AirRuntime.controlMode = if (runtime.controlMode == ControlMode.ARMED) {
-                                    ControlMode.READY
-                                } else {
-                                    ControlMode.ARMED
-                                }
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(
-                                stringResource(
-                                    if (runtime.controlMode == ControlMode.ARMED) {
-                                        R.string.disarm_control
-                                    } else {
-                                        R.string.arm_control
-                                    }
-                                )
-                            )
-                        }
-                    }
-                    item {
-                        Button(onClick = { openAccessibilitySettings() }, modifier = Modifier.fillMaxWidth()) {
-                            Text(stringResource(R.string.accessibility_settings))
-                        }
-                    }
-                    item {
-                        Button(onClick = { openAppDetails() }, modifier = Modifier.fillMaxWidth()) {
-                            Text(stringResource(R.string.app_settings))
-                        }
-                    }
+                    )
+                }
+            }
+            item {
+                AergisPanel {
+                    Text(stringResource(R.string.ui_permissions_title), style = MaterialTheme.typography.titleMedium)
+                    Text(stringResource(R.string.accessibility_status, stringResource(if (accessibilityEnabled) R.string.status_enabled else R.string.status_not_enabled)))
+                    AergisButton(onClick = ::openAccessibilitySettings, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.accessibility_settings)) }
+                    AergisButton(onClick = ::openAppDetails, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.app_settings)) }
+                }
+            }
+            item {
+                AergisPanel {
+                    Text(stringResource(R.string.ui_about_title), style = MaterialTheme.typography.titleMedium)
+                    Text(stringResource(R.string.app_tagline), color = AergisColors.Muted)
+                    Text(stringResource(R.string.ui_privacy_description), style = MaterialTheme.typography.bodyMedium, color = AergisColors.Muted)
                 }
             }
         }
@@ -528,10 +430,9 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     private fun CalibrationCard(pointerTracking: Boolean) {
-        val preview by AirRuntime.state.collectAsStateWithLifecycle()
-        ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+        AergisPanel {
             Column(
-                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(
@@ -559,18 +460,10 @@ class MainActivity : ComponentActivity() {
                     stringResource(if (isLandscape()) R.string.orientation_landscape else R.string.orientation_portrait)
                 ))
                 Text(stringResource(R.string.calibration_reach_guidance))
-                Canvas(modifier = Modifier.fillMaxWidth().height(120.dp)) {
-                    drawRect(Color(0xFF263238))
-                    if (preview.pointerTracking || preview.pointerFeedback == PointerFeedback.COASTING) {
-                        drawCircle(
-                            color = if (preview.pointerTracking) Color(0xFF00E5FF) else Color.Gray,
-                            radius = 6.dp.toPx(),
-                            center = Offset(preview.pointerX * size.width, preview.pointerY * size.height)
-                        )
-                    }
-                }
+                Text(stringResource(R.string.ui_pointer_preview), color = AergisColors.Muted, style = MaterialTheme.typography.labelMedium)
+                CalibrationPreview()
                 calibrationMessage?.let { Text(it) }
-                Button(
+                AergisButton(
                     onClick = { applyCalibration(PointerCalibrationProfile.COMFORTABLE_REACH) },
                     modifier = Modifier.fillMaxWidth()
                 ) { Text(stringResource(R.string.calibration_comfortable)) }
@@ -598,13 +491,13 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Button(
+                    AergisButton(
                         onClick = { startCalibration() },
                         modifier = Modifier.weight(1f)
                     ) {
                         Text(stringResource(R.string.calibration_start))
                     }
-                    Button(
+                    AergisButton(
                         onClick = { captureCalibrationSample() },
                         enabled = (calibrationState == PointerCalibrationSession.State.COLLECTING ||
                             calibrationState == PointerCalibrationSession.State.READY) &&
@@ -618,14 +511,14 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Button(
+                    AergisButton(
                         onClick = { completeCalibration() },
                         enabled = calibrationState == PointerCalibrationSession.State.READY,
                         modifier = Modifier.weight(1f)
                     ) {
                         Text(stringResource(R.string.calibration_complete))
                     }
-                    Button(
+                    AergisButton(
                         onClick = { disableCalibration() },
                         enabled = calibrationEnabled,
                         modifier = Modifier.weight(1f)
@@ -633,7 +526,7 @@ class MainActivity : ComponentActivity() {
                         Text(stringResource(R.string.calibration_disable))
                     }
                 }
-                Button(
+                AergisButton(
                     onClick = { resetCalibration() },
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -645,21 +538,20 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     private fun CalibrationSlider(label: Int, value: Float, range: ClosedFloatingPointRange<Float>, onChanged: (Float) -> Unit) {
-        Text(stringResource(label, value))
-        Slider(value = value.coerceIn(range), onValueChange = onChanged, valueRange = range)
+        AergisSlider(stringResource(label, value), value, range, onChanged)
     }
 
     @Composable
     private fun PracticeCard(controlMode: ControlMode) {
-        ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+        AergisPanel {
             Column(
-                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(stringResource(R.string.practice_title), style = MaterialTheme.typography.titleMedium)
                 Text(stringResource(R.string.practice_description))
                 Text(stringResource(R.string.practice_safety_note))
-                Button(
+                AergisButton(
                     enabled = controlMode == ControlMode.ARMED,
                     onClick = { AirRuntime.controlMode = ControlMode.READY },
                     modifier = Modifier.fillMaxWidth()
@@ -675,9 +567,9 @@ class MainActivity : ComponentActivity() {
         val pose = runtime.poseEvidence
         val vision = runtime.visionTelemetry
         val dispatch = runtime.actionDispatchTelemetry
-        ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+        AergisPanel {
             Column(
-                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 Text(stringResource(R.string.diagnostics_title), style = MaterialTheme.typography.titleMedium)
@@ -721,13 +613,10 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     private fun MappingRow(labelRes: Int, source: AirAction) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Text(stringResource(labelRes), modifier = Modifier.padding(top = 12.dp))
-            Button(onClick = { cycleMapping(source) }) {
-                Text(actionLabel(mapping(source, mappingsVersion)))
+        AergisPanel {
+            Text(stringResource(labelRes), style = MaterialTheme.typography.titleMedium)
+            AergisButton(onClick = { cycleMapping(source) }, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.ui_change_mapping, actionLabel(mapping(source, mappingsVersion))))
             }
         }
     }
@@ -747,23 +636,4 @@ class MainActivity : ComponentActivity() {
         }
     )
 
-    @Composable
-    private fun StatusCard(title: String, message: String, isError: Boolean = false) {
-        val colors = MaterialTheme.colorScheme
-        ElevatedCard(
-            colors = CardDefaults.elevatedCardColors(
-                containerColor = if (isError) colors.errorContainer else colors.secondaryContainer,
-                contentColor = if (isError) colors.onErrorContainer else colors.onSecondaryContainer
-            ),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(
-                modifier = Modifier.fillMaxWidth().padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                Text(title, style = MaterialTheme.typography.titleMedium)
-                Text(message, style = MaterialTheme.typography.bodyMedium)
-            }
-        }
-    }
 }
