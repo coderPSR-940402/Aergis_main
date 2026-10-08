@@ -36,6 +36,8 @@ Then push the isolated branch and open a draft PR against main to run existing A
 Draft PR #42 published the foundation as `285bfa2a805c51bd69b8ca91c13a8b6586ecc382`.
 Aergis CI #208 and CodeQL reached compilation and failed at the ControlScreen string-resource reference with `NONE_APPLICABLE`: generated class R cannot be used as an expression. The other UI files explicitly import the app R class; ControlScreen used a package wildcard. Add the explicit app R import as the smallest correction, following the working pattern. User approved continuing the CI correction on 2026-10-08. The failing compiler run is the regression evidence; the next Actions run must verify the correction, all tests, lint and APKs before any success claim.
 
+CI #210 confirmed compilation and unit tests pass after the explicit R import. Lint then found one error: `windowLightNavigationBar` is API 27, but the app supports API 26. Remove that redundant base-style item; the dark theme and existing API-safe `enableEdgeToEdge(SystemBarStyle.dark(...))` already provide the intended system-bar appearance. Keep minSdk, lint rules and engine unchanged. The next CI run must confirm lint and both APK builds.
+
 ## Later implementation units
 1. Guided tracking/calibration flow using existing sample/profile APIs.
 2. Gesture action picker/details using existing mappings, plus better practice guidance.
