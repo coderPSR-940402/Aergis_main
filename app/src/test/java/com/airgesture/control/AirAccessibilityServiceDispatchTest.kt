@@ -8,6 +8,7 @@ import android.view.WindowManager
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertFalse
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -159,5 +160,94 @@ class AirAccessibilityServiceDispatchTest {
         assertTrue(bounds.top in 0f..(metrics.heightPixels - 1).toFloat())
         assertTrue(bounds.bottom in 0f..(metrics.heightPixels - 1).toFloat())
         assertTrue(bounds.bottom > bounds.top)
+    }
+
+    @Test fun pinchPressKeepsOneTouchDownAndReleaseEndsItWithoutAnExtraTap() {
+        service.updatePointerTouch(0.4f, 0.5f, true)
+        shadowOf(Looper.getMainLooper()).idle()
+        val first = shadow.gesturesDispatched.single()
+        assertTrue(first.description().getStroke(0).willContinue())
+        assertEquals(0L, AirRuntime.state.value.actionDispatchTelemetry.completed)
+
+        service.updatePointerTouch(0.4f, 0.5f, false)
+        shadowOf(Looper.getMainLooper()).idle()
+        first.callback()!!.onCompleted(first.description())
+        val ending = shadow.gesturesDispatched.last()
+        assertEquals(2, shadow.gesturesDispatched.size)
+        assertFalse(ending.description().getStroke(0).willContinue())
+        ending.callback()!!.onCompleted(ending.description())
+        assertEquals(1L, AirRuntime.state.value.actionDispatchTelemetry.completed)
+    }
+
+    @Test fun heldTouchContinuesForLongPressAndMovesForDragScrolling() {
+        service.updatePointerTouch(0.4f, 0.5f, true)
+        shadowOf(Looper.getMainLooper()).idle()
+        repeat(12) {
+            val previous = shadow.gesturesDispatched.last()
+            service.updatePointerTouch(0.4f, 0.5f, true)
+            shadowOf(Looper.getMainLooper()).idle()
+            previous.callback()!!.onCompleted(previous.description())
+            assertTrue(shadow.gesturesDispatched.last().description().getStroke(0).willContinue())
+        }
+        service.updatePointerTouch(0.4f, 0.7f, true)
+        shadowOf(Looper.getMainLooper()).idle()
+        val stationary = shadow.gesturesDispatched.last()
+        stationary.callback()!!.onCompleted(stationary.description())
+        val drag = shadow.gesturesDispatched.last().description().getStroke(0)
+        val bounds = RectF()
+        drag.path.computeBounds(bounds, true)
+        assertTrue(drag.willContinue())
+        assertTrue(bounds.bottom > bounds.top)
+        assertEquals(0L, AirRuntime.state.value.actionDispatchTelemetry.completed)
+    }
+
+    @Test fun lossOrSafetyChangeCancelsTouchAndLateCallbacksCannotRestartIt() {
+        for (safetyChanged in listOf(false, true)) {
+            AirRuntime.motionActive = false
+            service.updatePointerTouch(0.4f, 0.5f, false)
+            shadowOf(Looper.getMainLooper()).idle()
+            val oldCount = shadow.gesturesDispatched.size
+            service.updatePointerTouch(0.4f, 0.5f, true)
+            shadowOf(Looper.getMainLooper()).idle()
+            val first = shadow.gesturesDispatched.last()
+            if (safetyChanged) {
+                AirRuntime.motionActive = true
+                first.callback()!!.onCompleted(first.description())
+            } else {
+                service.cancelPointerTouch()
+                shadowOf(Looper.getMainLooper()).idle()
+            }
+            val afterCancel = shadow.gesturesDispatched.size
+            assertEquals(oldCount + 2, afterCancel)
+            first.callback()!!.onCompleted(first.description())
+            assertEquals(afterCancel, shadow.gesturesDispatched.size)
+            assertEquals(0L, AirRuntime.state.value.actionDispatchTelemetry.completed)
+        }
+    }
+
+    @Test fun cameraStallCannotLeaveAnIndefinitelyHeldTouch() {
+        service.updatePointerTouch(0.4f, 0.5f, true)
+        shadowOf(Looper.getMainLooper()).idle()
+        val first = shadow.gesturesDispatched.single()
+        shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(300L))
+        assertEquals(2, shadow.gesturesDispatched.size)
+        first.callback()!!.onCompleted(first.description())
+        assertEquals(2, shadow.gesturesDispatched.size)
+    }
+
+    @Test fun rejectedPressCannotRetryUntilTheUserOpensTheirFingers() {
+        shadow.setCanDispatchGestures(false)
+        service.updatePointerTouch(0.4f, 0.5f, true)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(1L, AirRuntime.state.value.actionDispatchTelemetry.platformRejected)
+        service.updatePointerTouch(0.4f, 0.5f, true)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(1L, AirRuntime.state.value.actionDispatchTelemetry.platformRejected)
+        service.updatePointerTouch(0.4f, 0.5f, false)
+        shadowOf(Looper.getMainLooper()).idle()
+        shadow.setCanDispatchGestures(true)
+        service.updatePointerTouch(0.4f, 0.5f, true)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(1, shadow.gesturesDispatched.size)
     }
 }

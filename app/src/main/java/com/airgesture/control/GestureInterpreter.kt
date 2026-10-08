@@ -16,7 +16,9 @@ data class ProcessedGestureResult(
     val isClickEngaged: Boolean,
     val detectedSwipe: SwipeDirection,
     val normalizedDistance: Float,
-    val poseEvidence: PoseGeometryEvidence
+    val poseEvidence: PoseGeometryEvidence,
+    val isPinchApproaching: Boolean = false,
+    val isPinchPressed: Boolean = false
 )
 
 class GestureInterpreter(
@@ -70,8 +72,14 @@ class GestureInterpreter(
             )
         }
         val clickState = clickStateMachine.processFrame(dNorm, timestampMs)
-        val swipeState = swipeEngine.processFrame(Point3D(stabilized.x, stabilized.y, rawIndexTip.z), timestampMs)
-        return ProcessedGestureResult(stabilized.x, stabilized.y, clickState, swipeState, dNorm, poseEvidence)
+        val approaching = clickStateMachine.isPointerLocked
+        val pressed = clickStateMachine.getCurrentState() == ClickHysteresisStateMachine.State.CLICKED
+        val swipeState = if (approaching) {
+            swipeEngine.reset()
+            SwipeDirection.NONE
+        } else swipeEngine.processFrame(Point3D(stabilized.x, stabilized.y, rawIndexTip.z), timestampMs)
+        return ProcessedGestureResult(stabilized.x, stabilized.y, clickState, swipeState, dNorm,
+            poseEvidence, approaching, pressed)
     }
 
     fun reset() {

@@ -5,6 +5,7 @@ import android.accessibilityservice.GestureDescription
 import android.graphics.Path
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.util.DisplayMetrics
 import android.view.ViewConfiguration
 import android.view.WindowManager
@@ -14,6 +15,12 @@ import java.util.concurrent.atomic.AtomicLong
 
 class AirAccessibilityService : AccessibilityService() {
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val pointerTouch = HeldPointerTouch(
+        mainHandler,
+        dispatch = { gesture, callback -> dispatchGesture(gesture, callback, mainHandler) },
+        permitted = { epoch -> isActionAllowed(AirAction.LONG_PRESS, epoch) },
+        record = AirRuntime::recordActionDispatchOutcome
+    )
     private val updateScheduled = AtomicBoolean(false)
     private val pendingVersion = AtomicLong(0L)
     @Volatile private var pendingX = 0f
@@ -41,6 +48,18 @@ class AirAccessibilityService : AccessibilityService() {
         pendingClicking = isClicking
         pendingVersion.incrementAndGet()
         schedulePointerUpdate()
+    }
+
+    /** A held pinch is one continuous native touch: tap, long press or drag. */
+    fun updatePointerTouch(normalizedX: Float, normalizedY: Float, pressed: Boolean) {
+        val epoch = AirRuntime.actionEpoch
+        val sampledAt = SystemClock.uptimeMillis()
+        val point = screenSize().map(normalizedX, normalizedY)
+        mainHandler.post { pointerTouch.update(point, pressed, epoch, sampledAt) }
+    }
+
+    fun cancelPointerTouch() {
+        mainHandler.post { pointerTouch.cancel() }
     }
 
     private fun schedulePointerUpdate() {
@@ -236,10 +255,15 @@ class AirAccessibilityService : AccessibilityService() {
 
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
         super.onConfigurationChanged(newConfig)
+        pointerTouch.cancel()
+        AirRuntime.invalidatePendingActions()
+        AirRuntime.pointerInteraction = PointerInteractionPhase.IDLE
         trackingMirror?.reposition()
     }
 
     override fun onInterrupt() {
+        pointerTouch.cancel()
+        AirRuntime.pointerInteraction = PointerInteractionPhase.IDLE
         TestingTools.setMirror(false)
         mainHandler.removeCallbacksAndMessages(null)
         updateScheduled.set(false)
@@ -249,6 +273,8 @@ class AirAccessibilityService : AccessibilityService() {
     }
 
     override fun onDestroy() {
+        pointerTouch.cancel()
+        AirRuntime.pointerInteraction = PointerInteractionPhase.IDLE
         trackingMirror?.close()
         trackingMirror = null
         if (instance === this) instance = null
