@@ -4,6 +4,7 @@
 /.idea/
 *.iml
 /build/
+**/build/
 /captures/
 .externalNativeBuild/
 .cxx/
@@ -12,3 +13,4 @@
 *.apk
 *.aab
 *.apks
+/app/src/main/assets/gesture_recognizer.task

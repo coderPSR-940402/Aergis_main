@@ -9,7 +9,6 @@ import androidx.camera.core.ImageProxy
 import com.airgesture.control.filtering.KinematicValidator
 import com.airgesture.control.filtering.Point3D
 import com.airgesture.control.filtering.PoseGeometryEvidenceEvaluator
-import com.google.mediapipe.framework.image.MediaImageBuilder
 import com.google.mediapipe.tasks.components.containers.NormalizedLandmark
 import com.google.mediapipe.tasks.core.BaseOptions
 import com.google.mediapipe.tasks.core.Delegate
@@ -23,6 +22,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 /** On-device MediaPipe gesture and hand-landmark inference. */
 class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
     private val closed = AtomicBoolean(false)
+    private val frameInput = CameraFrameInput()
     private val mappings = ActionMappingStore(context)
     private val calibrationStore = PointerCalibrationStore(context)
     private val pointerMapper = LivePointerMapper {
@@ -73,8 +73,8 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             val timestamp = SystemClock.uptimeMillis()
             ensureRecognizer(timestamp)
             val currentRecognizer = recognizer ?: return
-            val mediaImage = image.image ?: return
-            val mpImage = MediaImageBuilder(mediaImage).build()
+            if (closed.get()) return
+            val mpImage = frameInput.create(image)
             try {
                 val imageProcessingOptions = ImageProcessingOptions.builder()
                     .setRotationDegrees(image.imageInfo.rotationDegrees)
@@ -92,19 +92,25 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         } catch (t: Throwable) {
             diagnosticError = t.message ?: t.javaClass.simpleName
             Log.e(TAG, "Gesture recognition failed for frame", t)
-            AirRuntime.visionError = t.message ?: t.javaClass.simpleName
-            AirRuntime.visionReady = false
             runCatching { recognizer?.close() }
             recognizer = null
             recognizerFailureCount = (recognizerFailureCount + 1).coerceAtMost(MAX_RETRY_FAILURES)
             nextRecognizerRetryAt = SystemClock.uptimeMillis() +
                 VisionRetryPolicy.delayForFailure(recognizerFailureCount)
-            resetTrackingState()
+            synchronized(this) {
+                if (!closed.get()) {
+                    AirRuntime.visionError = diagnosticError
+                    AirRuntime.visionReady = false
+                    resetTrackingState()
+                }
+            }
         } finally {
-            if (TestingTools.needsFrames()) runCatching {
-                TestingTools.onFrame(context, image, diagnosticResult, diagnosticStartedAt,
-                    SystemClock.uptimeMillis() - diagnosticStartedAt, diagnosticTrace, diagnosticError)
-            }.onFailure { Log.w(TAG, "Testing frame capture failed", it) }
+            synchronized(this) {
+                if (!closed.get() && TestingTools.needsFrames()) runCatching {
+                    TestingTools.onFrame(context, image, diagnosticResult, diagnosticStartedAt,
+                        SystemClock.uptimeMillis() - diagnosticStartedAt, diagnosticTrace, diagnosticError)
+                }.onFailure { Log.w(TAG, "Testing frame capture failed", it) }
+            }
             diagnosticTrace = null
         }
     }
@@ -114,8 +120,12 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         recognizer = createRecognizerWithGpuFallback()
         recognizerFailureCount = 0
         nextRecognizerRetryAt = 0L
-        AirRuntime.visionReady = true
-        AirRuntime.visionError = null
+        synchronized(this) {
+            if (!closed.get()) {
+                AirRuntime.visionReady = true
+                AirRuntime.visionError = null
+            }
+        }
     }
 
     private fun createRecognizerWithGpuFallback(): GestureRecognizer {
@@ -141,12 +151,14 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         return GestureRecognizer.createFromOptions(context, options).also { activeDelegate = delegate.name }
     }
 
+    @Synchronized
     private fun publish(
         result: GestureRecognizerResult,
         timestamp: Long,
         observedAtMs: Long,
         rotationDegrees: Int
     ) {
+        if (closed.get()) return
         val freshness = freshnessPolicy.evaluate(timestamp, observedAtMs)
         diagnosticTrace?.put("freshness", org.json.JSONObject().put("reason", freshness.reason.name)
             .put("ageMs", freshness.ageMs).put("gapMs", freshness.gapMs))
@@ -452,15 +464,21 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         AirAccessibilityService.instance?.cancelPointerTouch()
     }
 
-    override fun close() {
+    /** Invalidate publication immediately; never dispose a native recognizer from this thread. */
+    @Synchronized
+    fun stop() {
         if (closed.compareAndSet(false, true)) {
-            recognizer?.close()
-            recognizer = null
-            nextRecognizerRetryAt = 0L
             freshnessPolicy.reset()
             resetTrackingState()
             AirRuntime.visionReady = false
         }
+    }
+
+    /** Call on the analyzer executor, after any synchronous inference has finished. */
+    override fun close() {
+        stop()
+        try { recognizer?.close() } finally { recognizer = null }
+        nextRecognizerRetryAt = 0L
     }
 
     companion object {

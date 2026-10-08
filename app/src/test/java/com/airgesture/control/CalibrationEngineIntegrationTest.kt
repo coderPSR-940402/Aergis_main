@@ -58,6 +58,20 @@ class CalibrationEngineIntegrationTest {
     }
 
     @Test
+    fun stoppedEngineCannotPublishLateInferenceIntoANewSession() {
+        publish(hand(), 1000L)
+        engine.close()
+        AirRuntime.visionReady = false
+        AirRuntime.setPointerState(.2f, .3f, false)
+        val epoch = AirRuntime.actionEpoch
+        publish(hand(), 1033L)
+        assertFalse("Late inference must not reactivate stopped vision", AirRuntime.visionReady)
+        assertFalse(AirRuntime.pointerTracking)
+        assertEquals(.2f, AirRuntime.pointerX, 0f)
+        assertEquals(epoch, AirRuntime.actionEpoch)
+    }
+
+    @Test
     fun actualEngineCoastsBrieflyWithoutFreshTrackingOrQueuedActions() {
         publish(hand(), 1000L)
         val last = AirRuntime.pointerSnapshot()
