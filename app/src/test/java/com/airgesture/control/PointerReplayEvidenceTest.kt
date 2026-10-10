@@ -50,6 +50,32 @@ class PointerReplayEvidenceTest {
         )
     }
 
+    @Test
+    fun invalidValidationCannotBeOverriddenByPresentMetrics() {
+        assertNull(PointerReplayEvidenceCodec.fromReport(
+            report.copy(validation = PointerReplayValidation(listOf("Timestamp reversal"))),
+            "abc123", "legacy", PointerReplayEvidence.EvidenceType.REPOSITORY_COMPLETE))
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun duplicateFieldsAreRejected() {
+        val evidence = PointerReplayEvidenceCodec.fromReport(report, "abc123", "legacy",
+            PointerReplayEvidence.EvidenceType.REPOSITORY_COMPLETE)!!
+        PointerReplayEvidenceCodec.decode(PointerReplayEvidenceCodec.encode(evidence) + "frameCount=999\n")
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun unsupportedEscapesAreRejected() {
+        val evidence = PointerReplayEvidenceCodec.fromReport(report, "abc123", "legacy",
+            PointerReplayEvidence.EvidenceType.REPOSITORY_COMPLETE)!!
+        PointerReplayEvidenceCodec.decode(PointerReplayEvidenceCodec.encode(evidence).replace("abc123", "abc\\q"))
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun infiniteToleranceCannotDisableRegressionGate() {
+        PointerMappingRegressionThresholds(maxMeanErrorIncrease = Float.POSITIVE_INFINITY)
+    }
+
     @Test(expected = IllegalArgumentException::class)
     fun malformedMetricFailsClosed() {
         PointerReplayEvidenceCodec.decode(

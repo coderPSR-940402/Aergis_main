@@ -60,8 +60,8 @@ jobs:
         with:
           cache-provider: basic
 
-      - name: Verify persistent preview signing identity
-        run: python3 tools/test_preview_signing.py
+      - name: Test recording analysis, APK verification and preview signing identity
+        run: python3 -m unittest discover -s tools -p 'test_*.py'
 
       - name: Verify Gradle configuration
         run: ./gradlew --version
@@ -95,7 +95,8 @@ jobs:
           EXPECTED_CERT="$(cat ci/preview-certificate.sha256)"
           ACTUAL_CERT="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' apk-signing.txt)"
           test "$ACTUAL_CERT" = "$EXPECTED_CERT"
-          echo "Debug APK package, version and persistent signing identity verified"
+          python3 tools/verify_apk.py "$APK" --aapt "$AAPT" --version-code "$EXPECTED_VERSION_CODE"
+          echo "Debug APK package, version, model and persistent signing identity verified"
 
       - name: Verify release APK
         shell: bash
@@ -103,7 +104,8 @@ jobs:
           set -euo pipefail
           APK="app/build/outputs/apk/release/app-release-unsigned.apk"
           test -s "$APK"
-          echo "Release APK verification passed"
+          python3 tools/verify_apk.py "$APK" --aapt "${ANDROID_HOME}/build-tools/36.0.0/aapt" --version-code "$((1000 + GITHUB_RUN_NUMBER))"
+          echo "Release APK package, version and model verified"
 
       - name: Generate APK checksums
         shell: bash

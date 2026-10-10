@@ -9,11 +9,11 @@ data class PointerMappingRegressionThresholds(
     val maxPeakStepIncrease: Float = 0.04f
 ) {
     init {
-        require(maxMeanErrorIncrease >= 0f)
-        require(maxP95ErrorIncrease >= 0f)
-        require(maxPeakErrorIncrease >= 0f)
-        require(maxMeanStepIncrease >= 0f)
-        require(maxPeakStepIncrease >= 0f)
+        require(maxMeanErrorIncrease.isFinite() && maxMeanErrorIncrease >= 0f)
+        require(maxP95ErrorIncrease.isFinite() && maxP95ErrorIncrease >= 0f)
+        require(maxPeakErrorIncrease.isFinite() && maxPeakErrorIncrease >= 0f)
+        require(maxMeanStepIncrease.isFinite() && maxMeanStepIncrease >= 0f)
+        require(maxPeakStepIncrease.isFinite() && maxPeakStepIncrease >= 0f)
     }
 }
 

@@ -5,6 +5,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
@@ -22,6 +29,29 @@ import com.airgesture.control.ui.*
 internal fun TestingToolsCard(onSave: (File) -> Unit, onShare: (DiagnosticExport) -> Unit) {
     val context = LocalContext.current
     val testing by TestingTools.state.collectAsStateWithLifecycle()
+    var showRecordings by remember { mutableStateOf(false) }
+    val busy = testing.status == RecordingStatus.RECORDING || testing.status == RecordingStatus.EXPORTING
+    if (showRecordings) {
+        AlertDialog(onDismissRequest = { showRecordings = false },
+            title = { Text(stringResource(R.string.testing_library)) },
+            text = {
+                if (testing.recordings.isEmpty()) Text(stringResource(R.string.testing_library_empty))
+                else LazyColumn(Modifier.fillMaxWidth().heightIn(max = 400.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(testing.recordings, key = { it.id }) { recording ->
+                        TextButton(enabled = !busy, onClick = {
+                            showRecordings = false
+                            TestingTools.openRecording(context, recording.id)
+                        }) {
+                            Text(stringResource(if (recording.complete) R.string.testing_open_recording
+                                else R.string.testing_recover_recording, recording.id))
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showRecordings = false }) {
+                Text(stringResource(R.string.testing_library_close))
+            } })
+    }
     val readiness = remember { AirRuntime.uiState.map { it.running to it.cameraReady }.distinctUntilChanged() }
     val runtime by readiness.collectAsStateWithLifecycle(initialValue = AirRuntime.running to AirRuntime.cameraReady)
     AergisPanel {
@@ -65,7 +95,11 @@ internal fun TestingToolsCard(onSave: (File) -> Unit, onShare: (DiagnosticExport
             if (testing.status == RecordingStatus.RECORDING || testing.frames > 0) {
                 Text(stringResource(R.string.testing_record_counts, testing.frames, testing.dropped))
             }
-            if (testing.status == RecordingStatus.ERROR) {
+            AergisButton(modifier = Modifier.fillMaxWidth(), enabled = !busy, onClick = {
+                TestingTools.refreshRecordings(context)
+                showRecordings = true
+            }) { Text(stringResource(R.string.testing_library)) }
+            if (testing.status == RecordingStatus.ERROR && testing.canRetry) {
                 AergisButton(modifier = Modifier.fillMaxWidth(), onClick = { TestingTools.retryExport() }) { Text(stringResource(R.string.testing_retry)) }
             }
             testing.export?.let { report ->

@@ -51,6 +51,7 @@ object PointerReplayEvidenceCodec {
         evidenceType: PointerReplayEvidence.EvidenceType,
         deviceModel: String? = null
     ): PointerReplayEvidence? {
+        if (!report.isValid) return null
         val metrics = report.metrics ?: return null
         return PointerReplayEvidence(
             commitSha = commitSha,
@@ -93,14 +94,16 @@ object PointerReplayEvidenceCodec {
 
     fun decode(encoded: String): PointerReplayEvidence {
         require(encoded.length <= MAX_ENCODED_CHARS) { "Evidence payload exceeds size limit" }
-        val values = encoded.lineSequence()
+        val values = linkedMapOf<String, String>()
+        encoded.lineSequence()
             .filter { it.isNotBlank() }
-            .map { line ->
+            .forEach { line ->
                 val separator = line.indexOf('=')
                 if (separator <= 0) invalid("Malformed evidence line")
-                line.substring(0, separator) to unescape(line.substring(separator + 1))
+                val key = line.substring(0, separator)
+                require(key !in values) { "Duplicate evidence field: $key" }
+                values[key] = unescape(line.substring(separator + 1))
             }
-            .toMap()
         fun required(key: String): String = values[key]?.takeIf { it.isNotBlank() }
             ?: invalid("Missing evidence field: $key")
         fun optionalFloat(key: String): Float? {
@@ -138,6 +141,7 @@ object PointerReplayEvidenceCodec {
         var escaped = false
         value.forEach { character ->
             if (escaped) {
+                require(character == 'n' || character == '\\' || character == '=') { "Unsupported escape sequence" }
                 result.append(if (character == 'n') '\n' else character)
                 escaped = false
             } else if (character == '\\') {

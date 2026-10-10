@@ -79,6 +79,136 @@ class TestingToolsRegressionTest {
         } finally { dir.deleteRecursively() }
     }
 
+    @Test fun separatedStationaryRunsNeverCreateArtificialJitter() {
+        val dir = java.nio.file.Files.createTempDirectory("separate-runs").toFile()
+        try {
+            val recording = session(dir)
+            fun compared(time: Long, x: Double, segment: String): JSONObject {
+                val p = JSONObject().put("x", x).put("y", .5)
+                return frame(time, "TRACKING", true).put("testSegment", segment)
+                    .put("comparison", JSONObject().put("mappedTip", p).put("current", p).put("vc49", p))
+            }
+            append(recording, compared(1000, .2, "STATIONARY"))
+            append(recording, compared(1033, .2, "STATIONARY"))
+            append(recording, compared(1066, .5, "TRAVEL"))
+            append(recording, compared(1099, .8, "STATIONARY"))
+            append(recording, compared(1132, .8, "STATIONARY"))
+            finish(recording)
+            val runs = JSONObject(File(dir, "summary.json").readText()).getJSONObject("lineageComparison")
+            assertEquals(3, runs.length())
+            for (key in listOf("STATIONARY", "STATIONARY#2")) {
+                assertEquals(0.0, runs.getJSONObject(key).getJSONObject("current").getDouble("stationaryJitterRms"), 0.0)
+            }
+        } finally { dir.deleteRecursively() }
+    }
+
+    @Test fun recoveringInterruptedRecordingPreservesRawEvidenceAndReportsPartialLine() {
+        val dir = java.nio.file.Files.createTempDirectory("recover-recording").toFile()
+        try {
+            val metadata = "{\"startedAtMs\":1000,\"maximumFrames\":18000}"
+            File(dir, "metadata.json").writeText(metadata)
+            File(dir, "images").mkdir()
+            File(dir, "images/frame-1000.jpg").writeBytes(byteArrayOf(1, 2, 3))
+            val raw = frame(1000, "TRACKING", true).put("image", "images/frame-1000.jpg").toString() + "\n" +
+                frame(1033, "NO_HAND", false).toString() + "\n{\"timestampMs\":"
+            File(dir, "frames.jsonl").writeText(raw)
+            File(dir, "events.jsonl").writeText("{\"event\":\"test\"}\n")
+            val method = runCatching { type("DiagnosticSession").getMethod("recover", File::class.java) }.getOrNull()
+            assertNotNull("Interrupted recordings need recovery after process death", method)
+            val recovered = method!!.invoke(null, dir)!!
+            finish(recovered)
+            assertEquals(raw, File(dir, "frames.jsonl").readText())
+            assertEquals(metadata, File(dir, "metadata.json").readText())
+            val summary = JSONObject(File(dir, "summary.json").readText())
+            assertEquals(2, summary.getInt("frames"))
+            assertEquals(33L, summary.getLong("durationMs"))
+            assertEquals(1, summary.getInt("cameraSamples"))
+            assertEquals(1, summary.getInt("unreadableFrameRecords"))
+            assertTrue(summary.getBoolean("recovered"))
+            assertTrue(summary.isNull("droppedRecords"))
+            ZipFile(File(dir, "recording.zip")).use { zip ->
+                assertEquals(raw, zip.getInputStream(zip.getEntry("frames.jsonl")).bufferedReader().readText())
+                assertNotNull(zip.getEntry("images/frame-1000.jpg"))
+            }
+        } finally { dir.deleteRecursively() }
+    }
+
+    @Test fun libraryFindsOlderAndInterruptedRecordingsAndOpensChosenEvidence() {
+        val root = java.nio.file.Files.createTempDirectory("recording-library").toFile()
+        try {
+            val old = File(root, "20260101")
+            val current = session(old)
+            append(current, frame(1000, "NO_HAND", false))
+            finish(current)
+            val interrupted = File(root, "20260201").apply { mkdirs() }
+            File(interrupted, "metadata.json").writeText("{\"startedAtMs\":1000}")
+            File(interrupted, "frames.jsonl").writeText(frame(1033, "TRACKING", true).toString() + "\n")
+            assertEquals(listOf(SavedRecording("20260201", false), SavedRecording("20260101", true)), RecordingLibrary.list(root))
+            val oldBytes = File(old, "recording.zip").readBytes()
+            assertArrayEquals(oldBytes, RecordingLibrary.open(root, "20260101").bundle.readBytes())
+            val recovered = RecordingLibrary.open(root, "20260201")
+            assertTrue(recovered.bundle.length() > 0)
+            assertTrue(RecordingLibrary.list(root).all { it.complete })
+            assertArrayEquals(oldBytes, File(old, "recording.zip").readBytes())
+            assertThrows(IllegalArgumentException::class.java) { RecordingLibrary.open(root, "../elsewhere") }
+            assertThrows(IllegalStateException::class.java) { DiagnosticSession(old, JSONObject(), 10) }
+        } finally { root.deleteRecursively() }
+    }
+
+    @Test fun openingOlderRecordingCannotInterruptActiveCapture() {
+        val context = org.robolectric.RuntimeEnvironment.getApplication()
+        val root = File(context.filesDir, "testing-recordings").apply { deleteRecursively(); mkdirs() }
+        val old = File(root, "older")
+        finish(session(old))
+        AirRuntime.running = true; AirRuntime.cameraReady = true
+        try {
+            TestingTools.start(context)
+            assertEquals(RecordingStatus.RECORDING, TestingTools.state.value.status)
+            TestingTools.openRecording(context, "older")
+            assertEquals(RecordingStatus.RECORDING, TestingTools.state.value.status)
+            assertNull(TestingTools.state.value.export)
+            TestingTools.stop()
+            fun awaitExport() {
+                val deadline = System.nanoTime() + 10_000_000_000L
+                while (TestingTools.state.value.status == RecordingStatus.EXPORTING && System.nanoTime() < deadline) Thread.sleep(10)
+                assertEquals(RecordingStatus.READY, TestingTools.state.value.status)
+            }
+            awaitExport()
+            TestingTools.openRecording(context, "older")
+            awaitExport()
+            assertEquals(old, TestingTools.state.value.export!!.bundle.parentFile)
+            assertEquals(0, TestingTools.state.value.frames)
+        } finally {
+            TestingTools.stop()
+            AirRuntime.running = false; AirRuntime.cameraReady = false
+        }
+    }
+
+    @Test fun comparisonRunsSplitAtMissingFramesAndEveryContextReset() {
+        val changes = listOf("filterMode" to "VC49", "commandOwnerId" to "new-owner", "calibration" to "new",
+            "actionEpoch" to 2, "rotation" to 90, "ownerChanged" to true, "timestampMs" to 1500L,
+            "timestampMs" to 1000L, "comparison" to JSONObject.NULL)
+        for ((key, value) in changes) {
+            val dir = java.nio.file.Files.createTempDirectory("reset-run").toFile()
+            try {
+                val recording = session(dir)
+                fun compared(t: Long, x: Double): JSONObject {
+                    val p = JSONObject().put("x", x).put("y", .5)
+                    return frame(t, "TRACKING", true).put("testSegment", "STATIONARY")
+                        .put("comparison", JSONObject().put("mappedTip", p).put("current", p).put("vc49", p))
+                }
+                append(recording, compared(1000, .2))
+                append(recording, compared(1033, .8).put(key, value))
+                if (key == "comparison") append(recording, compared(1066, .8))
+                finish(recording)
+                val runs = JSONObject(File(dir, "summary.json").readText()).getJSONObject("lineageComparison")
+                assertEquals(key, 2, runs.length())
+                for (run in runs.keys()) assertEquals(key, 0.0,
+                    runs.getJSONObject(run).getJSONObject("current").getDouble("pathLength"), 0.0)
+            } finally { dir.deleteRecursively() }
+        }
+    }
+
     @Test fun recordingLimitRejectsAdditionalFramesWithoutChangingSavedCount() {
         val dir = java.nio.file.Files.createTempDirectory("bounded-recording").toFile()
         try {

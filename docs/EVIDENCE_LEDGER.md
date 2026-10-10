@@ -1,10 +1,18 @@
 # Aergis Evidence Ledger and Decision Log
 
-## Evidence ledger
+## Current audit
+
+The authoritative baseline is always the remote `baseline-successful-apk` ref.
+For the 2026-10-08 audit it resolved to `008056747c93fb7f60f699b0c9eecf21d8dd09cd`.
+See [the implementation and validation ledger](plans/2026-10-08-reliability-audit.md).
+The current workspace has Java 17 and Android SDK 36 and can execute tests, lint
+and both APK builds. Historical environment limitations below are not current.
+
+## Historical Phase 0 evidence ledger
 
 | ID | Evidence | Classification | Confidence | Decision/use |
 |---|---|---|---:|---|
-| E-001 | `main` and `baseline-successful-apk` both resolve to `602a26724728041d18b70838743906a61c0de1dc` | Verified | 1.00 | Use as immutable repository baseline |
+| E-001 | `main` and `baseline-successful-apk` both resolve to `602a26724728041d18b70838743906a61c0de1dc` | Verified | 1.00 | Historical audit reference only; resolve the remote baseline for new work |
 | E-002 | Aergis CI run `37124289111` passed on baseline commit | Verified | 1.00 | Use as build/test/packaging baseline |
 | E-003 | CodeQL run `37124289155` passed on baseline commit | Verified | 1.00 | Use as security-analysis baseline |
 | E-004 | Manifest has cleartext disabled, no window-content retrieval, and non-exported capture service | Verified | 1.00 | Preserve as hard privacy/safety constraints |
@@ -12,7 +20,7 @@
 | E-006 | Transaction gate rejects non-monotonic timestamps and resets after a large frame gap | Verified | 1.00 | Preserve; do not treat as complete pipeline freshness |
 | E-007 | Prototype timing values around 220/450 ms freshness and 63 ms pointer latency | Directly observed/prototype reference | 0.65 | Treat as hypotheses requiring benchmark validation |
 | E-008 | Physical-device campaign document requires zero unexplained actions in safety scenarios | Proposed acceptance rule | 0.90 | Use as release-gate target after device execution |
-| E-009 | Local sandbox does not provide the Android SDK required for authoritative local APK build | Verified | 1.00 | Use GitHub CI for APK/lint authority |
+| E-009 | At Phase 0, the local sandbox did not provide the Android SDK | Verified | 1.00 | Historical environment limitation; superseded by the current audit |
 
 ## Decision log
 

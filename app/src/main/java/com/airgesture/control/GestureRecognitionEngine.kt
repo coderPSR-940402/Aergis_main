@@ -338,6 +338,19 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 true,
                 processed.isPinchPressed
             )
+        } else if (!AirRuntime.pointerEnabled && controlSafe && handSelection != null && selectedPoseEvidence?.accepted == true) {
+            // Disabling pointer interaction is not loss of classifier evidence. Retain
+            // ownership and gesture confirmation/cooldown while hiding the pointer.
+            resetPointerTouch()
+            interpreter.reset()
+            lineageComparison.reset()
+            pointerVisibility.reset()
+            lastPointerAt = 0L
+            AirRuntime.setRawPointerState(AirRuntime.rawPointerSnapshot().x, AirRuntime.rawPointerSnapshot().y, false)
+            AirRuntime.setPointerState(AirRuntime.pointerX, AirRuntime.pointerY, false)
+            AirRuntime.pointerFeedback = PointerFeedback.DISABLED
+            AirAccessibilityService.instance?.updatePointer(0f, 0f, false)
+            diagnosticTrace?.put("pointerRejection", "POINTER_DISABLED")?.put("cursorVisible", false)
         } else {
             val reason = when {
                 !pointerActive -> "POINTER_SAFETY_OR_DISABLED"

@@ -40,6 +40,7 @@ class CalibrationEngineIntegrationTest {
         engine.close()
         TestingTools.setFilterMode(PointerFilterMode.CURRENT)
         AirRuntime.controlMode = ControlMode.OFF
+        AirRuntime.pointerEnabled = true
         AirRuntime.gesturesEnabled = true
         AirRuntime.setForegroundContext(ForegroundContextState())
     }
@@ -148,6 +149,28 @@ class CalibrationEngineIntegrationTest {
         assertEquals(PointerCoordinateMapper.map(0.8f, 0.65f).x, AirRuntime.pointerX, 0.0001f)
     }
 
+    @Test
+    fun gestureOnlyModeConfirmsOnceAndPreservesCooldownUntilNeutral() {
+        AirRuntime.pointerEnabled = false
+        AirRuntime.gesturesEnabled = true
+        repeat(6) { publish(hand(), 1000L + it * 33, gestureName = "Victory") }
+        val field = GestureRecognitionEngine::class.java.getDeclaredField("gestureTransaction").apply { isAccessible = true }
+        val transaction = field.get(engine) as GestureTransactionStateMachine
+        assertEquals(GestureTransactionStateMachine.State.COOLDOWN, transaction.currentState())
+        repeat(30) { publish(hand(), 1200L + it * 33, gestureName = "Victory") }
+        assertEquals(GestureTransactionStateMachine.State.COOLDOWN, transaction.currentState())
+        assertFalse(AirRuntime.pointerTracking)
+        assertNotNull(AirRuntime.state.value.poseEvidence)
+        publish(hand(), 2200L)
+        publish(hand(), 2233L)
+        assertEquals(GestureTransactionStateMachine.State.NEUTRAL, transaction.currentState())
+        repeat(4) { publish(hand(), 2266L + it * 33, gestureName = "Open_Palm") }
+        assertEquals(GestureTransactionStateMachine.State.COOLDOWN, transaction.currentState())
+        AirRuntime.controlMode = ControlMode.PAUSED
+        publish(hand(), 2400L, gestureName = "Victory")
+        assertEquals(GestureTransactionStateMachine.State.NEUTRAL, transaction.currentState())
+    }
+
     private fun hand(): List<NormalizedLandmark> = MutableList(21) {
         NormalizedLandmark.create(0.5f, 0.5f, 0f)
     }.apply {
@@ -157,7 +180,7 @@ class CalibrationEngineIntegrationTest {
         this[12] = NormalizedLandmark.create(0.55f, 0.65f, 0f)
     }
 
-    private fun publish(landmarks: List<NormalizedLandmark>, timestamp: Long, rawHandedness: String = "Left") {
+    private fun publish(landmarks: List<NormalizedLandmark>, timestamp: Long, rawHandedness: String = "Left", gestureName: String = "None") {
         val hands = if (landmarks.isEmpty()) emptyList() else listOf(
             LandmarkProto.NormalizedLandmarkList.newBuilder().addAllLandmark(landmarks.map {
                 LandmarkProto.NormalizedLandmark.newBuilder().setX(it.x()).setY(it.y()).setZ(it.z()).build()
@@ -172,7 +195,12 @@ class CalibrationEngineIntegrationTest {
         val factory = GestureRecognizerResult::class.java.getDeclaredMethod(
             "create", List::class.java, List::class.java, List::class.java, List::class.java, java.lang.Long.TYPE
         ).apply { isAccessible = true }
-        val result = factory.invoke(null, hands, emptyList<Any>(), handedness, emptyList<Any>(), timestamp) as GestureRecognizerResult
+        val gestures = if (landmarks.isEmpty()) emptyList() else listOf(
+            ClassificationProto.ClassificationList.newBuilder().addClassification(
+                ClassificationProto.Classification.newBuilder().setScore(.99f).setLabel(gestureName).build()
+            ).build()
+        )
+        val result = factory.invoke(null, hands, emptyList<Any>(), handedness, gestures, timestamp) as GestureRecognizerResult
         val method = GestureRecognitionEngine::class.java.getDeclaredMethod(
             "publish", GestureRecognizerResult::class.java, java.lang.Long.TYPE, java.lang.Long.TYPE, java.lang.Integer.TYPE
         ).apply { isAccessible = true }

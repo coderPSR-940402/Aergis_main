@@ -9,11 +9,25 @@ import pathlib
 import zipfile
 
 
+def read_records(text):
+    """Keep a boundary marker for damaged lines in an interrupted recording."""
+    records = []
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        try:
+            record = json.loads(line)
+            records.append(record if isinstance(record, dict) else None)
+        except (ValueError, TypeError):
+            records.append(None)
+    return records
+
+
 def point(value):
     if not isinstance(value, dict):
         return None
     x, y = value.get("x"), value.get("y")
-    if isinstance(x, (int, float)) and isinstance(y, (int, float)) and math.isfinite(x) and math.isfinite(y):
+    if type(x) in (int, float) and type(y) in (int, float) and math.isfinite(x) and math.isfinite(y) and 0 <= x <= 1 and 0 <= y <= 1:
         return float(x), float(y)
     return None
 
@@ -77,7 +91,7 @@ def metrics(rows, mode, segment):
         "pathLength": sum(steps),
         "secondDifferenceRms": math.sqrt(sum(a*a for a in acceleration) / len(acceleration)) if acceleration else 0,
         "estimatedMeasurementLagMs": lag,
-        "fastSettlingMeanMs": sum(settling) / len(settling) if settling else None,
+        "fastFirstArrivalMeanMs": sum(settling) / len(settling) if settling else None,
         "edgeReach": {"minX": min(p[0] for p in values), "maxX": max(p[0] for p in values),
                       "minY": min(p[1] for p in values), "maxY": max(p[1] for p in values)},
     }
@@ -85,43 +99,80 @@ def metrics(rows, mode, segment):
 
 def analyze(frames, events, metadata):
     groups = collections.defaultdict(list)
+    labels = {}
+    run_counts = collections.Counter()
+    previous_context = None
+    previous_time = None
+    run = None
+    context_fields = ("testSegment", "filterMode", "commandOwnerId", "calibration", "actionEpoch", "rotation")
     reasons = collections.Counter()
     visibility_interruptions = 0
     previous_visible = None
     previous_candidates = None
+    previous_identity = None
+    identity_fields = ("filterMode", "commandOwnerId", "calibration", "rotation")
     missing_since_last = False
     reacquisition = {"current": [], "vc49": []}
     invalid = 0
     for frame in frames:
+        if not isinstance(frame, dict):
+            invalid += 1
+            missing_since_last = True
+            previous_candidates = None
+            run = None
+            continue
         reasons[frame.get("pointerRejection", frame.get("reason", "UNKNOWN"))] += 1
         visible = frame.get("cursorVisible")
         if visible is not None:
             visibility_interruptions += previous_visible is True and visible is False
             previous_visible = visible
-        comparison = frame.get("comparison", {})
+        context = tuple(frame.get(key) for key in context_fields)
+        changed = context != previous_context or frame.get("ownerChanged", False)
+        identity = tuple(frame.get(key) for key in identity_fields)
+        if frame.get("ownerChanged", False) or (previous_identity is not None and any(
+                frame.get(key) is not None and frame.get(key) != previous_identity[i]
+                for i, key in enumerate(identity_fields))):
+            previous_candidates = None
+        comparison = frame.get("comparison")
+        comparison = comparison if isinstance(comparison, dict) else {}
+        timestamp = frame.get("timestampMs")
+        valid_time = type(timestamp) in (int, float) and math.isfinite(timestamp) and timestamp >= 0
         raw, current, vc49 = (point(comparison.get(key)) for key in ("mappedTip", "current", "vc49"))
-        if None in (raw, current, vc49):
+        if not valid_time or None in (raw, current, vc49):
             invalid += 1
             missing_since_last = True
+            run = None
             continue
-        if missing_since_last and previous_candidates and not frame.get("ownerChanged", False):
+        if (missing_since_last and previous_candidates and identity == previous_identity and
+                previous_time is not None and 0 < timestamp - previous_time <= 500):
             for mode, value in (("current", current), ("vc49", vc49)):
                 reacquisition[mode].append(distance(value, previous_candidates[mode]))
+        segment = frame.get("testSegment", "UNLABELLED")
+        if run is None or changed or previous_time is None or not 0 < timestamp - previous_time <= 150:
+            run_counts[segment] += 1
+            run = segment if run_counts[segment] == 1 else f"{segment}#{run_counts[segment]}"
+            labels[run] = segment
         missing_since_last = False
         previous_candidates = {"current": current, "vc49": vc49}
-        groups[frame.get("testSegment", "UNLABELLED")].append({"time": frame["timestampMs"], "raw": raw,
-                                                               "current": current, "vc49": vc49})
-    overlay = [e for e in events if e.get("event") == "overlay_applied"]
+        previous_context, previous_time = context, timestamp
+        previous_identity = identity
+        groups[run].append({"time": timestamp, "raw": raw, "current": current, "vc49": vc49})
+    overlay = [e for e in events if isinstance(e, dict) and e.get("event") == "overlay_applied"]
     return {
         "sourceCommit": metadata.get("sourceCommit"), "historicalSource": metadata.get("historicalSource"),
         "frames": len(frames), "invalidOrUncomparedFrames": invalid,
+        "unreadableFrameRecords": sum(not isinstance(f, dict) for f in frames),
+        "unreadableEventRecords": sum(not isinstance(e, dict) for e in events),
         "pointerVisibilityInterruptions": visibility_interruptions, "rejections": dict(reasons),
         "overlayEvents": len(overlay), "overlayHiddenEvents": sum(not e.get("visible", False) for e in overlay),
         "reacquisitionMaxDiscontinuity": {k: max(v) if v else None for k, v in reacquisition.items()},
-        "segments": {s: {mode: metrics(rows, mode, s) for mode in ("current", "vc49")} for s, rows in groups.items()},
+        "segments": {s: {mode: metrics(rows, mode, labels[s]) for mode in ("current", "vc49")} for s, rows in groups.items()},
         "limits": ["Normalized screen units. Raw landmarks are measurements, not ground truth.",
                    "Estimated lag is relative to measured tips, not end-to-end camera/display latency.",
-                   "Label STATIONARY only while holding one fixed target. Do not combine different target locations.",
+                   "FAST first arrival measures entry within 0.02 of a measured step target, not sustained settling.",
+                   "Each segment key describes one contiguous run; #2 etc. mark later runs of the same label.",
+                   "Runs split at missing comparisons, owner/filter/calibration/epoch/rotation changes and gaps over 150 ms.",
+                   "Label STATIONARY only while holding one fixed target. Relabel when moving to another target.",
                    "CameraX skips before analysis are not inferred as detector-invalid frames."]
     }
 
@@ -138,8 +189,11 @@ def main():
         archive = zipfile.ZipFile(args.recording)
         read = lambda name: archive.read(name).decode("utf-8")
     try:
-        frames = [json.loads(line) for line in read("frames.jsonl").splitlines() if line]
-        events = [json.loads(line) for line in read("events.jsonl").splitlines() if line]
+        frames = read_records(read("frames.jsonl"))
+        try:
+            events = read_records(read("events.jsonl"))
+        except (FileNotFoundError, KeyError):
+            events = []
         result = analyze(frames, events, json.loads(read("metadata.json")))
     finally:
         if archive:

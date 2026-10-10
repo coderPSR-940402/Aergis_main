@@ -12,7 +12,7 @@ import kotlin.math.sin
 class PointerLineageBenchmarkTest {
     @Test
     fun compareRealProductionFiltersOnIdenticalMeasuredTips() {
-        val report = linkedMapOf<String, Map<String, Map<String, Double>>>()
+        val report = linkedMapOf<String, Map<String, Map<String, Double?>>>()
         for (scene in listOf("stationary", "travel", "fast", "reversal", "edges", "dropout")) {
             val interpreter = GestureInterpreter()
             val comparison = PointerLineageComparison()
@@ -61,23 +61,24 @@ class PointerLineageBenchmarkTest {
                 previous = sample.vc49
                 previousCurrent = sample.current
             }
-            fun metrics(m: PointerLineageMetrics, recovery: Double, settle: Int?) = m.snapshot().apply {
+            fun metrics(m: PointerLineageMetrics, recovery: Double, settle: Int?) = m.snapshot().mapValues { (_, value) -> value as Double? }.toMutableMap().apply {
                 put("invalidFrames", invalid.toDouble()); put("visibilityInterruptions", interrupted.toDouble())
                 put("reacquisitionDiscontinuity", recovery)
-                put("fastStepSettlingMs", (settle ?: 0).toDouble())
-                // Step settling is an effective-response proxy; it is not camera/display latency.
+                put("fastStepFirstArrivalMs", settle?.toDouble())
+                // Null means not measured/reached; first arrival is not sustained settling or display latency.
             }
             report[scene] = linkedMapOf("current" to metrics(current, recoveryCurrent, fastCurrent),
                 "vc49" to metrics(recovered, recoveryVc49, fastVc49))
         }
-        fun json(m: Map<String, Double>) = m.entries.joinToString(prefix = "{", postfix = "}") { "\"${it.key}\":${it.value}" }
+        fun json(m: Map<String, Double?>) = m.entries.joinToString(prefix = "{", postfix = "}") { "\"${it.key}\":${it.value}" }
         val result = report.entries.joinToString(prefix = "{", postfix = "}") { scene ->
             "\"${scene.key}\":" + scene.value.entries.joinToString(prefix = "{", postfix = "}") { "\"${it.key}\":${json(it.value)}" }
         }
         val path = File("build/reports/testing-tools/lineage-benchmark.json")
-        path.parentFile.mkdirs(); path.writeText(result)
+        path.parentFile!!.mkdirs()
+        path.writeText("""{"schemaVersion":2,"sourceCommit":"${BuildConfig.SOURCE_COMMIT}","evidenceType":"REPOSITORY_COMPLETE","scope":"Synthetic measured-tip replay; not physical-device performance","scenarios":$result}""")
         println("LINEAGE_BENCHMARK $result")
-        assertTrue(report.getValue("stationary").getValue("vc49").getValue("stationaryJitterRms") > 0.0)
-        assertTrue(report.getValue("edges").getValue("vc49").getValue("maxY") > 0.98)
+        assertTrue(report.getValue("stationary").getValue("vc49").getValue("stationaryJitterRms")!! > 0.0)
+        assertTrue(report.getValue("edges").getValue("vc49").getValue("maxY")!! > 0.98)
     }
 }

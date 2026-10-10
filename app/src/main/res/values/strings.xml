@@ -210,4 +210,9 @@
     <string name="ui_recording_idle">Optional diagnostics</string>
     <string name="ui_switch_on">%1$s: on</string>
     <string name="ui_switch_off">%1$s: off</string>
+    <string name="testing_library">Saved recordings</string>
+    <string name="testing_library_empty">No saved recordings yet.</string>
+    <string name="testing_open_recording">Open %1$s</string>
+    <string name="testing_recover_recording">Recover %1$s</string>
+    <string name="testing_library_close">Close</string>
 </resources>

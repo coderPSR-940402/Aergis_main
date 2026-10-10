@@ -12,11 +12,11 @@ Aergis is an Android air-gesture control application. The repository is the acti
 | Minimum SDK | `26` |
 | Compile / target SDK | `36` |
 | Java | `17` |
-| Android Gradle Plugin | `9.4.0` |
+| Android Gradle Plugin | `9.4.1` |
 | Gradle | `9.8.0` via the checked-in wrapper |
-| Kotlin | `2.4.20` |
+| Kotlin | `2.4.21` |
 | CameraX | `1.6.2` |
-| Compose BOM | `2026.06.00` |
+| Compose BOM | `2026.06.01` |
 | AndroidX Activity | `1.13.0` |
 | AndroidX Lifecycle | `2.10.0` |
 | AndroidX Core KTX | `1.18.0` |
@@ -70,7 +70,7 @@ The project includes:
 
 ## Build and verification
 
-The CI environment uses Java 17, Android SDK 36, and the checked-in Gradle 9.8.0 wrapper. Run `./gradlew` for reproducible local builds; AGP 9 uses built-in Kotlin support and the project keeps the Compose compiler plugin aligned with Kotlin 2.4.20. AndroidX, CameraX, Lifecycle, Core KTX, and Compose dependencies remain on their upgraded stable lines.
+The CI environment uses Java 17, Android SDK 36, and the checked-in Gradle 9.8.0 wrapper. Run `./gradlew` for reproducible local builds; AGP 9 uses built-in Kotlin support and the project keeps the Compose compiler plugin aligned with Kotlin 2.4.21. AndroidX, CameraX, Lifecycle, Core KTX, and Compose dependencies remain on their upgraded stable lines.
 
 The workflow is defined in:
 
@@ -155,3 +155,20 @@ additive `pointerInteraction` phase: `IDLE`, `AIMING`, `PINCHING`, `PRESSED`,
 `HOLDING`, `DRAGGING`. `HOLDING` reports elapsed pinch time, not confirmation
 that the receiving application handles long press. No visual layout changes
 are required. Calibration and both existing pointer filters remain intact.
+
+### Retained recordings and comparison runs
+
+Use **Calibrate → Saved recordings** to open older reports or recover an interrupted
+recording after relaunch. Recovery preserves the original metadata, frame/event
+logs and sampled images; it rebuilds PDF/ZIP exports and marks unavailable counters
+as unknown. Nothing is automatically deleted. Save the ZIP to retain camera samples.
+
+`python3 tools/analyze_pointer_recording.py recording.zip` accepts recovered logs
+with incomplete records and reports the unreadable counts. Comparison metrics are
+calculated per contiguous run (`STATIONARY`, `STATIONARY#2`, etc.), splitting at
+tracking gaps or changes in owner, calibration, filter, action epoch or rotation.
+Relabel when changing stationary targets. FAST first-arrival time is a response
+proxy, not sustained settling or camera-to-display latency.
+
+Run `python3 -m unittest discover -s tools -p 'test_*.py'` for the recording analyzer,
+APK model/package checks and preview signing regression suite.
