@@ -48,6 +48,10 @@ internal class TrackingMirrorView(context: Context) : View(context) {
             current == null -> context.getString(R.string.testing_mirror_waiting)
             current.bitmap == null -> current.label
             !live -> context.getString(R.string.testing_mirror_stalled, (now - current.timestampMs).coerceAtLeast(0L))
+            // Show true camera→pointer latency when known. The old value (draw time minus analyzer
+            // start) was a sawtooth of the redraw ticker, not a latency.
+            current.pipelineAgeMs >= 0L ->
+                context.getString(R.string.testing_mirror_live_pipeline, current.pipelineAgeMs, current.hands.size)
             else -> context.getString(R.string.testing_mirror_live, now - current.timestampMs, current.hands.size)
         }
         var y = imageHeight + lineHeight

@@ -124,6 +124,7 @@
     <string name="testing_mirror_model_wait">Camera live · waiting for model</string>
     <string name="testing_mirror_stalled">Camera stalled · last frame %1$d ms ago</string>
     <string name="testing_mirror_live">Live · %1$d ms · %2$d hands</string>
+    <string name="testing_mirror_live_pipeline">Live · camera→pointer %1$d ms · %2$d hands</string>
     <string name="testing_mirror_legend">8 aim · 4 + 12 pinch · box = reach</string>
     <string name="testing_mirror_expand">Expand mirror</string>
     <string name="testing_mirror_shrink">Shrink mirror</string>

@@ -25,14 +25,24 @@ internal object DiagnosticCameraImage {
         val outW = if (rotation % 180 == 0) w else h
         val outH = if (rotation % 180 == 0) h else w
         val pixels = IntArray(outW * outH)
-        for (y in 0 until h) for (x in 0 until w) {
-            val index = (y * height / h) * rowStride + (x * width / w) * pixelStride
-            require(index + 3 < data.limit()) { "Incomplete RGBA camera plane" }
-            val color = Color.argb(data.get(index + 3).toInt() and 255, data.get(index).toInt() and 255,
-                data.get(index + 1).toInt() and 255, data.get(index + 2).toInt() and 255)
-            val uprightX = when (rotation) { 90 -> h - 1 - y; 180 -> w - 1 - x; 270 -> y; else -> x }
-            val uprightY = when (rotation) { 90 -> x; 180 -> h - 1 - y; 270 -> w - 1 - x; else -> y }
-            pixels[uprightY * outW + outW - 1 - uprightX] = color
+        // Hoisted bounds check: the largest sampled index was validated against the plane above.
+        val limit = data.limit()
+        val columnOffset = IntArray(w) { (it * width / w) * pixelStride }
+        require((((h - 1) * height / h).toLong() * rowStride) + columnOffset[w - 1] + 3 < limit) {
+            "Incomplete RGBA camera plane"
+        }
+        for (y in 0 until h) {
+            val rowBase = (y * height / h) * rowStride
+            for (x in 0 until w) {
+                val index = rowBase + columnOffset[x]
+                val color = ((data.get(index + 3).toInt() and 255) shl 24) or
+                    ((data.get(index).toInt() and 255) shl 16) or
+                    ((data.get(index + 1).toInt() and 255) shl 8) or
+                    (data.get(index + 2).toInt() and 255)
+                val uprightX = when (rotation) { 90 -> h - 1 - y; 180 -> w - 1 - x; 270 -> y; else -> x }
+                val uprightY = when (rotation) { 90 -> x; 180 -> h - 1 - y; 270 -> w - 1 - x; else -> y }
+                pixels[uprightY * outW + outW - 1 - uprightX] = color
+            }
         }
         return Bitmap.createBitmap(pixels, outW, outH, Bitmap.Config.ARGB_8888)
     }
