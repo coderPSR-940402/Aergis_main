@@ -49,7 +49,12 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
     private var lastFrameAspectRatio: Float? = null
     private val handOwnership = HandOwnershipTracker()
     private val gestureTransaction = GestureTransactionStateMachine()
-    private val freshnessPolicy = VisionResultFreshnessPolicy()
+    // Pointer ceilings are measured against real camera time. Consequential actions keep the
+    // strict VisionResultFreshnessPolicy.DEFAULT_MAX_AGE_MS limit (see actionsFresh in publish).
+    private val freshnessPolicy = VisionResultFreshnessPolicy(POINTER_MAX_AGE_MS, POINTER_MAX_GAP_MS)
+    private var timeSource: FrameTimeSource? = null
+    private var lastSubmittedTimestampMs = Long.MIN_VALUE
+    private var lastPipelineAgeMs = -1L
     private var recognizerFailureCount = 0
     private var nextRecognizerRetryAt = 0L
     private var diagnosticTrace: org.json.JSONObject? = null
@@ -62,6 +67,12 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         AirRuntime.visionReady = false
         AirRuntime.visionError = null
         AirRuntime.resetVisionTelemetry()
+        PipelineMetrics.shared.reset()
+    }
+
+    private fun nowIn(source: FrameTimeSource): Long = when (source) {
+        FrameTimeSource.CAMERA_ELAPSED_REALTIME -> SystemClock.elapsedRealtime()
+        FrameTimeSource.CAMERA_UPTIME, FrameTimeSource.ANALYZER_UPTIME -> SystemClock.uptimeMillis()
     }
 
     @ExperimentalGetImage
@@ -71,12 +82,30 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         var diagnosticResult: GestureRecognizerResult? = null
         var diagnosticError: String? = null
         diagnosticTrace = if (TestingTools.needsFrames()) org.json.JSONObject() else null
+        lastPipelineAgeMs = -1L
         try {
-            val timestamp = SystemClock.uptimeMillis()
-            ensureRecognizer(timestamp)
+            val metrics = PipelineMetrics.shared
+            val analysisStartUptime = SystemClock.uptimeMillis()
+            metrics.recordAnalyzerFrame(analysisStartUptime)
+            // One clock domain for the whole pipeline: the camera frame's own timestamp. Detected once
+            // per session so frame age, inter-frame gaps and every filter dt describe physical time.
+            val cameraNs = image.imageInfo.timestamp
+            val source = timeSource ?: CameraClock.detect(cameraNs, analysisStartUptime,
+                SystemClock.elapsedRealtime()).also { timeSource = it }
+            val timestamp = if (source == FrameTimeSource.ANALYZER_UPTIME) analysisStartUptime else cameraNs / 1_000_000L
+            val frameAgeAtStart = (nowIn(source) - timestamp).coerceAtLeast(0L)
+            // MediaPipe VIDEO mode needs strictly increasing timestamps; never submit older work.
+            if (timestamp <= lastSubmittedTimestampMs) {
+                metrics.recordOutOfOrderSkip()
+                return
+            }
+            ensureRecognizer(analysisStartUptime)
             val currentRecognizer = recognizer ?: return
             if (closed.get()) return
+            lastSubmittedTimestampMs = timestamp
+            val preStart = SystemClock.uptimeMillis()
             val mpImage = frameInput.create(image)
+            val preEnd = SystemClock.uptimeMillis()
             try {
                 val imageProcessingOptions = ImageProcessingOptions.builder()
                     .setRotationDegrees(image.imageInfo.rotationDegrees)
@@ -86,9 +115,18 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                     imageProcessingOptions,
                     timestamp
                 )
+                val inferenceEnd = SystemClock.uptimeMillis()
                 diagnosticResult = result
                 frameAspectRatio = CameraCoordinateTransform.uprightAspectRatio(image.width, image.height, image.imageInfo.rotationDegrees)
-                publish(result, timestamp, SystemClock.uptimeMillis(), image.imageInfo.rotationDegrees)
+                publish(result, timestamp, nowIn(source), image.imageInfo.rotationDegrees)
+                val publishEnd = SystemClock.uptimeMillis()
+                lastPipelineAgeMs = (nowIn(source) - timestamp).coerceAtLeast(0L)
+                metrics.recordFrame(publishEnd, frameAgeAtStart, preEnd - preStart,
+                    inferenceEnd - preEnd, publishEnd - inferenceEnd, lastPipelineAgeMs)
+                diagnosticTrace?.put("timing", org.json.JSONObject()
+                    .put("timeSource", source.name).put("frameAgeAtStartMs", frameAgeAtStart)
+                    .put("preprocessMs", preEnd - preStart).put("inferenceMs", inferenceEnd - preEnd)
+                    .put("publishMs", publishEnd - inferenceEnd).put("frameToPointerMs", lastPipelineAgeMs))
             } finally {
                 mpImage.close()
             }
@@ -111,7 +149,8 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             synchronized(this) {
                 if (!closed.get() && TestingTools.needsFrames()) runCatching {
                     TestingTools.onFrame(context, image, diagnosticResult, diagnosticStartedAt,
-                        SystemClock.uptimeMillis() - diagnosticStartedAt, diagnosticTrace, diagnosticError)
+                        SystemClock.uptimeMillis() - diagnosticStartedAt, diagnosticTrace, diagnosticError,
+                        lastPipelineAgeMs)
                 }.onFailure { Log.w(TAG, "Testing frame capture failed", it) }
             }
             diagnosticTrace = null
@@ -166,6 +205,11 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         diagnosticTrace?.put("freshness", org.json.JSONObject().put("reason", freshness.reason.name)
             .put("ageMs", freshness.ageMs).put("gapMs", freshness.gapMs))
         AirRuntime.recordVisionResult(freshness)
+        if (!freshness.accepted) PipelineMetrics.shared.recordRejection("VISION_${freshness.reason.name}")
+        // Strict limit for anything that can dispatch an action; cursor motion tolerates more.
+        val actionsFresh = freshness.accepted &&
+            freshness.ageMs <= VisionResultFreshnessPolicy.DEFAULT_MAX_AGE_MS
+        diagnosticTrace?.put("actionsFresh", actionsFresh)
         if (!freshness.accepted) {
             Log.d(TAG, "Vision result rejected: ${freshness.reason}")
             handlePointerGap(observedAtMs,
@@ -283,7 +327,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             lastPointerHandedness = selectedHandedness
         }
         diagnosticTrace?.put("ownerChanged", ownerChanged)?.put("filterMode", filterMode.name)
-        val commandTracking = !mappingChanged && !ownerChanged && !filterChanged && CommandTrackingEligibility.isEligible(
+        val commandTracking = actionsFresh && !mappingChanged && !ownerChanged && !filterChanged && CommandTrackingEligibility.isEligible(
             controlSafe = controlSafe,
             handSelected = handSelection != null,
             pointerEnabled = AirRuntime.pointerEnabled,
@@ -345,9 +389,17 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 ?.put("thumbMiddleDistance", DiagnosticFrameData.number(processed.normalizedDistance))
                 ?.put("pinchPressed", processed.isPinchPressed)
                 ?.put("cursorVisible", true)?.put("pointerRejection", if (trusted) "NONE" else "POINTER_OUTLIER")
+                ?.put("pointerRejectionDetail", org.json.JSONObject()
+                    .put("reason", comparison.precisionRejection.name)
+                    .put("jumpDistance", DiagnosticFrameData.number(comparison.precisionJumpDistance))
+                    .put("jumpLimit", DiagnosticFrameData.number(comparison.precisionJumpLimit))
+                    .put("dtMs", timestamp - (lastPointerAt.takeIf { it > 0L } ?: timestamp)))
             if (trusted) {
                 pointerVisibility.record(stabilized, observedAtMs)
                 lastPointerAt = timestamp
+                PipelineMetrics.shared.recordAcceptedPointer(SystemClock.uptimeMillis())
+            } else {
+                PipelineMetrics.shared.recordRejection("POINTER_OUTLIER_${comparison.precisionRejection.name}")
             }
             AirRuntime.pointerFeedback = if (trusted) PointerFeedback.TRACKING else PointerFeedback.COASTING
             AirRuntime.setPointerState(stabilized.x, stabilized.y, trusted)
@@ -359,6 +411,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 true,
                 processed.isPinchPressed
             )
+            PipelineMetrics.shared.recordCursorUpdate(SystemClock.uptimeMillis())
         } else if (!AirRuntime.pointerEnabled && controlSafe && handSelection != null && selectedPoseEvidence?.accepted == true) {
             // Disabling pointer interaction is not loss of classifier evidence. Retain
             // ownership and gesture confirmation/cooldown while hiding the pointer.
@@ -521,6 +574,9 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         private const val MIN_GESTURE_SCORE = 0.65f
         private const val MAX_HANDS = 2
         private const val MAX_RETRY_FAILURES = 8
+        /** Real camera-frame age / spacing beyond which a result is too old to move the cursor. */
+        private const val POINTER_MAX_AGE_MS = 600L
+        private const val POINTER_MAX_GAP_MS = 500L
         private const val WRIST = KinematicValidator.WRIST
         private const val INDEX_MCP = KinematicValidator.INDEX_MCP
         private const val INDEX_TIP = KinematicValidator.INDEX_TIP

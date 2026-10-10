@@ -10,7 +10,10 @@ internal data class PointerLineageSample(
     val current: PointerCoordinateMapper.Point,
     val vc49: PointerCoordinateMapper.Point,
     val precision: PointerCoordinateMapper.Point = current,
-    val precisionTrusted: Boolean = true
+    val precisionTrusted: Boolean = true,
+    val precisionRejection: PrecisionRejection = PrecisionRejection.NONE,
+    val precisionJumpDistance: Float = 0f,
+    val precisionJumpLimit: Float = 0f
 ) {
     fun selected(mode: PointerFilterMode) = when (mode) {
         PointerFilterMode.PRECISION -> precision
@@ -29,7 +32,8 @@ internal class PointerLineageComparison {
         val point = recovered.update(mappedTip.x, mappedTip.y, timestampMs, 1f)
         val precise = precision.update(mappedTip.x, mappedTip.y, timestampMs)
         return PointerLineageSample(mappedTip, current, PointerCoordinateMapper.Point(point.first, point.second),
-            precise, precision.measurementTrusted)
+            precise, precision.measurementTrusted, precision.lastRejection,
+            precision.lastJumpDistance, precision.lastJumpLimit)
     }
 
     fun reset() { recovered.reset(); precision.reset() }

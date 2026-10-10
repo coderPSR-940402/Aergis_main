@@ -4,6 +4,8 @@ import kotlin.math.PI
 import kotlin.math.exp
 import kotlin.math.hypot
 
+internal enum class PrecisionRejection { NONE, INVALID_OR_OUT_OF_ORDER, JUMP_HELD }
+
 /**
  * Causal speed-adaptive low-pass filtering in calibrated screen coordinates.
  * Slow aim receives stronger smoothing; deliberate travel opens the cutoff.
@@ -21,11 +23,21 @@ internal class PrecisionPointerFilter {
     var measurementTrusted: Boolean = false
         private set
 
+    /** Why the last update was not trusted, with the inputs of the jump gate (screen-normalised units). */
+    var lastRejection: PrecisionRejection = PrecisionRejection.NONE
+        private set
+    var lastJumpDistance: Float = 0f
+        private set
+    var lastJumpLimit: Float = 0f
+        private set
+
     fun update(x: Float, y: Float, timestampMs: Long): PointerCoordinateMapper.Point {
         measurementTrusted = false
+        lastRejection = PrecisionRejection.NONE
         val previous = output
         if (!x.isFinite() || !y.isFinite() || timestampMs < 0L ||
             (lastTimestamp != null && timestampMs <= lastTimestamp!!)) {
+            lastRejection = PrecisionRejection.INVALID_OR_OUT_OF_ORDER
             return previous ?: PointerCoordinateMapper.Point(.5f, .5f)
         }
         val measured = PointerCoordinateMapper.Point(x.coerceIn(0f, 1f), y.coerceIn(0f, 1f))
@@ -42,8 +54,14 @@ internal class PrecisionPointerFilter {
         val dx = measured.x - raw.x
         val dy = measured.y - raw.y
         val speed = hypot(velocityX, velocityY)
-        val jumpLimit = .12f + speed * dt * 2f
-        if (hypot(dx, dy) > jumpLimit) {
+        // The gate must be a physical-speed limit, not a per-frame distance: at a low or uneven
+        // result cadence a normal fast finger travels far between results. Allow the larger of the
+        // measured-speed extrapolation and a plausible maximum fingertip speed over the real
+        // (camera-timestamp) interval.
+        val jumpLimit = JUMP_BASE + speed * dt * 2f + MAX_PLAUSIBLE_SPEED * dt
+        lastJumpDistance = hypot(dx, dy)
+        lastJumpLimit = jumpLimit
+        if (lastJumpDistance > jumpLimit) {
             val pending = pendingJump
             val closeToPending = pending != null && hypot(measured.x - pending.x, measured.y - pending.y) <= maxOf(.08f, 6f * dt)
             val consistentTravel = pending != null &&
@@ -51,6 +69,7 @@ internal class PrecisionPointerFilter {
                 hypot(measured.x - pending.x, measured.y - pending.y) <= hypot(pending.x - raw.x, pending.y - raw.y) * 2f
             if (!closeToPending && !consistentTravel) {
                 pendingJump = measured
+                lastRejection = PrecisionRejection.JUMP_HELD
                 return previous
             }
         }
@@ -82,6 +101,14 @@ internal class PrecisionPointerFilter {
     fun reset() {
         output = null; measurement = null; pendingJump = null; lastTimestamp = null
         velocityX = 0f; velocityY = 0f; measurementTrusted = false; recent.clear()
+        lastRejection = PrecisionRejection.NONE; lastJumpDistance = 0f; lastJumpLimit = 0f
+    }
+
+    private companion object {
+        /** Screen-normalised distance always tolerated between consecutive results. */
+        const val JUMP_BASE = .12f
+        /** Screen widths per second a fingertip can plausibly travel (generous). */
+        const val MAX_PLAUSIBLE_SPEED = 3f
     }
 
     private fun alpha(dt: Float, cutoff: Float): Float =

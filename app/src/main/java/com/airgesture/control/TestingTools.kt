@@ -26,7 +26,9 @@ internal data class TestingState(val mirror: Boolean = false, val filterMode: Po
     val recordings: List<SavedRecording> = emptyList(), val canRetry: Boolean = false)
 internal data class MirrorFrame(val bitmap: Bitmap?, val hands: List<List<Point3D>>, val label: String,
     val selectedHandIndex: Int? = null, val detail: String = "", val timestampMs: Long = 0L,
-    val calibration: PointerCalibrationProfile? = null) {
+    val calibration: PointerCalibrationProfile? = null,
+    /** Camera-frame timestamp → pointer update, in ms; -1 when unknown. This is the true pipeline latency. */
+    val pipelineAgeMs: Long = -1L) {
     fun isLive(nowMs: Long): Boolean = bitmap != null && nowMs - timestampMs in 0L..1000L
 }
 
@@ -104,8 +106,9 @@ internal object TestingTools {
         }.onFailure { _state.value = _state.value.copy(status = RecordingStatus.ERROR, message = it.message ?: "Could not start recording") }
     }
 
+    @JvmOverloads
     fun onFrame(context: Context, image: ImageProxy, result: GestureRecognizerResult?, timestamp: Long,
-        inferenceMs: Long, trace: JSONObject?, error: String?) {
+        inferenceMs: Long, trace: JSONObject?, error: String?, pipelineAgeMs: Long = -1L) {
         val diagnosticStarted = SystemClock.uptimeMillis()
         val frameSession = synchronized(lock) { session }
         val recording = frameSession != null
@@ -137,7 +140,8 @@ internal object TestingTools {
                         trace?.optInt("selectedHandIndex", -1)?.takeIf { it >= 0 },
                         imageError ?: mirrorDetail(trace), timestamp,
                         PointerCalibrationStore(context).activeProfile(AirRuntime.handPreference,
-                            context.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE))
+                            context.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE),
+                        pipelineAgeMs)
                 }
             }
             if (imageDue) lastImage = timestamp
