@@ -112,7 +112,7 @@ def analyze(frames, events, metadata):
     previous_identity = None
     identity_fields = ("filterMode", "commandOwnerId", "calibration", "rotation")
     missing_since_last = False
-    reacquisition = {"current": [], "vc49": []}
+    reacquisition = {"current": [], "vc49": [], "precision": []}
     invalid = 0
     for frame in frames:
         if not isinstance(frame, dict):
@@ -127,7 +127,6 @@ def analyze(frames, events, metadata):
             visibility_interruptions += previous_visible is True and visible is False
             previous_visible = visible
         context = tuple(frame.get(key) for key in context_fields)
-        changed = context != previous_context or frame.get("ownerChanged", False)
         identity = tuple(frame.get(key) for key in identity_fields)
         if frame.get("ownerChanged", False) or (previous_identity is not None and any(
                 frame.get(key) is not None and frame.get(key) != previous_identity[i]
@@ -138,6 +137,12 @@ def analyze(frames, events, metadata):
         timestamp = frame.get("timestampMs")
         valid_time = type(timestamp) in (int, float) and math.isfinite(timestamp) and timestamp >= 0
         raw, current, vc49 = (point(comparison.get(key)) for key in ("mappedTip", "current", "vc49"))
+        precision = point(comparison.get("precision"))
+        context += (precision is not None,)
+        changed = context != previous_context or frame.get("ownerChanged", False)
+        candidates = {"current": current, "vc49": vc49}
+        if precision is not None:
+            candidates["precision"] = precision
         if not valid_time or None in (raw, current, vc49):
             invalid += 1
             missing_since_last = True
@@ -145,18 +150,19 @@ def analyze(frames, events, metadata):
             continue
         if (missing_since_last and previous_candidates and identity == previous_identity and
                 previous_time is not None and 0 < timestamp - previous_time <= 500):
-            for mode, value in (("current", current), ("vc49", vc49)):
-                reacquisition[mode].append(distance(value, previous_candidates[mode]))
+            for mode, value in candidates.items():
+                if mode in previous_candidates:
+                    reacquisition[mode].append(distance(value, previous_candidates[mode]))
         segment = frame.get("testSegment", "UNLABELLED")
         if run is None or changed or previous_time is None or not 0 < timestamp - previous_time <= 150:
             run_counts[segment] += 1
             run = segment if run_counts[segment] == 1 else f"{segment}#{run_counts[segment]}"
             labels[run] = segment
         missing_since_last = False
-        previous_candidates = {"current": current, "vc49": vc49}
+        previous_candidates = candidates
         previous_context, previous_time = context, timestamp
         previous_identity = identity
-        groups[run].append({"time": timestamp, "raw": raw, "current": current, "vc49": vc49})
+        groups[run].append({"time": timestamp, "raw": raw, **candidates})
     overlay = [e for e in events if isinstance(e, dict) and e.get("event") == "overlay_applied"]
     return {
         "sourceCommit": metadata.get("sourceCommit"), "historicalSource": metadata.get("historicalSource"),
@@ -166,7 +172,7 @@ def analyze(frames, events, metadata):
         "pointerVisibilityInterruptions": visibility_interruptions, "rejections": dict(reasons),
         "overlayEvents": len(overlay), "overlayHiddenEvents": sum(not e.get("visible", False) for e in overlay),
         "reacquisitionMaxDiscontinuity": {k: max(v) if v else None for k, v in reacquisition.items()},
-        "segments": {s: {mode: metrics(rows, mode, labels[s]) for mode in ("current", "vc49")} for s, rows in groups.items()},
+        "segments": {s: {mode: metrics(rows, mode, labels[s]) for mode in ("current", "vc49", "precision") if mode in rows[0]} for s, rows in groups.items()},
         "limits": ["Normalized screen units. Raw landmarks are measurements, not ground truth.",
                    "Estimated lag is relative to measured tips, not end-to-end camera/display latency.",
                    "FAST first arrival measures entry within 0.02 of a measured step target, not sustained settling.",

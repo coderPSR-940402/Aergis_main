@@ -32,9 +32,12 @@ class PoseGeometryEvidenceEvaluator(
     private val minimumPalmWidth: Float = 0.001f,
     private val maximumIndexBoneToPalmRatio: Float = 1.35f
 ) {
-    fun evaluate(landmarks: List<Point3D>): PoseGeometryEvidence {
+    fun evaluate(landmarks: List<Point3D>, aspectRatio: Float = 1f): PoseGeometryEvidence {
         val finiteCount = landmarks.count { point ->
             point.x.isFinite() && point.y.isFinite() && point.z.isFinite()
+        }
+        if (!aspectRatio.isFinite() || aspectRatio <= 0f) {
+            return rejected(landmarks.size, finiteCount, PoseGeometryRejectionReason.INVALID_PALM_WIDTH)
         }
         if (landmarks.size < minimumLandmarkCount) {
             return rejected(landmarks.size, finiteCount, PoseGeometryRejectionReason.INSUFFICIENT_LANDMARKS)
@@ -50,7 +53,7 @@ class PoseGeometryEvidenceEvaluator(
         val pinkyMcp = landmarks[KinematicValidator.PINKY_MCP]
         val indexTip = landmarks[KinematicValidator.INDEX_TIP]
         val middleTip = landmarks[KinematicValidator.MIDDLE_TIP]
-        val palmWidth = indexMcp.distance2DTo(pinkyMcp)
+        val palmWidth = indexMcp.distance2DTo(pinkyMcp, aspectRatio)
         if (palmWidth < minimumPalmWidth) {
             return rejected(
                 landmarks.size,
@@ -60,8 +63,8 @@ class PoseGeometryEvidenceEvaluator(
             )
         }
 
-        val indexBoneRatio = indexMcp.distance2DTo(indexTip) / palmWidth
-        val fingertipRatio = indexTip.distance2DTo(middleTip) / palmWidth
+        val indexBoneRatio = indexMcp.distance2DTo(indexTip, aspectRatio) / palmWidth
+        val fingertipRatio = indexTip.distance2DTo(middleTip, aspectRatio) / palmWidth
         val boundedPalmWidth = palmWidth.coerceIn(0f, 1f)
         val boundedBoneRatio = indexBoneRatio.coerceIn(0f, maximumIndexBoneToPalmRatio * 2f)
         val boundedFingertipRatio = fingertipRatio.coerceIn(0f, 2f)

@@ -27,7 +27,7 @@ internal class DiagnosticSession private constructor(val directory: File, privat
     private var inferenceMax = 0L
     private var lastFrame: JSONObject? = null
     private val reasons = linkedMapOf<String, Int>()
-    private val lineage = linkedMapOf<String, Pair<PointerLineageMetrics, PointerLineageMetrics>>()
+    private val lineage = linkedMapOf<String, MutableMap<String, PointerLineageMetrics>>()
     private var comparisonContext: List<String?>? = null
     private var comparisonTimestamp: Long? = null
     private var comparisonRun: String? = null
@@ -104,10 +104,11 @@ internal class DiagnosticSession private constructor(val directory: File, privat
                 x.isFinite() && y.isFinite() && x in 0.0..1.0 && y in 0.0..1.0) PointerCoordinateMapper.Point(x.toFloat(), y.toFloat()) else null
         }
         val measured = point("mappedTip"); val current = point("current"); val vc49 = point("vc49")
+        val precision = point("precision")
         if (measured != null && current != null && vc49 != null) {
             val segment = frame.optString("testSegment", "UNLABELLED")
             val context = listOf("testSegment", "filterMode", "commandOwnerId", "calibration", "actionEpoch", "rotation")
-                .map { key -> frame.opt(key)?.takeUnless { it == JSONObject.NULL }?.toString() }
+                .map { key -> frame.opt(key)?.takeUnless { it == JSONObject.NULL }?.toString() } + (precision != null).toString()
             val gap = comparisonTimestamp?.let { timestamp - it }
             if (comparisonRun == null || context != comparisonContext || frame.optBoolean("ownerChanged") ||
                 gap == null || gap !in 1L..150L) {
@@ -117,9 +118,10 @@ internal class DiagnosticSession private constructor(val directory: File, privat
             }
             comparisonContext = context
             comparisonTimestamp = timestamp
-            val metrics = lineage.getOrPut(comparisonRun!!) { PointerLineageMetrics() to PointerLineageMetrics() }
-            metrics.first.sample(measured, current, segment == "STATIONARY")
-            metrics.second.sample(measured, vc49, segment == "STATIONARY")
+            val metrics = lineage.getOrPut(comparisonRun!!) { linkedMapOf() }
+            for ((mode, value) in listOf("current" to current, "vc49" to vc49, "precision" to precision)) {
+                if (value != null) metrics.getOrPut(mode) { PointerLineageMetrics() }.sample(measured, value, segment == "STATIONARY")
+            }
         } else {
             comparisonRun = null
         }
@@ -154,8 +156,9 @@ internal class DiagnosticSession private constructor(val directory: File, privat
             .put("writeError", writeError ?: JSONObject.NULL).put("lastFrame", lastFrame ?: JSONObject.NULL)
         val comparisons = JSONObject()
         lineage.forEach { (segment, metrics) ->
-            comparisons.put(segment, JSONObject().put("current", JSONObject(metrics.first.snapshot() as Map<*, *>))
-                .put("vc49", JSONObject(metrics.second.snapshot() as Map<*, *>)))
+            val modes = JSONObject()
+            metrics.forEach { (mode, values) -> modes.put(mode, JSONObject(values.snapshot() as Map<*, *>)) }
+            comparisons.put(segment, modes)
         }
         summary.put("lineageComparison", comparisons).put("visibilityInterruptions", visibilityInterruptions)
             .put("pointerRejections", JSONObject(pointerRejections as Map<*, *>))

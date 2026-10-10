@@ -120,3 +120,44 @@ A missing observation is null, never an inferred zero. Synthetic benchmark JSON
 schema 2 includes source commit, evidence type, scope and a `scenarios` object.
 Malformed raw records remain in recovered ZIPs and are counted by the analyzer;
 comparisons never bridge unreadable frame records.
+
+## Precision filter evidence and Galaxy A54 validation
+
+`PrecisionPointerFilterTest` writes `app/build/reports/testing-tools/precision-benchmark.json`
+with the source commit and repository-complete evidence type. CI includes this
+file in its reports artifact. Run `./gradlew :app:testDebugUnitTest --tests '*PrecisionPointerFilterTest'`
+to reproduce the comparison. The deterministic stationary trace uses a 0.006
+normalized sinusoidal disturbance; steady travel covers 0.7 units over two
+seconds. Warm-up samples are excluded. At each of 15, 30 and 60 fps, precision
+must have less than 90% of CURRENT's stationary RMS error and less than 55% of its
+mean travel error. Separate cases cover fine aiming, reversals, uneven frames,
+isolated jumps, sustained fast movement and invalid timestamps.
+
+The observed stationary ratios are 0.794 / 0.769 / 0.734; mean travel errors are
+0.00168 / 0.00408 / 0.00605 versus CURRENT's 0.03504 / 0.03323 / 0.03076. These
+traces do not measure physical motion ground truth, camera/display latency,
+click success, or competitor performance. The filter is causal and does not
+extrapolate. Repeatable replay improvements justify device trials, not a claim
+that all tracking conditions are solved.
+
+New diagnostic recordings include all three candidates; legacy recordings
+without precision remain supported. A change in candidate availability starts
+a new comparison run.
+
+On the Samsung Galaxy A54, validate with the live mirror and saved ZIPs:
+
+1. Confirm the camera image and landmarks align in portrait and landscape.
+   Recalibrate after changing camera placement; retain a separate labelled run
+   for each stationary target, distance and lighting condition.
+2. Compare PRECISION and CURRENT on small target acquisition, slow corrections,
+   fast travel, hand loss and reacquisition. Record inference rate and interruptions.
+3. Count successes, misses and accidental activations over at least 30 deliberate
+   thumb-middle clicks per condition. Include double attempts, long presses,
+   scrolling drags, release with fingers still close, and ordinary hand movement.
+4. During a held touch, disable pointer control, pause, rotate, and briefly cover
+   the camera. Check that no touch restarts until a deliberate new interaction.
+5. Repeat after sustained operation and with available CPU/GPU backends. Record
+   Android version, app commit, settings, temperature symptoms and test duration.
+
+Physical A54 results remain pending; keep original recordings and report failed
+attempts as well as successful ones.

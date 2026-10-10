@@ -65,7 +65,7 @@ class TestingToolsRegressionTest {
             for (i in 0..2) {
                 append(recording, frame(1000L + i * 33, "TRACKING", true)
                     .put("testSegment", "STATIONARY").put("cursorVisible", true).put("pointerRejection", "NONE")
-                    .put("comparison", JSONObject().put("mappedTip", p(.5)).put("current", p(.5 + .002 * i)).put("vc49", p(.5 + .001 * i))))
+                    .put("comparison", JSONObject().put("mappedTip", p(.5)).put("current", p(.5 + .002 * i)).put("vc49", p(.5 + .001 * i)).put("precision", p(.5 + .0005 * i))))
             }
             append(recording, frame(1131L, "NO_HAND", false).put("cursorVisible", false).put("pointerRejection", "RAW_LANDMARK_DROPOUT"))
             finish(recording)
@@ -74,6 +74,7 @@ class TestingToolsRegressionTest {
             assertEquals(1, summary.getJSONObject("pointerRejections").getInt("RAW_LANDMARK_DROPOUT"))
             val stationary = summary.getJSONObject("lineageComparison").getJSONObject("STATIONARY")
             assertEquals(3, stationary.getJSONObject("vc49").getInt("samples"))
+            assertEquals(3, stationary.getJSONObject("precision").getInt("samples"))
             assertTrue(stationary.getJSONObject("current").getDouble("stationaryJitterRms") >
                 stationary.getJSONObject("vc49").getDouble("stationaryJitterRms"))
         } finally { dir.deleteRecursively() }

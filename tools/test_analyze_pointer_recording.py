@@ -20,6 +20,15 @@ class RecordingAnalysisTest(unittest.TestCase):
         self.assertEqual(2, len(result['segments']))
         self.assertEqual(1, result['unreadableFrameRecords'])
 
+    def test_precision_recordings_include_three_modes_and_older_logs_remain_readable(self):
+        old = frame(0)
+        new = frame(33)
+        new['comparison']['precision'] = {'x': .2, 'y': .5}
+        result = self.analyze([old, new])
+        self.assertEqual(2, len(result['segments']))
+        self.assertNotIn('precision', result['segments']['STATIONARY'])
+        self.assertEqual(1, result['segments']['STATIONARY#2']['precision']['samples'])
+
     def test_repeated_labels_do_not_combine_different_targets(self):
         result = self.analyze([frame(0), frame(33), frame(66, segment='TRAVEL'),
                                frame(99, .8), frame(132, .8)])

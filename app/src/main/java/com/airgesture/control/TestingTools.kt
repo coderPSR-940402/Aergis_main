@@ -21,7 +21,7 @@ import org.json.JSONObject
 
 internal enum class PointerTestSegment { UNLABELLED, STATIONARY, TRAVEL, FAST, REACQUIRE, EDGES, CLICK }
 internal enum class RecordingStatus { IDLE, RECORDING, EXPORTING, READY, ERROR }
-internal data class TestingState(val mirror: Boolean = false, val filterMode: PointerFilterMode = PointerFilterMode.CURRENT, val segment: PointerTestSegment = PointerTestSegment.UNLABELLED, val status: RecordingStatus = RecordingStatus.IDLE,
+internal data class TestingState(val mirror: Boolean = false, val filterMode: PointerFilterMode = PointerFilterMode.PRECISION, val segment: PointerTestSegment = PointerTestSegment.UNLABELLED, val status: RecordingStatus = RecordingStatus.IDLE,
     val frames: Int = 0, val dropped: Long = 0, val message: String? = null, val export: DiagnosticExport? = null,
     val recordings: List<SavedRecording> = emptyList(), val canRetry: Boolean = false)
 internal data class MirrorFrame(val bitmap: Bitmap?, val hands: List<List<Point3D>>, val label: String,

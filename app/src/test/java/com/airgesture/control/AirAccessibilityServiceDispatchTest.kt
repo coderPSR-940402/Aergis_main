@@ -32,6 +32,7 @@ class AirAccessibilityServiceDispatchTest {
         shadow = org.robolectric.Shadows.shadowOf(service)
         AirRuntime.resetActionDispatchTelemetry()
         AirRuntime.gesturesEnabled = true
+        AirRuntime.pointerEnabled = true
         AirRuntime.controlMode = ControlMode.ARMED
         AirRuntime.motionActive = false
         AirRuntime.setForegroundContext(
@@ -48,6 +49,7 @@ class AirAccessibilityServiceDispatchTest {
     @After
     fun tearDown() {
         controller.destroy()
+        AirRuntime.pointerEnabled = true
         AirRuntime.resetActionDispatchTelemetry()
         AirRuntime.controlMode = ControlMode.OFF
         AirRuntime.setForegroundContext(ForegroundContextState())
@@ -160,6 +162,24 @@ class AirAccessibilityServiceDispatchTest {
         assertTrue(bounds.top in 0f..(metrics.heightPixels - 1).toFloat())
         assertTrue(bounds.bottom in 0f..(metrics.heightPixels - 1).toFloat())
         assertTrue(bounds.bottom > bounds.top)
+    }
+
+    @Test fun disablingPointerRejectsAnInFlightFrameEvenWithTheNewEpoch() {
+        AirRuntime.pointerEnabled = false
+        service.updatePointerTouch(.4f, .5f, true)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertTrue("A late frame must not start a native touch after pointer disable", shadow.gesturesDispatched.isEmpty())
+    }
+
+    @Test fun pointerDisableCancelsHeldTouchAndLateCallbackCannotContinue() {
+        service.updatePointerTouch(.4f, .5f, true)
+        shadowOf(Looper.getMainLooper()).idle()
+        val first = shadow.gesturesDispatched.single()
+        AirRuntime.pointerEnabled = false
+        first.callback()!!.onCompleted(first.description())
+        assertEquals(2, shadow.gesturesDispatched.size)
+        first.callback()!!.onCompleted(first.description())
+        assertEquals(2, shadow.gesturesDispatched.size)
     }
 
     @Test fun pinchPressKeepsOneTouchDownAndReleaseEndsItWithoutAnExtraTap() {

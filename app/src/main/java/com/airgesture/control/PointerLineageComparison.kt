@@ -3,27 +3,36 @@ package com.airgesture.control
 import kotlin.math.hypot
 import kotlin.math.sqrt
 
-internal enum class PointerFilterMode { CURRENT, VC49 }
+internal enum class PointerFilterMode { PRECISION, CURRENT, VC49 }
 
 internal data class PointerLineageSample(
     val mappedTip: PointerCoordinateMapper.Point,
     val current: PointerCoordinateMapper.Point,
-    val vc49: PointerCoordinateMapper.Point
+    val vc49: PointerCoordinateMapper.Point,
+    val precision: PointerCoordinateMapper.Point = current,
+    val precisionTrusted: Boolean = true
 ) {
-    fun selected(mode: PointerFilterMode) = if (mode == PointerFilterMode.VC49) vc49 else current
+    fun selected(mode: PointerFilterMode) = when (mode) {
+        PointerFilterMode.PRECISION -> precision
+        PointerFilterMode.CURRENT -> current
+        PointerFilterMode.VC49 -> vc49
+    }
 }
 
-/** Both candidates consume the same measured tip and calibration. Never auto-selects. */
+/** All candidates consume the same measured tip and calibration. Never auto-selects. */
 internal class PointerLineageComparison {
     private val recovered = Vc49PointerMotionFilter()
+    private val precision = PrecisionPointerFilter()
 
     fun update(mappedTip: PointerCoordinateMapper.Point, current: PointerCoordinateMapper.Point,
         timestampMs: Long): PointerLineageSample {
         val point = recovered.update(mappedTip.x, mappedTip.y, timestampMs, 1f)
-        return PointerLineageSample(mappedTip, current, PointerCoordinateMapper.Point(point.first, point.second))
+        val precise = precision.update(mappedTip.x, mappedTip.y, timestampMs)
+        return PointerLineageSample(mappedTip, current, PointerCoordinateMapper.Point(point.first, point.second),
+            precise, precision.measurementTrusted)
     }
 
-    fun reset() = recovered.reset()
+    fun reset() { recovered.reset(); precision.reset() }
 }
 
 /** O(1) statistics. Stationary labels must be supplied by a test segment, not guessed from jitter. */
