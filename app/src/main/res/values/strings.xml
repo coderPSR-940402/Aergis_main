@@ -216,4 +216,25 @@
     <string name="testing_open_recording">Open %1$s</string>
     <string name="testing_recover_recording">Recover %1$s</string>
     <string name="testing_library_close">Close</string>
+    <string name="ui_home">Home</string>
+    <string name="ui_live">Live</string>
+    <string name="ui_controls">Controls</string>
+    <string name="ui_more">More</string>
+    <string name="ui_metric_unavailable">Unavailable</string>
+    <string name="ui_live_title">See what Aergis sees.</string>
+    <string name="ui_live_description">Tracking status, mirror and session recording.</string>
+    <string name="ui_controls_title">Shape how it responds.</string>
+    <string name="ui_controls_description">Pointer, gestures and calibration.</string>
+    <string name="ui_controls_tab_pointer">Pointer</string>
+    <string name="ui_controls_tab_gestures">Gestures</string>
+    <string name="ui_controls_tab_calibration">Calibration</string>
+    <string name="ui_more_title">Everything else.</string>
+    <string name="ui_more_description">Diagnostics, permissions and about.</string>
+    <string name="ui_more_diagnostics">Diagnostics</string>
+    <string name="ui_live_shortcut">Live tracking</string>
+    <string name="ui_live_shortcut_description">Tracking status, mirror and recording</string>
+    <string name="ui_controls_shortcut">Pointer, gestures and calibration</string>
+    <string name="ui_controls_shortcut_description">Tune reach, review mappings, calibrate</string>
+    <string name="ui_more_shortcut">Diagnostics and permissions</string>
+    <string name="ui_more_shortcut_description">Technical state, accessibility and about</string>
 </resources>

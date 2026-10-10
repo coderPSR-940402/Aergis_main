@@ -79,11 +79,16 @@ internal fun ControlScreen(
                     Spacer(Modifier.width(8.dp))
                     Text(stringResource(if (runtime.running) R.string.stop_capture else R.string.start_capture))
                 }
-                AergisButton(onArm, modifier = Modifier.fillMaxWidth(),
-                    enabled = runtime.running && (runtime.controlMode == ControlMode.ARMED || !runtime.motionActive)) {
-                    Text(stringResource(if (runtime.controlMode == ControlMode.ARMED) R.string.disarm_control else R.string.arm_control))
+                AergisArmControl(
+                    armed = runtime.controlMode == ControlMode.ARMED,
+                    enabled = runtime.running && (runtime.controlMode == ControlMode.ARMED || !runtime.motionActive),
+                    stateText = modeText, onClick = onArm
+                )
+                // Tracking and control authority are different facts and are shown as separate chips.
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    AergisStatusChip(statusText, accent)
+                    AergisStatusChip(modeText, if (gesturesEnabled && runtime.controlMode == ControlMode.ARMED) AergisColors.Success else AergisColors.Muted)
                 }
-                AergisStatusChip(modeText, if (gesturesEnabled && runtime.controlMode == ControlMode.ARMED) AergisColors.Violet else AergisColors.Muted)
                 Text(stringResource(R.string.ui_capture_arm_explanation), color = AergisColors.Muted, style = MaterialTheme.typography.bodyMedium)
             }
         }
@@ -98,7 +103,12 @@ internal fun ControlScreen(
         if (runtime.running) runtime.visionError?.let { error -> item { ErrorPanel(stringResource(R.string.vision_error_title), error) } }
         item {
             AergisPanel {
-                Text(stringResource(R.string.ui_tracking_snapshot), style = MaterialTheme.typography.titleMedium)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(stringResource(R.string.ui_tracking_snapshot), style = MaterialTheme.typography.titleMedium)
+                    AergisMotionTrace(if (status == HomeStatus.TRACKING) AergisColors.Cyan else AergisColors.Muted.copy(alpha = .6f),
+                        Modifier.size(72.dp, 28.dp))
+                }
                 SnapshotRow(stringResource(R.string.ui_camera), stringResource(if (runtime.cameraReady) R.string.status_ready else R.string.status_not_active), runtime.cameraReady)
                 SnapshotRow(stringResource(R.string.ui_vision), stringResource(if (runtime.visionReady) R.string.status_ready else R.string.status_not_ready), runtime.visionReady)
                 SnapshotRow(stringResource(R.string.ui_hand), if (runtime.handsDetected > 0) runtime.handedness else stringResource(R.string.ui_no_hand), runtime.handsDetected > 0)
@@ -111,9 +121,9 @@ internal fun ControlScreen(
         }
         item {
             AergisPanel {
-                Shortcut(AergisDestination.TRACKING, R.string.ui_tracking_shortcut, R.string.ui_tracking_shortcut_description, onNavigate)
-                Shortcut(AergisDestination.GESTURES, R.string.ui_gestures_shortcut, R.string.ui_gestures_shortcut_description, onNavigate)
-                Shortcut(AergisDestination.SETTINGS, R.string.ui_settings_shortcut, R.string.ui_settings_shortcut_description, onNavigate)
+                Shortcut(AergisDestination.LIVE, R.string.ui_live_shortcut, R.string.ui_live_shortcut_description, onNavigate)
+                Shortcut(AergisDestination.CONTROLS, R.string.ui_controls_shortcut, R.string.ui_controls_shortcut_description, onNavigate)
+                Shortcut(AergisDestination.MORE, R.string.ui_more_shortcut, R.string.ui_more_shortcut_description, onNavigate)
             }
         }
         item { Text(stringResource(R.string.ui_preview_note), color = AergisColors.Muted, style = MaterialTheme.typography.bodySmall) }

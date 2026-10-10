@@ -1,6 +1,7 @@
 package com.airgesture.control.ui
 
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.foundation.shape.CutCornerShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
@@ -42,6 +43,18 @@ internal object AergisShapes {
     val Card = RoundedCornerShape(24.dp)
     val Control = RoundedCornerShape(16.dp)
     val Chip = RoundedCornerShape(50)
+    val Segment = RoundedCornerShape(12.dp)
+    /** Aergis brand detail: used sparingly, for the primary command and brand marks only. */
+    val Brand = CutCornerShape(topEnd = 16.dp, bottomStart = 16.dp)
+}
+
+internal object AergisType {
+    /** Wide-tracked wordmark. Minimal use. */
+    val Brand = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 18.sp, lineHeight = 24.sp,
+        fontWeight = FontWeight.SemiBold, letterSpacing = 4.sp)
+    /** Tabular numerals so changing telemetry does not jitter horizontally. */
+    val Telemetry = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 20.sp, lineHeight = 26.sp,
+        fontWeight = FontWeight.SemiBold, fontFeatureSettings = "tnum")
 }
 
 internal object AergisMotion {
