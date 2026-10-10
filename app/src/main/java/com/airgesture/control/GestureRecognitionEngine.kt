@@ -45,6 +45,8 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
     private var lastFilterMode = PointerFilterMode.CURRENT
     private var lastPointerAt = 0L
     private var lastFrameRotationDegrees: Int? = null
+    private var frameAspectRatio = 1f
+    private var lastFrameAspectRatio: Float? = null
     private val handOwnership = HandOwnershipTracker()
     private val gestureTransaction = GestureTransactionStateMachine()
     private val freshnessPolicy = VisionResultFreshnessPolicy()
@@ -85,6 +87,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                     timestamp
                 )
                 diagnosticResult = result
+                frameAspectRatio = CameraCoordinateTransform.uprightAspectRatio(image.width, image.height, image.imageInfo.rotationDegrees)
                 publish(result, timestamp, SystemClock.uptimeMillis(), image.imageInfo.rotationDegrees)
             } finally {
                 mpImage.close()
@@ -172,9 +175,10 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 feedback = PointerFeedback.VISION_REJECTED)
             return
         }
-        if (lastFrameRotationDegrees != rotationDegrees) {
+        if (lastFrameRotationDegrees != rotationDegrees || lastFrameAspectRatio != frameAspectRatio) {
             resetTrackingState()
             lastFrameRotationDegrees = rotationDegrees
+            lastFrameAspectRatio = frameAspectRatio
             Log.d(TAG, "Camera landmark rotation: $rotationDegrees degrees clockwise")
         }
         val landmarks = result.landmarks()
@@ -236,7 +240,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             }
         }
         val selectedPoseEvidence = if (selectedHand != null) {
-            poseEvidenceEvaluator.evaluate(reusablePointsList)
+            poseEvidenceEvaluator.evaluate(reusablePointsList, frameAspectRatio)
         } else {
             null
         }
@@ -292,26 +296,39 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         var pinchInProgress = false
         if (pointerActive && indexTip != null) {
             val touchAllowed = commandTracking && AirRuntime.gesturesEnabled
-            val processed = interpreter.processFrame(reusablePointsList, timestamp, actionsAllowed = touchAllowed) ?: run {
+            val processed = interpreter.processFrame(reusablePointsList, timestamp, actionsAllowed = touchAllowed, aspectRatio = frameAspectRatio) ?: run {
                 handlePointerGap(observedAtMs, pointerActive, landmarks.size <= 1,
                     "NON_FINITE_OR_MISSING_TIP", PointerFeedback.INVALID_TIP)
                 return
             }
             AirRuntime.recordPoseEvidence(processed.poseEvidence)
             val rawTip = reusablePointsList[INDEX_TIP]
-            AirRuntime.setRawPointerState(rawTip.x, rawTip.y, true)
             val mappedTip = pointerMapper.map(rawTip.x, rawTip.y, frameCalibration)
             val currentPoint = pointerMapper.map(processed.smoothedX, processed.smoothedY, frameCalibration)
             val comparison = lineageComparison.update(mappedTip, currentPoint, timestamp)
             val candidate = comparison.selected(filterMode)
-            val stabilized = if (touchAllowed && processed.poseEvidence.accepted) {
+            val trusted = filterMode != PointerFilterMode.PRECISION || comparison.precisionTrusted
+            AirRuntime.setRawPointerState(rawTip.x, rawTip.y, trusted)
+            val stabilized = if (touchAllowed && processed.poseEvidence.accepted && trusted) {
                 val interaction = pinchPointer.update(candidate, processed.isPinchApproaching,
-                    processed.isPinchPressed, timestamp)
+                    processed.isPinchPressed, timestamp,
+                    context.resources.displayMetrics.let { it.widthPixels.toFloat() / it.heightPixels.coerceAtLeast(1) })
                 pinchInProgress = processed.isPinchApproaching
                 AirRuntime.pointerInteraction = interaction.phase
                 AirAccessibilityService.instance?.updatePointerTouch(
                     interaction.point.x, interaction.point.y, processed.isPinchPressed)
                 interaction.point
+            } else if (touchAllowed && processed.poseEvidence.accepted && !trusted) {
+                // Hold a suspect position without starting/moving a native touch. Always
+                // allow finger-up at the held point; the native freshness watchdog still runs.
+                pinchInProgress = true
+                val heldPoint = AirRuntime.pointerSnapshot().let { PointerCoordinateMapper.Point(it.x, it.y) }
+                if (!processed.isPinchPressed) {
+                    pinchPointer.update(heldPoint, false, false, timestamp)
+                    AirAccessibilityService.instance?.updatePointerTouch(heldPoint.x, heldPoint.y, false)
+                    AirRuntime.pointerInteraction = PointerInteractionPhase.AIMING
+                }
+                heldPoint
             } else {
                 resetPointerTouch()
                 candidate
@@ -321,15 +338,19 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             diagnosticTrace?.put("uprightTip", point(PointerCoordinateMapper.Point(rawTip.x, rawTip.y)))
                 ?.put("currentFilteredUpright", point(PointerCoordinateMapper.Point(processed.smoothedX, processed.smoothedY)))
                 ?.put("comparison", org.json.JSONObject().put("mappedTip", point(mappedTip))
-                    .put("current", point(comparison.current)).put("vc49", point(comparison.vc49)))
+                    .put("current", point(comparison.current)).put("vc49", point(comparison.vc49))
+                    .put("precision", point(comparison.precision)))
+                ?.put("precisionTrusted", comparison.precisionTrusted)?.put("geometryAspectRatio", frameAspectRatio)
                 ?.put("pointerInteraction", AirRuntime.pointerInteraction.name)
                 ?.put("thumbMiddleDistance", DiagnosticFrameData.number(processed.normalizedDistance))
                 ?.put("pinchPressed", processed.isPinchPressed)
-                ?.put("cursorVisible", true)?.put("pointerRejection", "NONE")
-            pointerVisibility.record(stabilized, observedAtMs)
-            AirRuntime.pointerFeedback = PointerFeedback.TRACKING
-            lastPointerAt = timestamp
-            AirRuntime.setPointerState(stabilized.x, stabilized.y, true)
+                ?.put("cursorVisible", true)?.put("pointerRejection", if (trusted) "NONE" else "POINTER_OUTLIER")
+            if (trusted) {
+                pointerVisibility.record(stabilized, observedAtMs)
+                lastPointerAt = timestamp
+            }
+            AirRuntime.pointerFeedback = if (trusted) PointerFeedback.TRACKING else PointerFeedback.COASTING
+            AirRuntime.setPointerState(stabilized.x, stabilized.y, trusted)
 
             // Scrolling requires deliberate pinch-and-drag. Aiming alone is not a swipe.
             AirAccessibilityService.instance?.updatePointer(

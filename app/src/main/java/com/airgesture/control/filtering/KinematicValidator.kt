@@ -14,7 +14,8 @@ class KinematicValidator {
         private const val MIN_PALM_WIDTH_PX = 0.001f
     }
 
-    fun calculateNormalizedFingerDistance(landmarks: List<Point3D>): Float {
+    fun calculateNormalizedFingerDistance(landmarks: List<Point3D>, aspectRatio: Float = 1f): Float {
+        if (!aspectRatio.isFinite() || aspectRatio <= 0f) return Float.NaN
         if (landmarks.size <= PINKY_MCP) return 1.0f
 
         val indexMcp = landmarks[INDEX_MCP]
@@ -22,8 +23,8 @@ class KinematicValidator {
         val thumbTip = landmarks[THUMB_TIP]
         val middleTip = landmarks[MIDDLE_TIP]
 
-        val palmWidth = indexMcp.distance2DTo(pinkyMcp).coerceAtLeast(MIN_PALM_WIDTH_PX)
-        val fingertipDistance = thumbTip.distance2DTo(middleTip)
+        val palmWidth = indexMcp.distance2DTo(pinkyMcp, aspectRatio).coerceAtLeast(MIN_PALM_WIDTH_PX)
+        val fingertipDistance = thumbTip.distance2DTo(middleTip, aspectRatio)
 
         return fingertipDistance / palmWidth
     }

@@ -137,7 +137,7 @@
     <string name="testing_saved">Report saved</string>
     <string name="testing_start_camera">Start the camera session to enable the mirror and recording.</string>
     <string name="testing_filter_mode">Pointer filter: %1$s • switch</string>
-    <string name="testing_filter_description">Compare CURRENT and VC49 with gestures off. Selection lasts for this app session.</string>
+    <string name="testing_filter_description">Precision steadies aim and responds faster to deliberate movement. Switch to Current or VC49 to compare; recordings preserve all three outputs.</string>
     <string name="testing_segment">Test segment: %1$s • next</string>
     <string name="ui_brand">AERGIS</string>
     <string name="ui_brand_subtitle">AIR GESTURE CONTROL</string>

@@ -100,18 +100,19 @@ internal object DiagnosticReport {
                 text(c, "Pointer lineage comparison", 36f, 58f, 21f, true)
                 var y = wrap(c, "APK source: ${metadata.optString("sourceCommit", "unspecified")}", 89f)
                 y = wrap(c, "Historical reference: ${metadata.optString("historicalSource", "unspecified")}", y + 4f)
-                y = wrap(c, "Filter at start: ${metadata.optString("filterMode", "CURRENT")}. Both algorithms consume the same input. Units: fraction of screen, not pixels. Jitter requires a labelled stationary segment at one fixed target.", y + 9f)
+                y = wrap(c, "Filter at start: ${metadata.optString("filterMode", "CURRENT")}. All recorded algorithms consume the same input. Units: fraction of screen, not pixels. Jitter requires a labelled stationary segment at one fixed target.", y + 9f)
                 y = wrap(c, "Visibility interruptions: ${summary.optInt("visibilityInterruptions")}. Pointer rejections: ${summary.optJSONObject("pointerRejections") ?: "none"}", y + 9f)
                 val comparisons = summary.optJSONObject("lineageComparison")
                 val runs = comparisons?.keys()?.asSequence()?.sorted()?.toList().orEmpty()
                 for (segment in runs) {
-                    if (y > 625f) {
+                    if (y > 610f) {
                         wrap(c, "Additional contiguous runs omitted from this preview. All ${runs.size} runs are in summary.json in the ZIP.", y + 15f)
                         break
                     }
                     text(c, segment, 36f, y + 19f, 12f, true); y += 28f
                     val metrics = comparisons!!.getJSONObject(segment)
-                    for (mode in listOf("current", "vc49")) {
+                    for (mode in listOf("current", "vc49", "precision")) {
+                        if (!metrics.has(mode)) continue
                         val m = metrics.getJSONObject(mode)
                         val error = String.format(Locale.US, "%.5f", m.optDouble("meanDistanceToMeasurement"))
                         val jitter = if (m.optInt("stationarySamples") == 0) "unlabelled" else

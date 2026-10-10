@@ -154,7 +154,27 @@ UI clients can observe `AirRuntime.state` / `AirRuntime.uiState` through the
 additive `pointerInteraction` phase: `IDLE`, `AIMING`, `PINCHING`, `PRESSED`,
 `HOLDING`, `DRAGGING`. `HOLDING` reports elapsed pinch time, not confirmation
 that the receiving application handles long press. No visual layout changes
-are required. Calibration and both existing pointer filters remain intact.
+are required. Calibration and the two legacy pointer filters remain available.
+
+### Precision tracking and clicking
+
+**PRECISION** is the default pointer mode. It smooths stationary hand noise,
+responds faster to consistent fine aiming and deliberate travel, and holds an
+isolated large jump until another measurement confirms it. It does not predict
+positions beyond the observed target. **CURRENT** and **VC49** remain selectable
+in Testing Tools for comparison.
+
+Pinch and pose distances account for the upright camera image's aspect ratio.
+Drag thresholds use equal physical distances on both screen axes; a small,
+one-frame excursion cannot start a drag. Releasing contact clears the previous
+drag/hold even while fingers remain close together. Disabling the pointer also
+blocks late native touch dispatch and continuation callbacks.
+
+Synthetic 15/30/60 fps replays show 21–27% less stationary jitter and 80–95% less
+target-relative error during steady travel than CURRENT on the tested traces.
+These are filter measurements, not camera-to-screen latency or physical Galaxy
+A54 results. See [the benchmark specification](docs/BENCHMARK_SPEC.md) for
+reproduction and device validation.
 
 ### Retained recordings and comparison runs
 
@@ -169,6 +189,10 @@ calculated per contiguous run (`STATIONARY`, `STATIONARY#2`, etc.), splitting at
 tracking gaps or changes in owner, calibration, filter, action epoch or rotation.
 Relabel when changing stationary targets. FAST first-arrival time is a response
 proxy, not sustained settling or camera-to-display latency.
+
+New recordings compare PRECISION, CURRENT and VC49 from the same measured input.
+Older two-filter recordings still open and analyze normally; comparisons split
+when the set of recorded candidates changes.
 
 Run `python3 -m unittest discover -s tools -p 'test_*.py'` for the recording analyzer,
 APK model/package checks and preview signing regression suite.

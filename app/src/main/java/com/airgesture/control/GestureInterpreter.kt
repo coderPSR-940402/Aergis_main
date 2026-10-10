@@ -43,12 +43,12 @@ class GestureInterpreter(
         return GestureDecision(mappings?.mapping(source) ?: source, signal.score)
     }
 
-    fun processFrame(landmarks: List<Point3D>, timestampMs: Long, actionsAllowed: Boolean = true): ProcessedGestureResult? {
+    fun processFrame(landmarks: List<Point3D>, timestampMs: Long, actionsAllowed: Boolean = true, aspectRatio: Float = 1f): ProcessedGestureResult? {
         if (landmarks.size <= KinematicValidator.INDEX_TIP) {
             resetActions()
             return null
         }
-        val poseEvidence = poseEvidenceEvaluator.evaluate(landmarks)
+        val poseEvidence = poseEvidenceEvaluator.evaluate(landmarks, aspectRatio)
         val rawIndexTip = landmarks[KinematicValidator.INDEX_TIP]
         // Position authority is exactly landmark 8; anatomy belongs to the action channel.
         if (!rawIndexTip.x.isFinite() || !rawIndexTip.y.isFinite()) {
@@ -57,7 +57,7 @@ class GestureInterpreter(
         }
         val smoothedPoint = smoother.filter(rawIndexTip.x, rawIndexTip.y, timestampMs)
         val stabilized = pointerFilter.filter(smoothedPoint.x, smoothedPoint.y, timestampMs)
-        val dNorm = validator.calculateNormalizedFingerDistance(landmarks).coerceIn(0f, 1.5f)
+        val dNorm = validator.calculateNormalizedFingerDistance(landmarks, aspectRatio).coerceIn(0f, 1.5f)
         if (!poseEvidence.accepted || !actionsAllowed) {
             // Rejected geometry or blocked actions must not carry dwell/swipe history forward.
             clickStateMachine.reset()

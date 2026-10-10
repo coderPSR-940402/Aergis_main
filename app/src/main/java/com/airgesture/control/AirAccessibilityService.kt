@@ -18,7 +18,7 @@ class AirAccessibilityService : AccessibilityService() {
     private val pointerTouch = HeldPointerTouch(
         mainHandler,
         dispatch = { gesture, callback -> dispatchGesture(gesture, callback, mainHandler) },
-        permitted = { epoch -> isActionAllowed(AirAction.LONG_PRESS, epoch) },
+        permitted = { epoch -> AirRuntime.pointerEnabled && isActionAllowed(AirAction.LONG_PRESS, epoch) },
         record = AirRuntime::recordActionDispatchOutcome
     )
     private val updateScheduled = AtomicBoolean(false)

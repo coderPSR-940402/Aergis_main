@@ -73,9 +73,10 @@ internal fun TestingToolsCard(onSave: (File) -> Unit, onShare: (DiagnosticExport
                 enabled = testing.mirror || (runtime.first && runtime.second && AirAccessibilityService.enabled())) {
                 Text(stringResource(if (testing.mirror) R.string.testing_mirror_hide else R.string.testing_mirror_show))
             }
-            AergisStatusChip(stringResource(R.string.ui_experimental), AergisColors.Caution)
+            if (testing.filterMode == PointerFilterMode.VC49)
+                AergisStatusChip(stringResource(R.string.ui_experimental), AergisColors.Caution)
             AergisButton(modifier = Modifier.fillMaxWidth(), onClick = { TestingTools.setFilterMode(
-                if (testing.filterMode == PointerFilterMode.CURRENT) PointerFilterMode.VC49 else PointerFilterMode.CURRENT) }) {
+                PointerFilterMode.entries[(testing.filterMode.ordinal + 1) % PointerFilterMode.entries.size]) }) {
                 Text(stringResource(R.string.testing_filter_mode, testing.filterMode.name))
             }
             Text(stringResource(R.string.testing_filter_description))

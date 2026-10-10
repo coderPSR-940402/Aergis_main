@@ -171,6 +171,32 @@ class CalibrationEngineIntegrationTest {
         assertEquals(GestureTransactionStateMachine.State.NEUTRAL, transaction.currentState())
     }
 
+    @Test
+    fun precisionModeHoldsAnIsolatedTipSpikeAndRecoversWithoutChangingCalibration() {
+        TestingTools.setFilterMode(PointerFilterMode.PRECISION)
+        publish(hand(), 1000L)
+        val before = AirRuntime.pointerSnapshot()
+        publish(hand().toMutableList().apply { this[8] = NormalizedLandmark.create(.85f, .65f, 0f) }, 1033L)
+        assertFalse(AirRuntime.pointerTracking)
+        assertEquals(before.x, AirRuntime.pointerX, .0001f)
+        publish(hand(), 1066L)
+        assertTrue(AirRuntime.pointerTracking)
+        assertEquals(before.x, AirRuntime.pointerX, .0001f)
+    }
+
+    @Test
+    fun rejectedTipKeepsTheDisplayedPinchAnchorRatherThanTheUnanchoredFilterPoint() {
+        TestingTools.setFilterMode(PointerFilterMode.PRECISION)
+        AirRuntime.gesturesEnabled = true
+        repeat(8) { publish(hand(), 1000L + it * 33L) }
+        // Pinch anchoring may hold a displayed point behind the selected filter.
+        AirRuntime.setPointerState(.42f, .55f, true)
+        publish(hand().toMutableList().apply { this[8] = NormalizedLandmark.create(.65f, .5f, 0f) }, 1264L)
+        assertFalse(AirRuntime.pointerTracking)
+        assertEquals(.42f, AirRuntime.pointerX, .0001f)
+        assertEquals(.55f, AirRuntime.pointerY, .0001f)
+    }
+
     private fun hand(): List<NormalizedLandmark> = MutableList(21) {
         NormalizedLandmark.create(0.5f, 0.5f, 0f)
     }.apply {

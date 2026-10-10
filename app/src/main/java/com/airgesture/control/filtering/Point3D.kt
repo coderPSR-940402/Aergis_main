@@ -10,8 +10,8 @@ data class Point3D(val x: Float, val y: Float, val z: Float = 0f) {
         return sqrt(dx * dx + dy * dy + dz * dz)
     }
 
-    fun distance2DTo(other: Point3D): Float {
-        val dx = x - other.x
+    fun distance2DTo(other: Point3D, aspectRatio: Float = 1f): Float {
+        val dx = (x - other.x) * aspectRatio
         val dy = y - other.y
         return sqrt(dx * dx + dy * dy)
     }

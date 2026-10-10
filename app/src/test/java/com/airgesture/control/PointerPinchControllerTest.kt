@@ -62,5 +62,39 @@ class PointerPinchControllerTest {
         assertEquals(p(0.8f, 0.9f), controller.update(p(0.8f, 0.9f), false, false, 200L).point)
     }
 
+    @Test fun briefSmallExcursionCannotTurnAClickIntoADrag() {
+        val controller = PointerPinchController()
+        controller.update(p(.4f, .5f), false, false, 1L)
+        controller.update(p(.4f, .5f), true, true, 100L)
+        val noise = controller.update(p(.431f, .5f), true, true, 133L)
+        assertEquals(PointerInteractionPhase.PRESSED, noise.phase)
+        assertEquals(p(.4f, .5f), noise.point)
+        assertEquals(PointerInteractionPhase.PRESSED, controller.update(p(.405f, .5f), true, true, 166L).phase)
+    }
+
+    @Test fun sustainedDragUsesEqualPhysicalDistanceOnBothScreenAxes() {
+        for (delta in listOf(p(.04f, 0f), p(0f, .02f))) {
+            val controller = PointerPinchController()
+            controller.update(p(.4f, .5f), false, false, 1L, .5f)
+            controller.update(p(.4f, .5f), true, true, 100L, .5f)
+            val point = p(.4f + delta.x, .5f + delta.y)
+            assertEquals(PointerInteractionPhase.PRESSED, controller.update(point, true, true, 133L, .5f).phase)
+            assertEquals(PointerInteractionPhase.DRAGGING, controller.update(point, true, true, 200L, .5f).phase)
+        }
+    }
+
+    @Test fun releasingContactWhileFingersRemainCloseEndsThePreviousDrag() {
+        val controller = PointerPinchController()
+        controller.update(p(.4f, .5f), false, false, 1L)
+        controller.update(p(.4f, .5f), true, true, 100L)
+        val drag = controller.update(p(.6f, .5f), true, true, 200L)
+        assertEquals(PointerInteractionPhase.DRAGGING, drag.phase)
+        val release = controller.update(p(.6f, .5f), true, false, 233L)
+        assertEquals(drag.point, release.point)
+        val nextPress = controller.update(p(.6f, .5f), true, true, 800L)
+        assertEquals(PointerInteractionPhase.PRESSED, nextPress.phase)
+        assertEquals(drag.point, nextPress.point)
+    }
+
     private fun p(x: Float, y: Float) = PointerCoordinateMapper.Point(x, y)
 }
