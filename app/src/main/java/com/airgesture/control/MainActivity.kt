@@ -17,12 +17,14 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -266,7 +268,7 @@ class MainActivity : ComponentActivity() {
         AergisTheme {
             AergisShell(gesturesEnabled) { destination, navigate ->
                 when (destination) {
-                    AergisDestination.CONTROL -> ControlScreen(
+                    AergisDestination.HOME -> ControlScreen(
                         accessibilityEnabled = accessibilityEnabled,
                         pointerEnabled = pointerEnabled,
                         gesturesEnabled = gesturesEnabled,
@@ -282,9 +284,9 @@ class MainActivity : ComponentActivity() {
                         onAccessibility = ::openAccessibilitySettings,
                         onNavigate = navigate
                     )
-                    AergisDestination.TRACKING -> TrackingScreen()
-                    AergisDestination.GESTURES -> GesturesScreen()
-                    AergisDestination.SETTINGS -> SettingsScreen()
+                    AergisDestination.LIVE -> TrackingScreen()
+                    AergisDestination.CONTROLS -> ControlsScreen()
+                    AergisDestination.MORE -> MoreScreen()
                 }
             }
         }
@@ -301,7 +303,7 @@ class MainActivity : ComponentActivity() {
             contentPadding = androidx.compose.foundation.layout.PaddingValues(20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            item { AergisSection(stringResource(R.string.ui_tracking_title), stringResource(R.string.ui_tracking_screen_description)) }
+            item { AergisSection(stringResource(R.string.ui_live_title), stringResource(R.string.ui_live_description)) }
             item {
                 AergisPanel {
                     AergisStatusChip(stringResource(if (runtime.pointerTracking) R.string.ui_tracking_live else R.string.ui_waiting_for_hand),
@@ -325,10 +327,76 @@ class MainActivity : ComponentActivity() {
                     runtime.visionError?.let { Text(it, color = AergisColors.Error) }
                 }
             }
+            item { TestingToolsCard(::saveReport, ::shareReport) }
+        }
+    }
+
+    /** Controls: Pointer, Gestures and Calibration. Existing screens are reused unchanged inside the tabs. */
+    @OptIn(kotlinx.coroutines.FlowPreview::class)
+    @Composable
+    private fun ControlsScreen() {
+        var tab by rememberSaveable { mutableIntStateOf(0) }
+        Column(Modifier.fillMaxSize()) {
+            Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 16.dp)) {
+                AergisSegmentedTabs(
+                    listOf(
+                        stringResource(R.string.ui_controls_tab_pointer),
+                        stringResource(R.string.ui_controls_tab_gestures),
+                        stringResource(R.string.ui_controls_tab_calibration)
+                    ), tab, { tab = it }
+                )
+            }
+            when (tab) {
+                0 -> PointerSettingsScreen()
+                1 -> GesturesScreen()
+                else -> CalibrationScreen()
+            }
+        }
+    }
+
+    @OptIn(kotlinx.coroutines.FlowPreview::class)
+    @Composable
+    private fun CalibrationScreen() {
+        val flow = remember { AirRuntime.uiState.sample(250L) }
+        val runtime by flow.collectAsStateWithLifecycle(initialValue = AirRuntime.uiStateSnapshot())
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
             item { CalibrationCard(runtime.pointerTracking) }
             item { PracticeCard(runtime.controlMode) }
-            item { TestingToolsCard(::saveReport, ::shareReport) }
+        }
+    }
+
+    /** More: diagnostics, permissions and about. */
+    @OptIn(kotlinx.coroutines.FlowPreview::class)
+    @Composable
+    private fun MoreScreen() {
+        val flow = remember { AirRuntime.uiState.sample(250L) }
+        val runtime by flow.collectAsStateWithLifecycle(initialValue = AirRuntime.uiStateSnapshot())
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            item { AergisSection(stringResource(R.string.ui_more_title), stringResource(R.string.ui_more_description)) }
             item { DiagnosticsCard(runtime) }
+            item {
+                AergisPanel {
+                    Text(stringResource(R.string.ui_permissions_title), style = MaterialTheme.typography.titleMedium)
+                    Text(stringResource(R.string.accessibility_status, stringResource(if (accessibilityEnabled) R.string.status_enabled else R.string.status_not_enabled)))
+                    AergisButton(onClick = ::openAccessibilitySettings, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.accessibility_settings)) }
+                    AergisButton(onClick = ::openAppDetails, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.app_settings)) }
+                }
+            }
+            item {
+                AergisPanel {
+                    Text(stringResource(R.string.ui_about_title), style = MaterialTheme.typography.titleMedium)
+                    Text(stringResource(R.string.app_tagline), color = AergisColors.Muted)
+                    Text(stringResource(R.string.ui_privacy_description), style = MaterialTheme.typography.bodyMedium, color = AergisColors.Muted)
+                }
+            }
         }
     }
 
@@ -364,13 +432,13 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
-    private fun SettingsScreen() {
+    private fun PointerSettingsScreen() {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            item { AergisSection(stringResource(R.string.ui_settings), stringResource(R.string.ui_settings_screen_description)) }
+            item { AergisSection(stringResource(R.string.ui_controls_title), stringResource(R.string.ui_controls_description)) }
             item {
                 AergisPanel {
                     AergisSettingRow(stringResource(R.string.pointer_mode), stringResource(R.string.pointer_mode_description), pointerEnabled) {
@@ -408,21 +476,6 @@ class MainActivity : ComponentActivity() {
                             refreshCalibrationSettings()
                         }
                     )
-                }
-            }
-            item {
-                AergisPanel {
-                    Text(stringResource(R.string.ui_permissions_title), style = MaterialTheme.typography.titleMedium)
-                    Text(stringResource(R.string.accessibility_status, stringResource(if (accessibilityEnabled) R.string.status_enabled else R.string.status_not_enabled)))
-                    AergisButton(onClick = ::openAccessibilitySettings, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.accessibility_settings)) }
-                    AergisButton(onClick = ::openAppDetails, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.app_settings)) }
-                }
-            }
-            item {
-                AergisPanel {
-                    Text(stringResource(R.string.ui_about_title), style = MaterialTheme.typography.titleMedium)
-                    Text(stringResource(R.string.app_tagline), color = AergisColors.Muted)
-                    Text(stringResource(R.string.ui_privacy_description), style = MaterialTheme.typography.bodyMedium, color = AergisColors.Muted)
                 }
             }
         }

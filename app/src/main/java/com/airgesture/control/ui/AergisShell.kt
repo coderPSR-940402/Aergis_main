@@ -20,18 +20,18 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.distinctUntilChanged
 
 internal enum class AergisDestination(val label: Int, val glyph: AergisGlyph) {
-    CONTROL(R.string.ui_control, AergisGlyph.CONTROL),
-    TRACKING(R.string.ui_tracking, AergisGlyph.TRACKING),
-    GESTURES(R.string.ui_gestures, AergisGlyph.GESTURES),
-    SETTINGS(R.string.ui_settings, AergisGlyph.SETTINGS)
+    HOME(R.string.ui_home, AergisGlyph.CONTROL),
+    LIVE(R.string.ui_live, AergisGlyph.TRACKING),
+    CONTROLS(R.string.ui_controls, AergisGlyph.GESTURES),
+    MORE(R.string.ui_more, AergisGlyph.SETTINGS)
 }
 
 @Composable
 internal fun AergisShell(gesturesEnabled: Boolean, content: @Composable (AergisDestination, (AergisDestination) -> Unit) -> Unit) {
-    var selectedName by rememberSaveable { mutableStateOf(AergisDestination.CONTROL.name) }
-    val selected = AergisDestination.valueOf(selectedName)
+    var selectedName by rememberSaveable { mutableStateOf(AergisDestination.HOME.name) }
+    val selected = AergisDestination.entries.firstOrNull { it.name == selectedName } ?: AergisDestination.HOME
     val navigate: (AergisDestination) -> Unit = { selectedName = it.name }
-    BackHandler(enabled = selected != AergisDestination.CONTROL) { navigate(AergisDestination.CONTROL) }
+    BackHandler(enabled = selected != AergisDestination.HOME) { navigate(AergisDestination.HOME) }
     Scaffold(
         modifier = Modifier.fillMaxSize().safeDrawingPadding(),
         containerColor = AergisColors.Background,
@@ -57,7 +57,7 @@ internal fun AergisShell(gesturesEnabled: Boolean, content: @Composable (AergisD
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 AergisMark(Modifier.size(36.dp))
                 Column {
-                    Text(stringResource(R.string.ui_brand), style = MaterialTheme.typography.titleLarge)
+                    Text(stringResource(R.string.ui_brand), style = AergisType.Brand)
                     Text(stringResource(R.string.ui_brand_subtitle), color = AergisColors.Muted,
                         style = MaterialTheme.typography.labelMedium)
                     SessionLabel(gesturesEnabled)
