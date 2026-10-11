@@ -4,6 +4,9 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -36,7 +39,7 @@ internal fun AergisShell(gesturesEnabled: Boolean, content: @Composable (AergisD
         modifier = Modifier.fillMaxSize().safeDrawingPadding(),
         containerColor = AergisColors.Background,
         bottomBar = {
-            NavigationBar(containerColor = AergisColors.Background, tonalElevation = 0.dp, windowInsets = WindowInsets(0, 0, 0, 0)) {
+            NavigationBar(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp).background(AergisColors.Surface, RoundedCornerShape(24.dp)).border(1.dp, AergisColors.Outline.copy(alpha = .75f), RoundedCornerShape(24.dp)), containerColor = AergisColors.Surface, tonalElevation = 6.dp, windowInsets = WindowInsets(0, 0, 0, 0)) {
                 AergisDestination.entries.forEach { destination ->
                     NavigationBarItem(
                         selected = destination == selected, onClick = { navigate(destination) },
@@ -45,7 +48,7 @@ internal fun AergisShell(gesturesEnabled: Boolean, content: @Composable (AergisD
                         label = { Text(stringResource(destination.label), style = MaterialTheme.typography.labelMedium) },
                         colors = NavigationBarItemDefaults.colors(
                             selectedTextColor = AergisColors.Cyan, unselectedTextColor = AergisColors.Muted,
-                            indicatorColor = AergisColors.Raised
+                            indicatorColor = AergisColors.Violet.copy(alpha = .28f)
                         )
                     )
                 }

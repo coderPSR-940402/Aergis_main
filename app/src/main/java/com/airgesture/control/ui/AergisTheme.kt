@@ -16,15 +16,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 internal object AergisColors {
-    val Background = Color(0xFF060C1B)
-    val Surface = Color(0xFF101C32)
-    val Raised = Color(0xFF17253E)
-    val Outline = Color(0xFF304663)
-    val Text = Color(0xFFF2F6FF)
-    val Muted = Color(0xFFB4C3D9)
-    val Cyan = Color(0xFF67E7FF)
-    val Blue = Color(0xFF98BDFF)
-    val Violet = Color(0xFFB7A0FF)
+    val Background = Color(0xFF08090B)
+    val Surface = Color(0xFF121419)
+    val Raised = Color(0xFF1C1F27)
+    val Outline = Color(0xFF3D424C)
+    val Text = Color(0xFFF2F1EC)
+    val Muted = Color(0xFFA8ADB7)
+    val Cyan = Color(0xFFF5C84B)
+    val Blue = Color(0xFFD4D8DF)
+    val Violet = Color(0xFFA985FF)
     val Success = Color(0xFF73E6BB)
     val Caution = Color(0xFFFFD18A)
     val Error = Color(0xFFFFB4BD)
@@ -65,10 +65,10 @@ internal object AergisMotion {
 
 private val colors = darkColorScheme(
     primary = AergisColors.Cyan, onPrimary = AergisColors.Background,
-    primaryContainer = Color(0xFF133C50), onPrimaryContainer = AergisColors.Cyan,
+    primaryContainer = Color(0xFF4B3B16), onPrimaryContainer = AergisColors.Cyan,
     secondary = AergisColors.Violet, onSecondary = AergisColors.Background,
-    secondaryContainer = Color(0xFF302947), onSecondaryContainer = AergisColors.Text,
-    tertiary = AergisColors.Success, onTertiary = AergisColors.Background,
+    secondaryContainer = Color(0xFF34284F), onSecondaryContainer = AergisColors.Text,
+    tertiary = AergisColors.Blue, onTertiary = AergisColors.Background,
     background = AergisColors.Background, onBackground = AergisColors.Text,
     surface = AergisColors.Surface, onSurface = AergisColors.Text,
     surfaceVariant = AergisColors.Raised, onSurfaceVariant = AergisColors.Muted,

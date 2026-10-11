@@ -142,6 +142,7 @@
     <string name="testing_segment">Test segment: %1$s • next</string>
     <string name="ui_brand">AERGIS</string>
     <string name="ui_brand_subtitle">AIR GESTURE CONTROL</string>
+    <string name="ui_system_overview">SYSTEM OVERVIEW</string>
     <string name="ui_control">Control</string>
     <string name="ui_tracking">Tracking</string>
     <string name="ui_gestures">Gestures</string>
