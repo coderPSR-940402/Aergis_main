@@ -20,16 +20,16 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: Set up Java 17
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
         with:
           distribution: temurin
           java-version: '17'
 
       - name: Cache Android SDK 36
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: |
             ${{ env.ANDROID_HOME }}/platforms/android-36
@@ -56,7 +56,7 @@ jobs:
           test -x "${ANDROID_HOME}/build-tools/36.0.0/aapt"
 
       - name: Set up Gradle wrapper
-        uses: gradle/actions/setup-gradle@v6
+        uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6
         with:
           cache-provider: basic
 
@@ -89,13 +89,15 @@ jobs:
           grep -q "package: name='com.airgesture.control'" apk-badging.txt
           EXPECTED_VERSION_CODE="$((1000 + GITHUB_RUN_NUMBER))"
           grep -q "versionCode='$EXPECTED_VERSION_CODE'" apk-badging.txt
-          grep -q "versionName='0.10.0-preview'" apk-badging.txt
+          EXPECTED_VERSION_NAME="$(sed -n 's/^[[:space:]]*versionName = "\(.*\)"$/\1/p' app/build.gradle.kts)"
+          test -n "$EXPECTED_VERSION_NAME"
+          grep -Fq "versionName='$EXPECTED_VERSION_NAME'" apk-badging.txt
           APKSIGNER="${ANDROID_HOME}/build-tools/36.0.0/apksigner"
           "$APKSIGNER" verify --verbose --print-certs "$APK" > apk-signing.txt
           EXPECTED_CERT="$(cat ci/preview-certificate.sha256)"
           ACTUAL_CERT="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' apk-signing.txt)"
           test "$ACTUAL_CERT" = "$EXPECTED_CERT"
-          python3 tools/verify_apk.py "$APK" --aapt "$AAPT" --version-code "$EXPECTED_VERSION_CODE"
+          python3 tools/verify_apk.py "$APK" --aapt "$AAPT" --version-code "$EXPECTED_VERSION_CODE" --version-name "$EXPECTED_VERSION_NAME"
           echo "Debug APK package, version, model and persistent signing identity verified"
 
       - name: Verify release APK
@@ -104,7 +106,9 @@ jobs:
           set -euo pipefail
           APK="app/build/outputs/apk/release/app-release-unsigned.apk"
           test -s "$APK"
-          python3 tools/verify_apk.py "$APK" --aapt "${ANDROID_HOME}/build-tools/36.0.0/aapt" --version-code "$((1000 + GITHUB_RUN_NUMBER))"
+          EXPECTED_VERSION_NAME="$(sed -n 's/^[[:space:]]*versionName = "\(.*\)"$/\1/p' app/build.gradle.kts)"
+          test -n "$EXPECTED_VERSION_NAME"
+          python3 tools/verify_apk.py "$APK" --aapt "${ANDROID_HOME}/build-tools/36.0.0/aapt" --version-code "$((1000 + GITHUB_RUN_NUMBER))" --version-name "$EXPECTED_VERSION_NAME"
           echo "Release APK package, version and model verified"
 
       - name: Generate APK checksums
@@ -134,7 +138,7 @@ jobs:
           cat baseline.json
 
       - name: Upload APKs and baseline metadata
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: Aergis-apks-${{ github.sha }}
           path: |
@@ -147,7 +151,7 @@ jobs:
 
       - name: Upload test and lint reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: Aergis-reports-${{ github.sha }}
           path: |
@@ -165,7 +169,7 @@ jobs:
       contents: write
     steps:
       - name: Checkout full history
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           fetch-depth: 0
 

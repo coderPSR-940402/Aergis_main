@@ -80,6 +80,9 @@ class GestureCaptureService : Service(), LifecycleOwner, SensorEventListener {
         setupCamera()
     }
 
+    // Capture must be explicitly started again after Android kills this process.
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_NOT_STICKY
+
     private fun registerMotionSensors() {
         sensorManager = getSystemService(SENSOR_SERVICE) as SensorManager
         val gyro = sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
