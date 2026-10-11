@@ -16,17 +16,26 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 internal object AergisColors {
-    val Background = Color(0xFF08090B)
-    val Surface = Color(0xFF121419)
-    val Raised = Color(0xFF1C1F27)
-    val Outline = Color(0xFF3D424C)
-    val Text = Color(0xFFF2F1EC)
-    val Muted = Color(0xFFA8ADB7)
-    val Cyan = Color(0xFFF5C84B)
-    val Blue = Color(0xFFD4D8DF)
-    val Violet = Color(0xFFA985FF)
+    /** Near-black base keeps the accent colors intentional instead of decorative noise. */
+    val Background = Color(0xFF060709)
+    val Surface = Color(0xFF101216)
+    val Raised = Color(0xFF1B1F27)
+    val Deep = Color(0xFF0B0D11)
+    val Outline = Color(0xFF454B56)
+    val Text = Color(0xFFF4F5F6)
+    val Muted = Color(0xFFABB1BC)
+    val Silver = Color(0xFFD5DAE1)
+    val SilverBright = Color(0xFFF1F3F5)
+    val Yellow = Color(0xFFFFD34F)
+    val YellowDeep = Color(0xFFC7961C)
+    val Purple = Color(0xFFB184FF)
+    val PurpleDeep = Color(0xFF5B3B9B)
+    // Compatibility names keep status code readable while the palette is explicit above.
+    val Cyan = Yellow
+    val Blue = Silver
+    val Violet = Purple
     val Success = Color(0xFF73E6BB)
-    val Caution = Color(0xFFFFD18A)
+    val Caution = Yellow
     val Error = Color(0xFFFFB4BD)
 }
 

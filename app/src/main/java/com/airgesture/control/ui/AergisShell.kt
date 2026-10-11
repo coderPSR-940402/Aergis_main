@@ -6,12 +6,14 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -39,7 +41,10 @@ internal fun AergisShell(gesturesEnabled: Boolean, content: @Composable (AergisD
         modifier = Modifier.fillMaxSize().safeDrawingPadding(),
         containerColor = AergisColors.Background,
         bottomBar = {
-            NavigationBar(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp).background(AergisColors.Surface, RoundedCornerShape(24.dp)).border(1.dp, AergisColors.Outline.copy(alpha = .75f), RoundedCornerShape(24.dp)), containerColor = AergisColors.Surface, tonalElevation = 6.dp, windowInsets = WindowInsets(0, 0, 0, 0)) {
+            NavigationBar(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                .background(Brush.verticalGradient(listOf(AergisColors.Raised, AergisColors.Surface)), RoundedCornerShape(24.dp))
+                .border(1.dp, AergisColors.Silver.copy(alpha = .28f), RoundedCornerShape(24.dp)),
+                containerColor = Color.Transparent, tonalElevation = 10.dp, windowInsets = WindowInsets(0, 0, 0, 0)) {
                 AergisDestination.entries.forEach { destination ->
                     NavigationBarItem(
                         selected = destination == selected, onClick = { navigate(destination) },
@@ -48,7 +53,7 @@ internal fun AergisShell(gesturesEnabled: Boolean, content: @Composable (AergisD
                         label = { Text(stringResource(destination.label), style = MaterialTheme.typography.labelMedium) },
                         colors = NavigationBarItemDefaults.colors(
                             selectedTextColor = AergisColors.Cyan, unselectedTextColor = AergisColors.Muted,
-                            indicatorColor = AergisColors.Violet.copy(alpha = .28f)
+                            indicatorColor = AergisColors.Purple.copy(alpha = .32f)
                         )
                     )
                 }
