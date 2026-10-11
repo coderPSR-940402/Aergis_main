@@ -39,6 +39,13 @@ class ThumbMiddleClickTest {
         assertFalse(machine.processFrame(0.10f, 300L))
     }
 
+    @Test fun partialOpeningRearmsAndConfirmsWithoutLongDwell() {
+        val machine = ClickHysteresisStateMachine()
+        assertFalse(machine.processFrame(0.35f, 1L))
+        assertFalse(machine.processFrame(0.10f, 34L))
+        assertTrue(machine.processFrame(0.10f, 80L))
+    }
+
     @Test fun aBriefContactCannotClickAndSeparationAllowsAnotherClick() {
         val machine = ClickHysteresisStateMachine()
         machine.processFrame(0.8f, 1L)

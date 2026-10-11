@@ -105,6 +105,16 @@ class PrecisionPointerFilterTest {
         assertTrue(update(.7f, .5f, 1066).x > .6f)
     }
 
+    @Test fun normalTargetChangeRespondsWithinTwoFrames() {
+        val update = filter()
+        update(.20f, .5f, 1000)
+        update(.24f, .5f, 1033)
+        val first = update(.28f, .5f, 1066)
+        val second = update(.32f, .5f, 1099)
+        assertTrue("first coherent response should not stall", first.x > .235f)
+        assertTrue("second coherent response should follow the target", second.x > .285f)
+    }
+
     @Test fun reversingMotionAndUnevenFramesNeverExtrapolatePastTheMeasuredTarget() {
         val update = filter()
         var previous = update(.2f, .5f, 1000)

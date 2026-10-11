@@ -3,9 +3,9 @@ package com.airgesture.control.pointer
 /** Thumb-middle contact. Tracking must observe separation before accepting a click. */
 class ClickHysteresisStateMachine(
     private val engageThreshold: Float = 0.18f,
-    private val releaseThreshold: Float = 0.45f,
-    private val confirmationMs: Long = 60L,
-    private val refractoryPeriodMs: Long = 150L
+    private val releaseThreshold: Float = 0.32f,
+    private val confirmationMs: Long = 40L,
+    private val refractoryPeriodMs: Long = 110L
 ) {
     enum class State { IDLE, ENGAGING, CLICKED, REFRACTORY }
 
