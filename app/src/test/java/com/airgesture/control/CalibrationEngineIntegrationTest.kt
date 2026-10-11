@@ -163,12 +163,24 @@ class CalibrationEngineIntegrationTest {
         assertNotNull(AirRuntime.state.value.poseEvidence)
         publish(hand(), 2200L)
         publish(hand(), 2233L)
+        assertEquals("Two frames are not a deliberate release", GestureTransactionStateMachine.State.COOLDOWN, transaction.currentState())
+        publish(hand(), 2266L)
+        publish(hand(), 2300L)
         assertEquals(GestureTransactionStateMachine.State.NEUTRAL, transaction.currentState())
-        repeat(4) { publish(hand(), 2266L + it * 33, gestureName = "Open_Palm") }
+        repeat(5) { publish(hand(), 2333L + it * 33, gestureName = "Open_Palm") }
         assertEquals(GestureTransactionStateMachine.State.COOLDOWN, transaction.currentState())
         AirRuntime.controlMode = ControlMode.PAUSED
-        publish(hand(), 2400L, gestureName = "Victory")
+        publish(hand(), 2500L, gestureName = "Victory")
+        assertEquals("Pause must not rearm a held command", GestureTransactionStateMachine.State.COOLDOWN, transaction.currentState())
+        AirRuntime.controlMode = ControlMode.ARMED
+        repeat(20) { publish(hand(), 2550L + it * 40, gestureName = "Victory") }
+        assertEquals(GestureTransactionStateMachine.State.COOLDOWN, transaction.currentState())
+        publish(hand(), 3350L)
+        publish(hand(), 3450L)
         assertEquals(GestureTransactionStateMachine.State.NEUTRAL, transaction.currentState())
+        publish(hand(), 3500L, gestureName = "Victory")
+        publish(hand(), 3600L, gestureName = "Victory")
+        assertEquals(GestureTransactionStateMachine.State.COOLDOWN, transaction.currentState())
     }
 
     @Test
