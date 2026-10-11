@@ -78,11 +78,9 @@ internal class PrecisionPointerFilter {
         val derivativeAlpha = alpha(dt, 2f)
         velocityX += derivativeAlpha * (dx / dt - velocityX)
         velocityY += derivativeAlpha * (dy / dt - velocityY)
-        // Keep the cursor responsive even when the hand is nearly still. The old .65 Hz
-        // floor made a normal 30 fps frame take several updates to reach a new target,
-        // which felt like the pointer was trailing the fingertip. Motion still raises the
-        // cutoff aggressively, while the jump gate above continues to reject isolated spikes.
-        var cutoff = 2.0f + 20f * (hypot(velocityX, velocityY) - .06f).coerceAtLeast(0f)
+        // Keep stationary aim quiet; coherent travel receives the higher cutoff below.
+        // The jump gate remains responsible for rejecting isolated spikes.
+        var cutoff = .65f + 20f * (hypot(velocityX, velocityY) - .06f).coerceAtLeast(0f)
         recent.addLast(Sample(measured, timestampMs))
         while (recent.size > 16 || (recent.size > 4 && timestampMs - recent.first().timestampMs > 200L)) recent.removeFirst()
         if (recent.size >= 4) {
