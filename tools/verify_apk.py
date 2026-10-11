@@ -39,7 +39,7 @@ def main():
     parser.add_argument('apk', type=pathlib.Path)
     parser.add_argument('--aapt', required=True)
     parser.add_argument('--version-code', required=True, type=int)
-    parser.add_argument('--version-name', default='0.10.0-preview')
+    parser.add_argument('--version-name', required=True)
     args = parser.parse_args()
     badging = subprocess.run([args.aapt, 'dump', 'badging', str(args.apk)],
                              check=True, capture_output=True, text=True).stdout

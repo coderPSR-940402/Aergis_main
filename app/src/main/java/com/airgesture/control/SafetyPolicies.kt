@@ -86,7 +86,8 @@ internal object ForegroundContextPolicy {
         }
 
         val searchable = "$packageValue $classValue".lowercase()
-        val protectedToken = PROTECTED_TOKENS.firstOrNull { searchable.contains(it) }
+        val protectedToken = packageValue.takeIf { it in PROTECTED_PACKAGES }
+            ?: PROTECTED_TOKENS.firstOrNull { searchable.contains(it) }
         return if (protectedToken != null) {
             ForegroundContextState(
                 packageName = packageValue,
@@ -103,6 +104,10 @@ internal object ForegroundContextPolicy {
             )
         }
     }
+
+    // Exact matches avoid blocking unrelated packages. Do not blanket-block SystemUI:
+    // dismissing its shade may not emit a new foreground-window event.
+    private val PROTECTED_PACKAGES = setOf("com.android.settings")
 
     private val PROTECTED_TOKENS = listOf(
         "keyguard",

@@ -7,6 +7,20 @@ import org.junit.Test
 
 class SafetyPoliciesTest {
     @Test
+    fun settingsIsProtectedWithoutBlockingSimilarPackages() {
+        assertEquals(ForegroundSafety.PROTECTED,
+            ForegroundContextPolicy.evaluate("com.android.settings", "Settings").safety)
+        assertEquals(ForegroundSafety.SAFE,
+            ForegroundContextPolicy.evaluate("com.android.settings.example", "MainActivity").safety)
+    }
+
+    @Test
+    fun notificationShadeDoesNotLatchTheProtectedState() {
+        assertEquals(ForegroundSafety.SAFE,
+            ForegroundContextPolicy.evaluate("com.android.systemui", "NotificationShadeWindowView").safety)
+    }
+
+    @Test
     fun motionCancellationActivatesOnRotationAndReleasesAfterQuietPeriod() {
         val monitor = DeviceMotionCancellation(releaseHoldMs = 100L)
 

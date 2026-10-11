@@ -15,6 +15,7 @@ import android.hardware.display.DisplayManager
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.util.Log
 import android.util.Size
 import android.view.Display
 import android.view.Surface
@@ -22,6 +23,9 @@ import androidx.camera.core.CameraSelector
 import androidx.camera.core.ExperimentalGetImage
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.core.resolutionselector.AspectRatioStrategy
+import androidx.camera.core.resolutionselector.ResolutionSelector
+import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
@@ -76,6 +80,9 @@ class GestureCaptureService : Service(), LifecycleOwner, SensorEventListener {
         setupCamera()
     }
 
+    // Capture must be explicitly started again after Android kills this process.
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_NOT_STICKY
+
     private fun registerMotionSensors() {
         sensorManager = getSystemService(SENSOR_SERVICE) as SensorManager
         val gyro = sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
@@ -129,15 +136,30 @@ class GestureCaptureService : Service(), LifecycleOwner, SensorEventListener {
             runCatching {
                 val provider = future.get()
                 cameraProvider = provider
+                // The legacy 960x540 target negotiated 1088x1088 on the A54.
+                // Prefer a small 4:3 stream before spending work on RGBA conversion,
+                // inference and diagnostic image copies. Keep device-compatible fallbacks.
+                val resolutionSelector = ResolutionSelector.Builder()
+                    .setAspectRatioStrategy(AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY)
+                    .setResolutionStrategy(ResolutionStrategy(
+                        Size(640, 480),
+                        ResolutionStrategy.FALLBACK_RULE_CLOSEST_LOWER_THEN_HIGHER
+                    ))
+                    .build()
                 val useCase = ImageAnalysis.Builder()
                     .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
-                    .setTargetResolution(Size(960, 540))
+                    .setResolutionSelector(resolutionSelector)
                     .setTargetRotation(displayRotation())
                     .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                     .build()
                 analysis = useCase
+                var resolutionReported = false
                 useCase.setAnalyzer(exec) { image ->
                     try {
+                        if (!resolutionReported) {
+                            Log.i("GestureCaptureService", "Analysis frame: ${image.width}x${image.height}, rotation=${image.imageInfo.rotationDegrees}")
+                            resolutionReported = true
+                        }
                         visionEngine?.analyze(image)
                     } finally {
                         image.close()

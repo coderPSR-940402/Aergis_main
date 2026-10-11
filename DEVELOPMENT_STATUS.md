@@ -24,7 +24,6 @@
 - Gesture model preparation now fails closed on download, checksum, size, or missing-asset errors instead of producing a non-functional APK.
 - CI build permissions are read-only; successful baseline advancement runs in a separate write-scoped job.
 - Accessibility gesture injection helpers are private, and camera-permission denial is surfaced in the launcher UI.
-- The manual Gemini review workflow is read-only and explicitly recommendation-only.
 
 ## Verified results
 
