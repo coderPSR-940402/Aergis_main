@@ -144,10 +144,12 @@ private fun ActivationEmblem(active: Boolean, accent: Color) {
     Box(Modifier.size(64.dp).clearAndSetSemantics {}, contentAlignment = Alignment.Center) {
         Canvas(Modifier.fillMaxSize()) {
             val center = Offset(size.width / 2, size.height / 2)
-            // A bounded translucent halo, not a blur or animated shader.
-            if (active) drawCircle(Brush.radialGradient(listOf(accent.copy(alpha = .18f), Color.Transparent), center, size.width / 2))
-            drawCircle(accent.copy(alpha = .3f), size.width * .43f, style = Stroke(1.dp.toPx()))
-            drawCircle(accent.copy(alpha = .7f), size.width * .34f, style = Stroke(1.dp.toPx()))
+            // Bounded layered rings create depth without blur or animated shader cost.
+            if (active) drawCircle(Brush.radialGradient(listOf(accent.copy(alpha = .26f), Color.Transparent), center, size.width / 2))
+            drawCircle(AergisColors.Deep.copy(alpha = .9f), size.width * .43f)
+            drawCircle(Brush.radialGradient(listOf(AergisColors.Raised, AergisColors.Deep), center, size.width * .43f), size.width * .43f)
+            drawCircle(accent.copy(alpha = .34f), size.width * .43f, style = Stroke(1.dp.toPx()))
+            drawCircle(AergisColors.SilverBright.copy(alpha = .72f), size.width * .34f, style = Stroke(1.dp.toPx()))
         }
         AergisIcon(AergisGlyph.POWER, Modifier.size(26.dp), accent)
     }

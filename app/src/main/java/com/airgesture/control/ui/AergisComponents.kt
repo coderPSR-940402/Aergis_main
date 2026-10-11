@@ -19,6 +19,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -38,9 +39,18 @@ internal fun AergisPanel(
     val border by animateColorAsState(accent, tween(AergisMotion.StateMs, easing = AergisMotion.Easing), label = "panel state")
     Surface(
         modifier = modifier.fillMaxWidth(), shape = AergisShapes.Card,
-        color = AergisColors.Surface, border = BorderStroke(1.dp, border), tonalElevation = 2.dp, shadowElevation = 8.dp
+        color = AergisColors.Surface, border = BorderStroke(1.dp, border), tonalElevation = 3.dp, shadowElevation = 12.dp
     ) {
-        Column(Modifier.background(Brush.verticalGradient(listOf(AergisColors.Raised.copy(alpha = .72f), AergisColors.Surface)), AergisShapes.Card).padding(AergisSpace.Content), verticalArrangement = Arrangement.spacedBy(AergisSpace.Medium), content = content)
+        Column(
+            Modifier.background(
+                Brush.verticalGradient(listOf(
+                    AergisColors.Raised.copy(alpha = .92f),
+                    AergisColors.Surface,
+                    AergisColors.Deep.copy(alpha = .72f)
+                )), AergisShapes.Card
+            ).padding(AergisSpace.Content),
+            verticalArrangement = Arrangement.spacedBy(AergisSpace.Medium), content = content
+        )
     }
 }
 
@@ -53,11 +63,13 @@ internal fun AergisButton(
     primary: Boolean = false,
     content: @Composable RowScope.() -> Unit
 ) {
-    val brush = if (primary && enabled) Brush.linearGradient(listOf(AergisColors.Cyan, Color(0xFFE6A92D)))
-        else Brush.linearGradient(listOf(AergisColors.Raised, AergisColors.Raised))
+    val brush = if (primary && enabled) Brush.verticalGradient(listOf(AergisColors.SilverBright, AergisColors.Cyan, AergisColors.YellowDeep))
+        else Brush.verticalGradient(listOf(AergisColors.Raised, AergisColors.Surface))
     Button(
         onClick = onClick, enabled = enabled,
-        modifier = modifier.heightIn(min = if (primary) 56.dp else 48.dp).background(brush, AergisShapes.Control),
+        modifier = modifier.heightIn(min = if (primary) 56.dp else 48.dp)
+            .shadow(if (primary) 10.dp else 4.dp, AergisShapes.Control)
+            .background(brush, AergisShapes.Control),
         shape = AergisShapes.Control,
         colors = ButtonDefaults.buttonColors(
             containerColor = Color.Transparent,
@@ -121,7 +133,7 @@ internal fun AergisSegmentedTabs(labels: List<String>, selected: Int, onSelected
             val isSelected = index == selected
             Box(
                 Modifier.weight(1f).heightIn(min = 48.dp)
-                    .background(if (isSelected) AergisColors.Violet.copy(alpha = .22f) else Color.Transparent, AergisShapes.Segment)
+                    .background(if (isSelected) Brush.verticalGradient(listOf(AergisColors.Purple.copy(alpha = .48f), AergisColors.PurpleDeep.copy(alpha = .35f))) else Brush.verticalGradient(listOf(Color.Transparent, Color.Transparent)), AergisShapes.Segment)
                     .border(1.dp, if (isSelected) AergisColors.Violet.copy(alpha = .72f) else Color.Transparent, AergisShapes.Segment)
                     .selectable(selected = isSelected, onClick = { onSelected(index) }, role = Role.Tab),
                 contentAlignment = Alignment.Center
