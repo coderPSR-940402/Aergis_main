@@ -38,9 +38,9 @@ internal fun AergisPanel(
     val border by animateColorAsState(accent, tween(AergisMotion.StateMs, easing = AergisMotion.Easing), label = "panel state")
     Surface(
         modifier = modifier.fillMaxWidth(), shape = AergisShapes.Card,
-        color = AergisColors.Surface, border = BorderStroke(1.dp, border), tonalElevation = 0.dp
+        color = AergisColors.Surface, border = BorderStroke(1.dp, border), tonalElevation = 2.dp, shadowElevation = 8.dp
     ) {
-        Column(Modifier.padding(AergisSpace.Content), verticalArrangement = Arrangement.spacedBy(AergisSpace.Medium), content = content)
+        Column(Modifier.background(Brush.verticalGradient(listOf(AergisColors.Raised.copy(alpha = .72f), AergisColors.Surface)), AergisShapes.Card).padding(AergisSpace.Content), verticalArrangement = Arrangement.spacedBy(AergisSpace.Medium), content = content)
     }
 }
 
@@ -53,7 +53,7 @@ internal fun AergisButton(
     primary: Boolean = false,
     content: @Composable RowScope.() -> Unit
 ) {
-    val brush = if (primary && enabled) Brush.linearGradient(listOf(AergisColors.Cyan, AergisColors.Blue, AergisColors.Violet))
+    val brush = if (primary && enabled) Brush.linearGradient(listOf(AergisColors.Cyan, Color(0xFFE6A92D)))
         else Brush.linearGradient(listOf(AergisColors.Raised, AergisColors.Raised))
     Button(
         onClick = onClick, enabled = enabled,
@@ -114,20 +114,20 @@ internal fun AergisSlider(label: String, value: Float, range: ClosedFloatingPoin
 @Composable
 internal fun AergisSegmentedTabs(labels: List<String>, selected: Int, onSelected: (Int) -> Unit, modifier: Modifier = Modifier) {
     Row(
-        modifier.fillMaxWidth().background(AergisColors.Surface, AergisShapes.Control).padding(4.dp),
+        modifier.fillMaxWidth().background(AergisColors.Surface, AergisShapes.Control).border(1.dp, AergisColors.Outline.copy(alpha = .65f), AergisShapes.Control).padding(4.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         labels.forEachIndexed { index, label ->
             val isSelected = index == selected
             Box(
                 Modifier.weight(1f).heightIn(min = 48.dp)
-                    .background(if (isSelected) AergisColors.Raised else Color.Transparent, AergisShapes.Segment)
-                    .border(1.dp, if (isSelected) AergisColors.Cyan.copy(alpha = .6f) else Color.Transparent, AergisShapes.Segment)
+                    .background(if (isSelected) AergisColors.Violet.copy(alpha = .22f) else Color.Transparent, AergisShapes.Segment)
+                    .border(1.dp, if (isSelected) AergisColors.Violet.copy(alpha = .72f) else Color.Transparent, AergisShapes.Segment)
                     .selectable(selected = isSelected, onClick = { onSelected(index) }, role = Role.Tab),
                 contentAlignment = Alignment.Center
             ) {
                 Text(label, style = MaterialTheme.typography.labelLarge,
-                    color = if (isSelected) AergisColors.Cyan else AergisColors.Muted)
+                    color = if (isSelected) AergisColors.Text else AergisColors.Muted)
             }
         }
     }

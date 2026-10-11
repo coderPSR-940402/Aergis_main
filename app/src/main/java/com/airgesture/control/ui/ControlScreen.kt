@@ -53,6 +53,12 @@ internal fun ControlScreen(
         modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        item {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(R.string.ui_system_overview), style = MaterialTheme.typography.labelMedium, color = AergisColors.Muted)
+                AergisStatusChip(stringResource(if (runtime.running) R.string.ui_capture_on else R.string.ui_capture_off), if (runtime.running) AergisColors.Cyan else AergisColors.Muted)
+            }
+        }
         item { AergisSection(stringResource(R.string.ui_control_title), stringResource(R.string.ui_control_description)) }
         item {
             AergisPanel(accent = accent.copy(alpha = .5f)) {
@@ -105,7 +111,10 @@ internal fun ControlScreen(
             AergisPanel {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(stringResource(R.string.ui_tracking_snapshot), style = MaterialTheme.typography.titleMedium)
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(stringResource(R.string.ui_tracking_snapshot), style = MaterialTheme.typography.titleMedium)
+                        Text(stringResource(R.string.ui_live_description), style = MaterialTheme.typography.labelMedium, color = AergisColors.Muted)
+                    }
                     AergisMotionTrace(if (status == HomeStatus.TRACKING) AergisColors.Cyan else AergisColors.Muted.copy(alpha = .6f),
                         Modifier.size(72.dp, 28.dp))
                 }
@@ -147,15 +156,20 @@ private fun ActivationEmblem(active: Boolean, accent: Color) {
 @Composable
 private fun SnapshotRow(title: String, value: String, available: Boolean) {
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text(title, style = MaterialTheme.typography.bodyMedium, color = AergisColors.Muted)
-        Text(value, style = MaterialTheme.typography.titleSmall, color = if (available) AergisColors.Success else AergisColors.Text)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Text(title, style = MaterialTheme.typography.bodyMedium, color = AergisColors.Muted)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                androidx.compose.foundation.Canvas(Modifier.size(6.dp)) { drawCircle(if (available) AergisColors.Cyan else AergisColors.Outline) }
+                Text(value, style = MaterialTheme.typography.titleSmall, color = if (available) AergisColors.Text else AergisColors.Muted)
+            }
+        }
     }
 }
 
 @Composable
 private fun Shortcut(destination: AergisDestination, title: Int, description: Int, navigate: (AergisDestination) -> Unit) {
     AergisButton({ navigate(destination) }, Modifier.fillMaxWidth()) {
-        AergisIcon(destination.glyph, Modifier.size(24.dp))
+        AergisIcon(destination.glyph, Modifier.size(24.dp), AergisColors.Violet)
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(stringResource(title), style = MaterialTheme.typography.titleSmall)
