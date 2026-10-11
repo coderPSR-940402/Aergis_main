@@ -129,8 +129,10 @@ internal class HeldPointerTouch(
     }
 
     private companion object {
-        const val CHUNK_MS = 50L
-        const val WATCHDOG_MS = 25L
+        // Short continuation chunks reduce worst-case cursor/touch latency without
+        // flooding AccessibilityService with one dispatch per camera frame.
+        const val CHUNK_MS = 25L
+        const val WATCHDOG_MS = 15L
         const val MAX_IDLE_MS = 250L
     }
 }
