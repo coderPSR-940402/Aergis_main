@@ -22,6 +22,7 @@ import android.view.Surface
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ExperimentalGetImage
 import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.SessionConfig
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.core.resolutionselector.AspectRatioStrategy
 import androidx.camera.core.resolutionselector.ResolutionSelector
@@ -165,7 +166,30 @@ class GestureCaptureService : Service(), LifecycleOwner, SensorEventListener {
                         image.close()
                     }
                 }
-                provider.bindToLifecycle(this, CameraSelector.DEFAULT_FRONT_CAMERA, useCase)
+                val selector = CameraSelector.DEFAULT_FRONT_CAMERA
+                val defaultSession = SessionConfig.Builder(useCase).build()
+                val cameraInfo = selector.filter(provider.availableCameraInfos).first()
+                // Query this stream combination, not the sensor's unrestricted FPS list.
+                // 60 FPS capture is a target; inference throughput is measured separately.
+                val frameRate = runCatching {
+                    TrackingFrameRate.select(cameraInfo.getSupportedFrameRateRanges(defaultSession))
+                }.onFailure {
+                    Log.w("GestureCaptureService", "Frame-rate query failed; using compatible camera defaults", it)
+                }.getOrNull()
+                if (frameRate == null) {
+                    provider.bindToLifecycle(this, selector, useCase)
+                } else {
+                    val session = SessionConfig.Builder(useCase).setFrameRateRange(frameRate).build()
+                    try {
+                        provider.bindToLifecycle(this, selector, session)
+                        Log.i("GestureCaptureService", "Requested analysis FPS: $frameRate")
+                    } catch (unsupported: IllegalArgumentException) {
+                        // Preserve capture on devices whose advertised combination cannot bind.
+                        provider.unbind(useCase)
+                        Log.w("GestureCaptureService", "Requested FPS could not bind; using camera defaults", unsupported)
+                        provider.bindToLifecycle(this, selector, useCase)
+                    }
+                }
                 AirRuntime.cameraReady = true
             }.onFailure {
                 AirRuntime.cameraReady = false
