@@ -1,23 +1,14 @@
 package com.airgesture.control
 
-/**
- * Converts frame-level gesture candidates into deliberate one-shot commands.
- * Pointer movement remains continuous; this gate is for mapped system actions.
- */
+/** Deliberate one-shot classifier commands; independent of pointer and pinch touches. */
 internal class GestureTransactionStateMachine(
     private val minimumConfidence: Float = 0.65f,
-    private val stableFramesRequired: Int = 2,
-    private val neutralFramesRequired: Int = 2,
+    private val confirmationMs: Long = 100L,
+    private val neutralReleaseMs: Long = 100L,
     private val cooldownMs: Long = 700L,
     private val maxFrameGapMs: Long = 250L
 ) {
-    enum class State {
-        NEUTRAL,
-        CANDIDATE,
-        STABLE,
-        ARMED,
-        COOLDOWN
-    }
+    enum class State { NEUTRAL, CANDIDATE, COOLDOWN }
 
     data class Input(
         val action: AirAction,
@@ -27,94 +18,92 @@ internal class GestureTransactionStateMachine(
         val ownershipId: String?
     )
 
+    init {
+        require(minimumConfidence.isFinite() && minimumConfidence in 0f..1f)
+        require(confirmationMs > 0L && neutralReleaseMs > 0L)
+        require(cooldownMs >= 0L && maxFrameGapMs > 0L)
+    }
+
     private var state = State.NEUTRAL
     private var candidateAction = AirAction.NONE
     private var candidateOwner: String? = null
-    private var stableFrames = 0
-    private var neutralFrames = 0
+    private var candidateSince = 0L
+    private var neutralOwner: String? = null
+    private var neutralSince: Long? = null
     private var cooldownStartedAt = 0L
-    private var lastTimestampMs = Long.MIN_VALUE
+    private var lastTimestampMs: Long? = null
 
     fun process(input: Input): AirAction? {
-        if (input.timestampMs <= lastTimestampMs) return null
-        if (lastTimestampMs != Long.MIN_VALUE && input.timestampMs - lastTimestampMs > maxFrameGapMs) {
-            reset()
-        }
+        if (input.timestampMs < 0L) return null
+        val previous = lastTimestampMs
+        if (previous != null && input.timestampMs <= previous) return null
+        if (previous != null && input.timestampMs - previous > maxFrameGapMs) reset()
         lastTimestampMs = input.timestampMs
 
-        val valid = input.tracking &&
-            input.action != AirAction.NONE &&
-            input.confidence >= minimumConfidence
-        if (!valid) {
-            return processNeutral(input.timestampMs)
+        // Missing/ambiguous tracking is absence of evidence, never proof of release.
+        if (!input.tracking || input.ownershipId.isNullOrBlank() ||
+            !input.confidence.isFinite() || input.confidence !in 0f..1f) {
+            discardEvidence()
+            return null
         }
-
-        neutralFrames = 0
-        if (state == State.COOLDOWN) return null
-
-        val sameCandidate = candidateAction == input.action && candidateOwner == input.ownershipId
-        if (!sameCandidate) {
-            candidateAction = input.action
-            candidateOwner = input.ownershipId
-            stableFrames = 1
-            state = State.CANDIDATE
+        if (input.action == AirAction.NONE) {
+            processNeutral(input)
+            return null
+        }
+        if (input.confidence < minimumConfidence) {
+            discardEvidence()
             return null
         }
 
-        when (state) {
-            State.NEUTRAL -> {
-                stableFrames = 1
-                state = State.CANDIDATE
-            }
-            State.CANDIDATE -> {
-                stableFrames++
-                if (stableFrames >= stableFramesRequired.coerceAtLeast(1)) {
-                    state = State.STABLE
-                }
-            }
-            State.STABLE -> state = State.ARMED
-            State.ARMED -> {
-                state = State.COOLDOWN
-                cooldownStartedAt = input.timestampMs
-                return candidateAction
-            }
-            State.COOLDOWN -> Unit
+        neutralSince = null
+        neutralOwner = null
+        if (state == State.COOLDOWN) return null
+
+        if (state != State.CANDIDATE || candidateAction != input.action ||
+            candidateOwner != input.ownershipId) {
+            candidateAction = input.action
+            candidateOwner = input.ownershipId
+            candidateSince = input.timestampMs
+            state = State.CANDIDATE
+            return null
         }
-        return null
+        if (input.timestampMs - candidateSince < confirmationMs) return null
+
+        state = State.COOLDOWN
+        cooldownStartedAt = input.timestampMs
+        return candidateAction
     }
 
     fun currentState(): State = state
 
+    /** Loss/recovery resets evidence, but cannot replay a command still being held. */
     fun reset() {
-        state = State.NEUTRAL
-        candidateAction = AirAction.NONE
-        candidateOwner = null
-        stableFrames = 0
-        neutralFrames = 0
-        cooldownStartedAt = 0L
-        lastTimestampMs = Long.MIN_VALUE
+        discardEvidence()
+        lastTimestampMs = null
     }
 
-    private fun processNeutral(timestampMs: Long): AirAction? {
-        if (state == State.COOLDOWN) {
-            if (timestampMs - cooldownStartedAt >= cooldownMs) {
-                neutralFrames++
-                if (neutralFrames >= neutralFramesRequired.coerceAtLeast(1)) {
-                    state = State.NEUTRAL
-                    candidateAction = AirAction.NONE
-                    candidateOwner = null
-                    stableFrames = 0
-                    neutralFrames = 0
-                }
-            }
-            return null
-        }
-
-        state = State.NEUTRAL
+    private fun discardEvidence() {
+        if (state != State.COOLDOWN) state = State.NEUTRAL
         candidateAction = AirAction.NONE
         candidateOwner = null
-        stableFrames = 0
-        neutralFrames = 0
-        return null
+        candidateSince = 0L
+        neutralOwner = null
+        neutralSince = null
+    }
+
+    private fun processNeutral(input: Input) {
+        if (state != State.COOLDOWN) {
+            discardEvidence()
+            return
+        }
+        if (neutralSince == null || neutralOwner != input.ownershipId) {
+            neutralSince = input.timestampMs
+            neutralOwner = input.ownershipId
+        }
+        if (input.timestampMs - checkNotNull(neutralSince) >= neutralReleaseMs &&
+            input.timestampMs - cooldownStartedAt >= cooldownMs) {
+            state = State.NEUTRAL
+            discardEvidence()
+        }
     }
 }
