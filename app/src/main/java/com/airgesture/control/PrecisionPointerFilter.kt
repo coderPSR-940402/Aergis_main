@@ -43,7 +43,7 @@ internal class PrecisionPointerFilter {
         val measured = PointerCoordinateMapper.Point(x.coerceIn(0f, 1f), y.coerceIn(0f, 1f))
         val elapsed = lastTimestamp?.let { timestampMs - it }
         lastTimestamp = timestampMs
-        if (previous == null || elapsed == null || elapsed > 250L) {
+        if (previous == null || elapsed == null || elapsed > 500L) {
             velocityX = 0f; velocityY = 0f; pendingJump = null
             recent.clear(); recent.addLast(Sample(measured, timestampMs))
             measurement = measured; output = measured; measurementTrusted = true

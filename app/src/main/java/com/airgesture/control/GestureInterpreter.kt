@@ -48,7 +48,7 @@ class GestureInterpreter(
             resetActions()
             return null
         }
-        val poseEvidence = poseEvidenceEvaluator.evaluate(landmarks, aspectRatio)
+        val poseEvidence = poseEvidenceEvaluator.evaluatePointer(landmarks, aspectRatio)
         val rawIndexTip = landmarks[KinematicValidator.INDEX_TIP]
         // Position authority is exactly landmark 8; anatomy belongs to the action channel.
         if (!rawIndexTip.x.isFinite() || !rawIndexTip.y.isFinite()) {
