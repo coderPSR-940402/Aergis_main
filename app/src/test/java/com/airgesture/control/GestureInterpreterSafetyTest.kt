@@ -19,7 +19,7 @@ class GestureInterpreterSafetyTest {
         assertTrue(first.isPinchApproaching)
 
         val invalidPose = closeFingerPose().toMutableList().apply {
-            this[KinematicValidator.WRIST] = Point3D(1.1f, 0.5f)
+            this[KinematicValidator.THUMB_TIP] = Point3D(1.1f, 0.5f)
         }
         val rejected = interpreter.processFrame(invalidPose, 34L)!!
 
