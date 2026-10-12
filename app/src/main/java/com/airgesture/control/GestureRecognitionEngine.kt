@@ -4,8 +4,6 @@ import android.content.Context
 import android.content.res.Configuration
 import android.os.SystemClock
 import android.util.Log
-import androidx.camera.core.ExperimentalGetImage
-import androidx.camera.core.ImageProxy
 import com.airgesture.control.filtering.KinematicValidator
 import com.airgesture.control.filtering.Point3D
 import com.airgesture.control.filtering.PoseGeometryEvidenceEvaluator
@@ -22,7 +20,6 @@ import java.util.concurrent.atomic.AtomicBoolean
 /** On-device MediaPipe gesture and hand-landmark inference. */
 class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
     private val closed = AtomicBoolean(false)
-    private val frameInput = CameraFrameInput()
     private val mappings = ActionMappingStore(context)
     private val calibrationStore = PointerCalibrationStore(context)
     private val pointerMapper = LivePointerMapper {
@@ -75,8 +72,8 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         FrameTimeSource.CAMERA_UPTIME, FrameTimeSource.ANALYZER_UPTIME -> SystemClock.uptimeMillis()
     }
 
-    @ExperimentalGetImage
-    fun analyze(image: ImageProxy) {
+    internal fun analyze(frame: CapturedCameraFrame) {
+        val image = frame.data
         if (closed.get()) return
         val diagnosticStartedAt = SystemClock.uptimeMillis()
         var diagnosticResult: GestureRecognizerResult? = null
@@ -89,10 +86,10 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             metrics.recordAnalyzerFrame(analysisStartUptime)
             // One clock domain for the whole pipeline: the camera frame's own timestamp. Detected once
             // per session so frame age, inter-frame gaps and every filter dt describe physical time.
-            val cameraNs = image.imageInfo.timestamp
-            val source = timeSource ?: CameraClock.detect(cameraNs, analysisStartUptime,
-                SystemClock.elapsedRealtime()).also { timeSource = it }
-            val timestamp = if (source == FrameTimeSource.ANALYZER_UPTIME) analysisStartUptime else cameraNs / 1_000_000L
+            val cameraNs = image.timestampNs
+            val source = timeSource ?: CameraClock.detect(cameraNs, frame.receivedUptimeMs,
+                frame.receivedElapsedMs).also { timeSource = it }
+            val timestamp = if (source == FrameTimeSource.ANALYZER_UPTIME) frame.receivedUptimeMs else cameraNs / 1_000_000L
             val frameAgeAtStart = (nowIn(source) - timestamp).coerceAtLeast(0L)
             // MediaPipe VIDEO mode needs strictly increasing timestamps; never submit older work.
             if (timestamp <= lastSubmittedTimestampMs) {
@@ -104,11 +101,11 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             if (closed.get()) return
             lastSubmittedTimestampMs = timestamp
             val preStart = SystemClock.uptimeMillis()
-            val mpImage = frameInput.create(image)
+            val mpImage = frame.createImage()
             val preEnd = SystemClock.uptimeMillis()
             try {
                 val imageProcessingOptions = ImageProcessingOptions.builder()
-                    .setRotationDegrees(image.imageInfo.rotationDegrees)
+                    .setRotationDegrees(image.rotationDegrees)
                     .build()
                 val result = currentRecognizer.recognizeForVideo(
                     mpImage,
@@ -117,14 +114,15 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 )
                 val inferenceEnd = SystemClock.uptimeMillis()
                 diagnosticResult = result
-                frameAspectRatio = CameraCoordinateTransform.uprightAspectRatio(image.width, image.height, image.imageInfo.rotationDegrees)
-                publish(result, timestamp, nowIn(source), image.imageInfo.rotationDegrees)
+                frameAspectRatio = CameraCoordinateTransform.uprightAspectRatio(image.width, image.height, image.rotationDegrees)
+                publish(result, timestamp, nowIn(source), image.rotationDegrees)
                 val publishEnd = SystemClock.uptimeMillis()
                 lastPipelineAgeMs = (nowIn(source) - timestamp).coerceAtLeast(0L)
                 metrics.recordFrame(publishEnd, frameAgeAtStart, preEnd - preStart,
                     inferenceEnd - preEnd, publishEnd - inferenceEnd, lastPipelineAgeMs)
                 diagnosticTrace?.put("timing", org.json.JSONObject()
                     .put("timeSource", source.name).put("frameAgeAtStartMs", frameAgeAtStart)
+                    .put("captureToAnalysisMs", analysisStartUptime - frame.receivedUptimeMs)
                     .put("preprocessMs", preEnd - preStart).put("inferenceMs", inferenceEnd - preEnd)
                     .put("publishMs", publishEnd - inferenceEnd).put("frameToPointerMs", lastPipelineAgeMs))
             } finally {

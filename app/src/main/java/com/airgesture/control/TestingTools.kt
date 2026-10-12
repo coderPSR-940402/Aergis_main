@@ -109,6 +109,11 @@ internal object TestingTools {
     @JvmOverloads
     fun onFrame(context: Context, image: ImageProxy, result: GestureRecognizerResult?, timestamp: Long,
         inferenceMs: Long, trace: JSONObject?, error: String?, pipelineAgeMs: Long = -1L) {
+        onFrame(context, RgbaFrameData.fromImage(image), result, timestamp, inferenceMs, trace, error, pipelineAgeMs)
+    }
+
+    fun onFrame(context: Context, image: RgbaFrameData, result: GestureRecognizerResult?, timestamp: Long,
+        inferenceMs: Long, trace: JSONObject?, error: String?, pipelineAgeMs: Long = -1L) {
         val diagnosticStarted = SystemClock.uptimeMillis()
         val frameSession = synchronized(lock) { session }
         val recording = frameSession != null
@@ -118,9 +123,8 @@ internal object TestingTools {
         var imageError: String? = null
         if (previewDue || imageDue) {
             bitmap = runCatching {
-                val plane = image.planes.first()
-                DiagnosticCameraImage.decodeRgba(plane.buffer, image.width, image.height, plane.rowStride,
-                    plane.pixelStride, image.imageInfo.rotationDegrees, if (imageDue) 960 else 480)
+                DiagnosticCameraImage.decodeRgba(image.buffer, image.width, image.height, image.rowStride,
+                    image.pixelStride, image.rotationDegrees, if (imageDue) 960 else 480)
             }.getOrElse {
                 imageError = it.message ?: it.javaClass.simpleName
                 if (imageDue) imageFailures.incrementAndGet()
@@ -130,7 +134,7 @@ internal object TestingTools {
                 lastPreview = timestamp
                 synchronized(lock) {
                     if (state.value.mirror) _mirrorFrame.value = MirrorFrame(bitmap,
-                        if (bitmap == null) emptyList() else DiagnosticFrameData.mirrorHands(result, image.imageInfo.rotationDegrees),
+                        if (bitmap == null) emptyList() else DiagnosticFrameData.mirrorHands(result, image.rotationDegrees),
                         when {
                             bitmap == null -> context.getString(R.string.testing_mirror_unavailable)
                             error != null -> context.getString(R.string.testing_mirror_inference_error)

@@ -24,6 +24,7 @@ class GestureCaptureLifecycleTest {
         shadowOf(RuntimeEnvironment.getApplication()).denyPermissions(Manifest.permission.CAMERA)
         val controller = Robolectric.buildService(GestureCaptureService::class.java).create()
         val service = controller.get()
+        val captureExecutor = field("captureExecutor").get(service) as java.util.concurrent.ExecutorService
         val executorField = field("executor")
         (executorField.get(service) as java.util.concurrent.ExecutorService).shutdown()
         val executor = QueuedExecutor()
@@ -32,6 +33,7 @@ class GestureCaptureLifecycleTest {
         var inferenceCompleted = false
         executor.execute { inferenceCompleted = true }
         controller.destroy()
+        assertTrue("Capture worker must stop accepting camera callbacks", captureExecutor.isShutdown)
         assertTrue(executor.isShutdown)
         assertFalse("Do not interrupt native inference", executor.interrupted)
         assertEquals("Disposal must follow the pending inference", 2, executor.tasks.size)
@@ -50,6 +52,32 @@ class GestureCaptureLifecycleTest {
         assertTrue(AirRuntime.pointerTracking)
         AirRuntime.visionReady = false
         AirRuntime.setPointerState(.5f, .5f, false)
+    }
+
+    @Test fun stopDiscardsPendingCameraPixelsBeforeNativeDisposal() {
+        shadowOf(RuntimeEnvironment.getApplication()).denyPermissions(Manifest.permission.CAMERA)
+        val controller = Robolectric.buildService(GestureCaptureService::class.java).create()
+        val service = controller.get()
+        val executorField = field("executor")
+        (executorField.get(service) as java.util.concurrent.ExecutorService).shutdown()
+        val executor = QueuedExecutor()
+        executorField.set(service, executor)
+        val pool = FrameBufferPool()
+        val lease = pool.acquire(4)!!
+        val frame = CapturedCameraFrame(
+            RgbaFrameData(lease.buffer, 1, 1, 4, 4, 0, 1_000_000L, "[0,0][1,1]"),
+            1L, 1L, lease
+        )
+        var consumed = false
+        val processor = LatestFrameProcessor<CapturedCameraFrame>(executor, { consumed = true }, { throw it })
+        field("frameProcessor").set(service, processor)
+        processor.offer(frame)
+        controller.destroy()
+        val recycled = pool.acquire(4)!!
+        assertSame("Pending pixels must be recycled on stop", lease.buffer, recycled.buffer)
+        while (executor.tasks.isNotEmpty()) executor.tasks.removeFirst().run()
+        assertFalse("A stopped session must not consume pending camera data", consumed)
+        recycled.close()
     }
 
     @Test fun displayRotationUpdatesTheAnalysisUseCaseAndInvalidatesPendingActions() {
