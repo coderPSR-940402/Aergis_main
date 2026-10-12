@@ -15,13 +15,15 @@ This is the guided manual-capture portion of roadmap unit 4. Automatic hands-fre
 - `GuidedCalibrationFlowTest.kt`: Robolectric regressions for start disarming, cancel preserving profile and clearing samples, save closing draft, rejected sample not advancing.
 
 ## Acceptance
-- [ ] Observe regressions fail on baseline in CI before changing production behavior.
+- [x] Observe regressions fail on baseline in CI before changing production behavior.
 - [ ] Implement guided capture controls before advanced controls; full-width buttons support narrow screens and large text.
 - [ ] Save enabled only in READY; invalid results retain error/retry path; Cancel changes no stored profile.
 - [ ] Calibration start disarms actions; no automatic rearm on exit.
-- [ ] Keep mapping equations, hand/orientation profile separation, camera, MediaPipe, gesture recognition and accessibility dispatch untouched.
+- [ ] Keep mapping equations, hand/orientation profile separation, camera, MediaPipe, classifier decisions and accessibility dispatch unchanged. Add a narrow READY-only raw preview path with no pointer/action authority.
 - [ ] Unit suite/lint/debug/release/APK verification pass in CI.
 - [ ] A54: four comfortable corners, save, edge reach, cancel preservation, portrait/landscape and large text.
 
 ## Execution notes
 User authorized continuing implementation and PR publication. Physical-device acceptance remains separate from CI. Existing raw samples have no timestamp, so this PR must not advertise stale-sample rejection or automatic stability confirmation.
+
+CI #248 confirmed five expected failures before engine implementation (272 tests total). Disarming previously suppressed raw calibration samples. The integration change supplies upright raw coordinates only for fresh, selected hands in READY, with safe foreground and no device motion. It hides the system pointer and resets touch state; existing command eligibility remains disarmed. Two integration tests cover this boundary, missing hands, protected context and motion. Leaving the calibration screen cancels its unsaved draft.

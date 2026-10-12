@@ -22,6 +22,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -36,6 +37,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.core.content.FileProvider
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.flow.sample
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -196,15 +199,18 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun applyCalibration(profile: PointerCalibrationProfile) {
+    private fun applyCalibration(profile: PointerCalibrationProfile): Boolean {
         if (PointerCalibrationStore(this).save(profile, handPreference, isLandscape())) {
             calibrationDraft = profile
             calibrationEnabled = true
             calibrationMessage = getString(R.string.calibration_enabled)
+            return true
         }
+        return false
     }
 
     private fun startCalibration() {
+        AirRuntime.controlMode = ControlMode.READY
         calibrationSession.start()
         calibrationState = calibrationSession.state()
         calibrationSampleCount = calibrationSession.sampleCount()
@@ -212,6 +218,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun captureCalibrationSample() {
+        if (AirRuntime.controlMode != ControlMode.READY) return
         val rawPointer = AirRuntime.rawPointerSnapshot()
         val accepted = rawPointer.tracking && calibrationSession.addSample(rawPointer.x, rawPointer.y)
         calibrationState = calibrationSession.state()
@@ -224,6 +231,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun completeCalibration() {
+        if (AirRuntime.controlMode != ControlMode.READY) return
         val profile = calibrationSession.complete()
         calibrationState = calibrationSession.state()
         calibrationSampleCount = calibrationSession.sampleCount()
@@ -231,7 +239,18 @@ class MainActivity : ComponentActivity() {
             calibrationMessage = getString(R.string.calibration_invalid)
             return
         }
-        applyCalibration(profile.copy(curveX = calibrationDraft.curveX, curveY = calibrationDraft.curveY))
+        if (applyCalibration(profile.copy(curveX = calibrationDraft.curveX, curveY = calibrationDraft.curveY))) {
+            calibrationSession.reset()
+            calibrationState = calibrationSession.state()
+            calibrationSampleCount = 0
+        }
+    }
+
+    private fun cancelCalibration() {
+        calibrationSession.reset()
+        calibrationState = calibrationSession.state()
+        calibrationSampleCount = 0
+        calibrationMessage = getString(R.string.calibration_cancelled)
     }
 
     private fun disableCalibration() {
@@ -348,14 +367,19 @@ class MainActivity : ComponentActivity() {
     @OptIn(kotlinx.coroutines.FlowPreview::class)
     @Composable
     private fun CalibrationScreen() {
+        DisposableEffect(Unit) {
+            onDispose { if (calibrationState != PointerCalibrationSession.State.IDLE) cancelCalibration() }
+        }
         val flow = remember { AirRuntime.uiState.sample(250L) }
         val runtime by flow.collectAsStateWithLifecycle(initialValue = AirRuntime.uiStateSnapshot())
+        val rawTrackingFlow = remember { AirRuntime.state.map { it.rawPointer.tracking }.distinctUntilChanged() }
+        val rawTracking by rawTrackingFlow.collectAsStateWithLifecycle(initialValue = AirRuntime.rawPointerSnapshot().tracking)
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            item { CalibrationCard(runtime.pointerTracking) }
+            item { CalibrationCard(rawTracking, runtime.controlMode) }
             item { PracticeCard(runtime.controlMode) }
         }
     }
@@ -473,108 +497,92 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
-    private fun CalibrationCard(pointerTracking: Boolean) {
+    private fun CalibrationCard(sampleAvailable: Boolean, controlMode: ControlMode) {
+        var advanced by rememberSaveable { mutableStateOf(false) }
+        val capturing = calibrationState != PointerCalibrationSession.State.IDLE
         AergisPanel {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text(
-                    stringResource(R.string.calibration_title),
-                    style = MaterialTheme.typography.titleMedium
-                )
-                Text(
-                    stringResource(
-                        R.string.calibration_status,
-                        if (calibrationEnabled) {
-                            stringResource(R.string.calibration_status_enabled)
-                        } else {
-                            stringResource(R.string.calibration_status_disabled)
-                        },
-                        calibrationSampleCount
-                    )
-                )
-                Text(stringResource(
-                    R.string.calibration_context,
-                    stringResource(when (handPreference) {
-                        ControlHandPreference.LEFT -> R.string.hand_left
-                        ControlHandPreference.RIGHT -> R.string.hand_right
-                        ControlHandPreference.EITHER -> R.string.hand_either
-                    }),
-                    stringResource(if (isLandscape()) R.string.orientation_landscape else R.string.orientation_portrait)
-                ))
-                Text(stringResource(R.string.calibration_reach_guidance))
-                Text(stringResource(R.string.ui_pointer_preview), color = AergisColors.Muted, style = MaterialTheme.typography.labelMedium)
-                CalibrationPreview()
-                calibrationMessage?.let { Text(it) }
-                AergisButton(
-                    onClick = { applyCalibration(PointerCalibrationProfile.COMFORTABLE_REACH) },
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text(stringResource(R.string.calibration_comfortable)) }
-                CalibrationSlider(R.string.calibration_left_bound, calibrationDraft.left, 0f..1f) {
-                    applyCalibration(calibrationDraft.copy(left = it.coerceAtMost(calibrationDraft.right - PointerCalibrationProfile.MIN_ACTIVE_SPAN)))
-                }
-                CalibrationSlider(R.string.calibration_right_bound, calibrationDraft.right, 0f..1f) {
-                    applyCalibration(calibrationDraft.copy(right = it.coerceAtLeast(calibrationDraft.left + PointerCalibrationProfile.MIN_ACTIVE_SPAN)))
-                }
-                CalibrationSlider(R.string.calibration_top_bound, calibrationDraft.top, 0f..1f) {
-                    applyCalibration(calibrationDraft.copy(top = it.coerceAtMost(calibrationDraft.bottom - PointerCalibrationProfile.MIN_ACTIVE_SPAN)))
-                }
-                CalibrationSlider(R.string.calibration_bottom_bound, calibrationDraft.bottom, 0f..1f) {
-                    applyCalibration(calibrationDraft.copy(bottom = it.coerceAtLeast(calibrationDraft.top + PointerCalibrationProfile.MIN_ACTIVE_SPAN)))
-                }
-                CalibrationSlider(R.string.calibration_curve_x, calibrationDraft.curveX,
-                    PointerCalibrationProfile.MIN_CURVE..PointerCalibrationProfile.MAX_CURVE) {
-                    applyCalibration(calibrationDraft.copy(curveX = it))
-                }
-                CalibrationSlider(R.string.calibration_curve_y, calibrationDraft.curveY,
-                    PointerCalibrationProfile.MIN_CURVE..PointerCalibrationProfile.MAX_CURVE) {
-                    applyCalibration(calibrationDraft.copy(curveY = it))
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    AergisButton(
-                        onClick = { startCalibration() },
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text(stringResource(R.string.calibration_start))
+            Text(stringResource(R.string.calibration_title), style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.calibration_context,
+                stringResource(when (handPreference) {
+                    ControlHandPreference.LEFT -> R.string.hand_left
+                    ControlHandPreference.RIGHT -> R.string.hand_right
+                    ControlHandPreference.EITHER -> R.string.hand_either
+                }), stringResource(if (isLandscape()) R.string.orientation_landscape else R.string.orientation_portrait)))
+            Text(stringResource(R.string.calibration_status,
+                stringResource(if (calibrationEnabled) R.string.calibration_status_enabled else R.string.calibration_status_disabled),
+                calibrationSampleCount))
+            Text(stringResource(R.string.calibration_raw_preview), color = AergisColors.Muted,
+                style = MaterialTheme.typography.labelMedium)
+            CalibrationPreview(rawCoordinates = true)
+            calibrationMessage?.let { Text(it) }
+            if (capturing) {
+                Text(stringResource(if (controlMode == ControlMode.READY) R.string.calibration_actions_disarmed
+                    else R.string.calibration_restart_disarmed), color = AergisColors.Caution)
+                Text(stringResource(if (calibrationState == PointerCalibrationSession.State.INVALID) R.string.calibration_invalid
+                    else when (calibrationSampleCount) {
+                    0 -> R.string.calibration_corner_top_left
+                    1 -> R.string.calibration_corner_top_right
+                    2 -> R.string.calibration_corner_bottom_right
+                    3 -> R.string.calibration_corner_bottom_left
+                    else -> R.string.calibration_review_corners
+                }), style = MaterialTheme.typography.titleMedium)
+                if (!sampleAvailable) Text(stringResource(R.string.calibration_wait_for_tracking), color = AergisColors.Caution)
+                if (calibrationState != PointerCalibrationSession.State.INVALID) {
+                    AergisButton(onClick = ::captureCalibrationSample, enabled = sampleAvailable && controlMode == ControlMode.READY,
+                        primary = calibrationSampleCount < 4, modifier = Modifier.fillMaxWidth()) {
+                        Text(stringResource(if (calibrationSampleCount < 4) R.string.calibration_capture_corner else R.string.calibration_add_sample))
                     }
-                    AergisButton(
-                        onClick = { captureCalibrationSample() },
-                        enabled = (calibrationState == PointerCalibrationSession.State.COLLECTING ||
-                            calibrationState == PointerCalibrationSession.State.READY) &&
-                            pointerTracking,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text(stringResource(R.string.calibration_capture))
+                    AergisButton(onClick = ::completeCalibration,
+                        enabled = calibrationState == PointerCalibrationSession.State.READY && controlMode == ControlMode.READY,
+                        primary = calibrationSampleCount >= 4, modifier = Modifier.fillMaxWidth()) {
+                        Text(stringResource(R.string.calibration_save))
                     }
                 }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    AergisButton(
-                        onClick = { completeCalibration() },
-                        enabled = calibrationState == PointerCalibrationSession.State.READY,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text(stringResource(R.string.calibration_complete))
-                    }
-                    AergisButton(
-                        onClick = { disableCalibration() },
-                        enabled = calibrationEnabled,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text(stringResource(R.string.calibration_disable))
-                    }
+                AergisButton(onClick = ::startCalibration, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.calibration_restart))
                 }
-                AergisButton(
-                    onClick = { resetCalibration() },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(stringResource(R.string.calibration_reset_button))
+                AergisButton(onClick = ::cancelCalibration, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.calibration_cancel))
+                }
+            } else {
+                Text(stringResource(R.string.calibration_guided_intro))
+                if (!sampleAvailable) Text(stringResource(R.string.calibration_wait_for_tracking), color = AergisColors.Caution)
+                AergisButton(onClick = { advanced = false; startCalibration() }, enabled = sampleAvailable,
+                    primary = true, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.calibration_begin_guided))
+                }
+                AergisButton(onClick = { advanced = !advanced }, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(if (advanced) R.string.calibration_hide_advanced else R.string.calibration_show_advanced))
+                }
+                if (advanced) {
+                    Text(stringResource(R.string.calibration_reach_guidance))
+                    AergisButton(onClick = { applyCalibration(PointerCalibrationProfile.COMFORTABLE_REACH) },
+                        modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.calibration_comfortable)) }
+                    CalibrationSlider(R.string.calibration_left_bound, calibrationDraft.left, 0f..1f) {
+                        applyCalibration(calibrationDraft.copy(left = it.coerceAtMost(calibrationDraft.right - PointerCalibrationProfile.MIN_ACTIVE_SPAN)))
+                    }
+                    CalibrationSlider(R.string.calibration_right_bound, calibrationDraft.right, 0f..1f) {
+                        applyCalibration(calibrationDraft.copy(right = it.coerceAtLeast(calibrationDraft.left + PointerCalibrationProfile.MIN_ACTIVE_SPAN)))
+                    }
+                    CalibrationSlider(R.string.calibration_top_bound, calibrationDraft.top, 0f..1f) {
+                        applyCalibration(calibrationDraft.copy(top = it.coerceAtMost(calibrationDraft.bottom - PointerCalibrationProfile.MIN_ACTIVE_SPAN)))
+                    }
+                    CalibrationSlider(R.string.calibration_bottom_bound, calibrationDraft.bottom, 0f..1f) {
+                        applyCalibration(calibrationDraft.copy(bottom = it.coerceAtLeast(calibrationDraft.top + PointerCalibrationProfile.MIN_ACTIVE_SPAN)))
+                    }
+                    CalibrationSlider(R.string.calibration_curve_x, calibrationDraft.curveX,
+                        PointerCalibrationProfile.MIN_CURVE..PointerCalibrationProfile.MAX_CURVE) {
+                        applyCalibration(calibrationDraft.copy(curveX = it))
+                    }
+                    CalibrationSlider(R.string.calibration_curve_y, calibrationDraft.curveY,
+                        PointerCalibrationProfile.MIN_CURVE..PointerCalibrationProfile.MAX_CURVE) {
+                        applyCalibration(calibrationDraft.copy(curveY = it))
+                    }
+                    AergisButton(onClick = ::disableCalibration, enabled = calibrationEnabled,
+                        modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.calibration_disable)) }
+                    AergisButton(onClick = ::resetCalibration, modifier = Modifier.fillMaxWidth()) {
+                        Text(stringResource(R.string.calibration_reset_button))
+                    }
                 }
             }
         }
