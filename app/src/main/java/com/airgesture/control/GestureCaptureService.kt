@@ -37,6 +37,8 @@ import kotlin.math.sqrt
 
 class GestureCaptureService : Service(), LifecycleOwner, SensorEventListener {
     private var executor: ExecutorService? = null
+    private var captureExecutor: ExecutorService? = null
+    private var frameProcessor: LatestFrameProcessor<CapturedCameraFrame>? = null
     private var cameraProvider: ProcessCameraProvider? = null
     private var visionEngine: GestureRecognitionEngine? = null
     private var analysis: ImageAnalysis? = null
@@ -64,6 +66,7 @@ class GestureCaptureService : Service(), LifecycleOwner, SensorEventListener {
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_START)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
         executor = Executors.newSingleThreadExecutor()
+        captureExecutor = Executors.newSingleThreadExecutor()
         createChannel()
         startForeground(NOTIFICATION_ID, notification())
         AirRuntime.running = true
@@ -131,6 +134,13 @@ class GestureCaptureService : Service(), LifecycleOwner, SensorEventListener {
             return
         }
         val exec = executor ?: return
+        val captureExec = captureExecutor ?: return
+        val engine = visionEngine ?: return
+        val input = CameraFrameInput()
+        val processor = LatestFrameProcessor<CapturedCameraFrame>(exec, engine::analyze) {
+            Log.e("GestureCaptureService", "Frame processing failed", it)
+        }
+        frameProcessor = processor
         val future = ProcessCameraProvider.getInstance(this)
         future.addListener({
             if (stopping) return@addListener
@@ -155,16 +165,24 @@ class GestureCaptureService : Service(), LifecycleOwner, SensorEventListener {
                     .build()
                 analysis = useCase
                 var resolutionReported = false
-                useCase.setAnalyzer(exec) { image ->
-                    try {
+                useCase.setAnalyzer(captureExec) { image ->
+                    val receivedUptime = android.os.SystemClock.uptimeMillis()
+                    val receivedElapsed = android.os.SystemClock.elapsedRealtime()
+                    val frame = try {
                         if (!resolutionReported) {
                             Log.i("GestureCaptureService", "Analysis frame: ${image.width}x${image.height}, rotation=${image.imageInfo.rotationDegrees}")
                             resolutionReported = true
                         }
-                        visionEngine?.analyze(image)
+                        input.capture(image, receivedUptime, receivedElapsed)
+                    } catch (failure: Exception) {
+                        Log.w("GestureCaptureService", "Camera frame copy failed", failure)
+                        null
                     } finally {
                         image.close()
                     }
+                    // Release CameraX before scheduling native work. New arrivals replace the
+                    // waiting snapshot while the GPU/diagnostics worker finishes its active one.
+                    if (frame != null) processor.offer(frame)
                 }
                 val selector = CameraSelector.DEFAULT_FRONT_CAMERA
                 val defaultSession = SessionConfig.Builder(useCase).build()
@@ -215,6 +233,8 @@ class GestureCaptureService : Service(), LifecycleOwner, SensorEventListener {
         stopping = true
         val engine = visionEngine
         engine?.stop()
+        frameProcessor?.close()
+        frameProcessor = null
         visionEngine = null
         getSystemService(DisplayManager::class.java).unregisterDisplayListener(displayListener)
         TestingTools.stop("Camera session stopped")
@@ -225,6 +245,9 @@ class GestureCaptureService : Service(), LifecycleOwner, SensorEventListener {
         analysis?.let { useCase -> useCase.clearAnalyzer(); cameraProvider?.unbind(useCase) }
         analysis = null
         cameraProvider = null
+        // A capture already copying can finish; the closed processor recycles its late frame.
+        captureExecutor?.shutdown()
+        captureExecutor = null
         if (::sensorManager.isInitialized) sensorManager.unregisterListener(this)
         AirRuntime.setMotionState(motionMonitor.reset())
         AirRuntime.motionSensorsAvailable = false

@@ -2,7 +2,6 @@ package com.airgesture.control
 
 import android.content.Context
 import android.content.res.Configuration
-import androidx.camera.core.ImageProxy
 import com.airgesture.control.filtering.Point3D
 import com.google.mediapipe.tasks.vision.gesturerecognizer.GestureRecognizerResult
 import org.json.JSONArray
@@ -17,10 +16,10 @@ internal object DiagnosticFrameData {
             Point3D(1f - upright.x, upright.y, upright.z)
         } } ?: emptyList()
 
-    fun encode(context: Context, image: ImageProxy, result: GestureRecognizerResult?, timestamp: Long,
+    fun encode(context: Context, image: RgbaFrameData, result: GestureRecognizerResult?, timestamp: Long,
         inferenceMs: Long, trace: JSONObject?, error: String?): JSONObject {
         val state = AirRuntime.state.value
-        val rotation = image.imageInfo.rotationDegrees
+        val rotation = image.rotationDegrees
         val hands = JSONArray()
         result?.landmarks()?.forEachIndexed { index, landmarks ->
             val raw = JSONArray(); val upright = JSONArray()
@@ -49,10 +48,10 @@ internal object DiagnosticFrameData {
             context.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE)
         val vision = state.visionTelemetry
         val actions = state.actionDispatchTelemetry
-        return (trace ?: JSONObject()).put("timestampMs", timestamp).put("cameraTimestampNs", image.imageInfo.timestamp)
+        return (trace ?: JSONObject()).put("timestampMs", timestamp).put("cameraTimestampNs", image.timestampNs)
             .put("resultTimestampMs", result?.timestampMs() ?: JSONObject.NULL).put("inferenceMs", inferenceMs)
             .put("width", image.width).put("height", image.height).put("rotation", rotation)
-            .put("cropRect", image.cropRect.toShortString()).put("imageCoordinates", "upright + horizontal mirror; full frame, no crop")
+            .put("cropRect", image.cropRect).put("imageCoordinates", "upright + horizontal mirror; full frame, no crop")
             .put("hands", hands).put("reason", when { error != null -> "INFERENCE_ERROR"; result == null -> "MODEL_WAIT"; else -> state.pointerFeedback.name })
             .put("sourceCommit", BuildConfig.SOURCE_COMMIT).put("filterMode", TestingTools.state.value.filterMode.name).put("testSegment", TestingTools.state.value.segment.name)
             .put("error", error ?: JSONObject.NULL).put("pointer", pointer(state.pointer)).put("rawUprightTip", pointer(state.rawPointer))
