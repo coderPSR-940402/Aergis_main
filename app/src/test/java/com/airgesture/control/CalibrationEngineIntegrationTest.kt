@@ -209,6 +209,36 @@ class CalibrationEngineIntegrationTest {
         assertEquals(.55f, AirRuntime.pointerY, .0001f)
     }
 
+    @Test
+    fun readyModeSuppliesCalibrationSamplesWithoutPointerOrActionAuthority() {
+        AirRuntime.controlMode = ControlMode.READY
+        repeat(6) { publish(hand(), 1000L + it * 33L) }
+        assertTrue(AirRuntime.rawPointerSnapshot().tracking)
+        assertEquals(.5f, AirRuntime.rawPointerSnapshot().x, .0001f)
+        assertEquals(.65f, AirRuntime.rawPointerSnapshot().y, .0001f)
+        assertFalse(AirRuntime.pointerTracking)
+        assertEquals(PointerInteractionPhase.IDLE, AirRuntime.pointerInteraction)
+        assertFalse(ActionSafetyPolicy.evaluate(AirAction.TAP, true, AirRuntime.controlMode,
+            false, ForegroundSafety.SAFE).allowed)
+        publish(emptyList(), 1200L)
+        assertFalse(AirRuntime.rawPointerSnapshot().tracking)
+    }
+
+    @Test
+    fun calibrationPreviewRejectsProtectedContextAndDeviceMotion() {
+        AirRuntime.controlMode = ControlMode.READY
+        repeat(6) { publish(hand(), 1000L + it * 33L) }
+        assertTrue(AirRuntime.rawPointerSnapshot().tracking)
+        AirRuntime.motionActive = true
+        publish(hand(), 1200L)
+        assertFalse(AirRuntime.rawPointerSnapshot().tracking)
+        AirRuntime.motionActive = false
+        AirRuntime.setForegroundContext(ForegroundContextState(safety = ForegroundSafety.PROTECTED))
+        publish(hand(), 1233L)
+        assertFalse(AirRuntime.rawPointerSnapshot().tracking)
+        assertFalse(AirRuntime.pointerTracking)
+    }
+
     private fun hand(): List<NormalizedLandmark> = MutableList(21) {
         NormalizedLandmark.create(0.5f, 0.5f, 0f)
     }.apply {

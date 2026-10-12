@@ -26,10 +26,10 @@
 | Unit | Deliverable / primary source area | Acceptance gate | State |
 |---|---|---|---|
 | 0 | Baseline and capability audit; this spec/plan | Resolve live baseline; distinguish existing work from gaps | Inspected |
-| 1 | Deliberate command timing and recovery (`GestureTransactionStateMachine.kt`) | Confirmation/release invariant across cadence; no repeat from held gesture after loss; preserve pinch path | In progress |
-| 2 | Explicit gesture mapping picker (`MainActivity.kt`, UI, strings, `ActionMappingStore.kt`) | Select named action or disable; cancel changes nothing; persist selection; explain pointer-mode restrictions | Pending |
+| 1 | Deliberate command timing and recovery (`GestureTransactionStateMachine.kt`) | Confirmation/release invariant across cadence; no repeat from held gesture after loss; preserve pinch path | Merged #53; CI passed; device acceptance pending |
+| 2 | Explicit gesture mapping picker (`MainActivity.kt`, UI, strings, `ActionMappingStore.kt`) | Select named action or disable; cancel changes nothing; persist selection; explain pointer-mode restrictions | Merged #54; CI passed; device UI acceptance pending |
 | 3 | Tracking/click validation and necessary fixes (`GestureRecognitionEngine.kt`, `HeldPointerTouch.kt`, filters) | Reproduce remaining failure from latest device recording; regression fails then passes; A54 target trials | Await latest-baseline device evidence |
-| 4 | Guided calibration and comfort profiles (`PointerCalibrationSession/Store/Profile`, calibration UI) | Entire usable area reachable; save/cancel/retry; reject stale samples; preserve orientation/hand profiles; clutch cannot click | Pending |
+| 4 | Guided calibration and comfort profiles (`PointerCalibrationSession/Store/Profile`, calibration UI) | Entire usable area reachable; save/cancel/retry; reject stale samples; preserve orientation/hand profiles; clutch cannot click | Guided manual capture in PR #55; remaining scope pending |
 | 5 | Interactive practice and meaningful feedback (UI, existing runtime outcomes) | Real target clicks, drag and scroll tasks; distinguish recognition/dispatch/task success; safe exit and pause | Pending |
 | 6 | Deliberate scrolling (`pointer/SwipeGestureEngine.kt`, interpreter, UI) | Pointer reposition never scrolls; deliberate entry, neutral stop, controlled speed; cancel on loss | Pending |
 | 7 | Three-destination navigation and useful mirror (`AergisShell`, Control, MainActivity, mirror UI) | Control/Gestures/Settings; all prior features reachable; state preserved; real image and overlay alignment | Pending |
@@ -84,3 +84,9 @@ Record APK SHA and setup for every trial. Repeat equivalent trials on baseline a
 ## Publication and CI follow-up
 - User explicitly approved publication. PR #53 publishes command timing at `db664e1`; PR #54 publishes the independent gesture picker at `5c4cdb9`. Remote tree hashes match the local reviewed trees exactly. HTTPS git push lacked credentials; authenticated GitHub publication succeeded.
 - Aergis CI #242 compiled the command change and ran 266 tests: 265 passed, one integration test failed because it expected a two-frame (33 ms) neutral release and a pause to clear the fired-command latch. Update this integration scenario to assert the approved 100 ms release and preservation through pause/resume, including a fresh post-release command. Production code is unchanged by this correction. Full rerun remains required.
+
+## 2026-10-12 checkpoint
+- PRs #53 and #54 merged. Latest verified main / `baseline-successful-apk`: `8e024ba8c303d4cec76c9c499c71c324f39ce804`, Aergis CI #246 and CodeQL successful. This supersedes pending-publication statements above.
+- Unit 1: CI #244 passed after aligning the integration regression with elapsed neutral-release time. Unit 2: CI #243 passed. Physical device results remain unclaimed.
+- Unit 4: PR #55 supplies guided manual capture, explicit draft lifecycle, and a disarmed raw preview. CI #248 reproduced five expected regression failures first. No hands-free capture, sample expiry, named profiles, clutch or practice task is claimed.
+- Test the matching PR APK using `docs/GUIDED_CALIBRATION_DEVICE_CHECK.md` before accepting device behavior. Do not move the successful baseline manually.

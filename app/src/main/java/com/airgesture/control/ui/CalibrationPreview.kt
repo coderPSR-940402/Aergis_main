@@ -19,9 +19,9 @@ import com.airgesture.control.PointerFeedback
 import com.airgesture.control.R
 
 @Composable
-internal fun CalibrationPreview() {
+internal fun CalibrationPreview(rawCoordinates: Boolean = false) {
     val preview = AirRuntime.state.collectAsStateWithLifecycle()
-    val description = stringResource(R.string.ui_pointer_preview)
+    val description = stringResource(if (rawCoordinates) R.string.calibration_raw_preview else R.string.ui_pointer_preview)
     Canvas(Modifier.fillMaxWidth().height(160.dp).clip(AergisShapes.Control)
         .background(AergisColors.Background).semantics { contentDescription = description }) {
         for (i in 1..3) {
@@ -30,9 +30,12 @@ internal fun CalibrationPreview() {
         }
         // Read state in the draw phase: coordinate changes redraw only this preview.
         val state = preview.value
-        if (state.pointerTracking || state.pointerFeedback == PointerFeedback.COASTING) {
-            val center = Offset(state.pointerX * size.width, state.pointerY * size.height)
-            val color = if (state.pointerTracking) AergisColors.Cyan else AergisColors.Muted
+        val point = if (rawCoordinates) state.rawPointer else state.pointer
+        if (point.tracking || (!rawCoordinates && state.pointerFeedback == PointerFeedback.COASTING)) {
+            // The existing calibration collector uses upright, mirrored hand coordinates.
+            val x = if (rawCoordinates) 1f - point.x else point.x
+            val center = Offset(x * size.width, point.y * size.height)
+            val color = if (point.tracking) AergisColors.Cyan else AergisColors.Muted
             drawCircle(color.copy(alpha = .2f), 14.dp.toPx(), center)
             drawCircle(color, 9.dp.toPx(), center, style = Stroke(1.dp.toPx()))
             drawCircle(color, 4.dp.toPx(), center)

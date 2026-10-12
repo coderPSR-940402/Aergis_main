@@ -412,6 +412,23 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 processed.isPinchPressed
             )
             PipelineMetrics.shared.recordCursorUpdate(SystemClock.uptimeMillis())
+        } else if (AirRuntime.controlMode == ControlMode.READY && AirRuntime.pointerEnabled &&
+            !AirRuntime.motionActive && AirRuntime.state.value.foregroundContext.safety == ForegroundSafety.SAFE &&
+            actionsFresh && handSelection != null && indexTip != null &&
+            reusablePointsList[INDEX_TIP].let { it.x.isFinite() && it.y.isFinite() && it.x in 0f..1f && it.y in 0f..1f }) {
+            // Read-only calibration coordinates. READY never grants pointer or action
+            // authority; retain hand ownership so a stable preview can be acquired.
+            resetPointerTouch()
+            interpreter.reset()
+            lineageComparison.reset()
+            pointerVisibility.reset()
+            lastPointerAt = 0L
+            val rawTip = reusablePointsList[INDEX_TIP]
+            AirRuntime.setRawPointerState(rawTip.x, rawTip.y, true)
+            AirRuntime.setPointerState(AirRuntime.pointerX, AirRuntime.pointerY, false)
+            AirRuntime.pointerFeedback = PointerFeedback.DISABLED
+            AirAccessibilityService.instance?.updatePointer(0f, 0f, false)
+            diagnosticTrace?.put("pointerRejection", "CALIBRATION_PREVIEW_ONLY")?.put("cursorVisible", false)
         } else if (!AirRuntime.pointerEnabled && controlSafe && handSelection != null && selectedPoseEvidence?.accepted == true) {
             // Disabling pointer interaction is not loss of classifier evidence. Retain
             // ownership and gesture confirmation/cooldown while hiding the pointer.
