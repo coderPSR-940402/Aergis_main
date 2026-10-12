@@ -196,7 +196,7 @@
     <string name="ui_implemented">Available</string>
     <string name="ui_pointer_gestures">Pointer interaction</string>
     <string name="ui_pointer_gestures_description">Fingertip movement, tap and vertical scroll are supported by the current pointer engine. Start with actions disarmed to practice.</string>
-    <string name="ui_mapping_cycle">Each Change action button cycles through the existing action choices. Changes save immediately.</string>
+    <string name="ui_mapping_selection_help">Choose a gesture action, then Save. Select Disabled to turn off that gesture mapping. Pinch controls remain separate.</string>
     <string name="ui_change_mapping">Change action: %1$s</string>
     <string name="ui_settings_screen_description">Shape how Aergis works with you.</string>
     <string name="ui_hand_preference_description">Choose the hand used for control. Calibration is saved separately for each hand preference and orientation.</string>
@@ -238,4 +238,11 @@
     <string name="ui_controls_shortcut_description">Tune reach, review mappings, calibrate</string>
     <string name="ui_more_shortcut">Diagnostics and permissions</string>
     <string name="ui_more_shortcut_description">Technical state, accessibility and about</string>
+    <string name="action_disabled">Disabled</string>
+    <string name="ui_mapping_picker_title">Action for %1$s</string>
+    <string name="ui_mapping_picker_help">Choose what this gesture does. Changes apply only when you save.</string>
+    <string name="ui_mapping_pointer_restriction">Available when pointer control is off. Pinch handles touch actions while the pointer is on.</string>
+    <string name="ui_mapping_restore_default">Use default action</string>
+    <string name="ui_mapping_save">Save</string>
+    <string name="ui_mapping_cancel">Cancel</string>
 </resources>

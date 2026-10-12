@@ -184,15 +184,6 @@ class MainActivity : ComponentActivity() {
         startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
     }
 
-    private fun cycleMapping(source: AirAction) {
-        val options = AirAction.entries.filter { it != AirAction.NONE }
-        val store = ActionMappingStore(this)
-        val current = store.mapping(source)
-        val index = options.indexOf(current).coerceAtLeast(0)
-        store.setMapping(source, options[(index + 1) % options.size])
-        mappingsVersion++
-    }
-
     private fun isLandscape(): Boolean = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
 
     private fun refreshCalibrationSettings() {
@@ -415,7 +406,7 @@ class MainActivity : ComponentActivity() {
                     Text(stringResource(R.string.ui_pointer_gestures_description), color = AergisColors.Muted)
                 }
             }
-            item { Text(stringResource(R.string.ui_mapping_cycle), color = AergisColors.Muted, style = MaterialTheme.typography.bodyMedium) }
+            item { Text(stringResource(R.string.ui_mapping_selection_help), color = AergisColors.Muted, style = MaterialTheme.typography.bodyMedium) }
             item { MappingRow(R.string.mapping_thumb_up, AirAction.TAP) }
             item { MappingRow(R.string.mapping_victory, AirAction.BACK) }
             item { MappingRow(R.string.mapping_open_palm, AirAction.HOME) }
@@ -666,27 +657,29 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     private fun MappingRow(labelRes: Int, source: AirAction) {
+        var showPicker by rememberSaveable(source.name) { mutableStateOf(false) }
+        val current = mapping(source, mappingsVersion)
+        val gestureName = stringResource(labelRes)
         AergisPanel {
-            Text(stringResource(labelRes), style = MaterialTheme.typography.titleMedium)
-            AergisButton(onClick = { cycleMapping(source) }, modifier = Modifier.fillMaxWidth()) {
-                Text(stringResource(R.string.ui_change_mapping, actionLabel(mapping(source, mappingsVersion))))
+            Text(gestureName, style = MaterialTheme.typography.titleMedium)
+            AergisButton(onClick = { showPicker = true }, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.ui_change_mapping, actionLabel(current)))
+            }
+            if (current != AirAction.NONE && !GestureActionPolicy.isClassifierActionEnabled(
+                    true, current, pointerEnabled)) {
+                Text(stringResource(R.string.ui_mapping_pointer_restriction),
+                    color = AergisColors.Caution, style = MaterialTheme.typography.bodyMedium)
             }
         }
+        if (showPicker) ActionMappingPicker(
+            gestureName = gestureName, source = source, current = current,
+            pointerEnabled = pointerEnabled,
+            onSave = { target ->
+                ActionMappingStore(this).setMapping(source, target)
+                mappingsVersion++
+                showPicker = false
+            },
+            onDismiss = { showPicker = false }
+        )
     }
-
-    @Composable
-    private fun actionLabel(action: AirAction): String = stringResource(
-        when (action) {
-            AirAction.TAP -> R.string.action_tap
-            AirAction.DOUBLE_TAP -> R.string.action_double_tap
-            AirAction.BACK -> R.string.action_back
-            AirAction.HOME -> R.string.action_home
-            AirAction.RECENTS -> R.string.action_recents
-            AirAction.LONG_PRESS -> R.string.action_long_press
-            AirAction.SCROLL_UP -> R.string.action_scroll_up
-            AirAction.SCROLL_DOWN -> R.string.action_scroll_down
-            AirAction.NONE -> R.string.status_not_ready
-        }
-    )
-
 }
