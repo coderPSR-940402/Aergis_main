@@ -4,7 +4,7 @@ import java.nio.ByteBuffer
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** At most three pixel buffers: active inference, newest pending frame, and capture copy. */
-internal class FrameBufferPool {
+internal class FrameBufferPool(private val direct: Boolean = true) {
     private val free = ArrayDeque<ByteBuffer>()
     private var leased = 0
 
@@ -12,7 +12,8 @@ internal class FrameBufferPool {
         require(size > 0)
         if (leased == 3) return null
         val reusable = if (free.isEmpty()) null else free.removeFirst()
-        val buffer = reusable?.takeIf { it.capacity() == size } ?: ByteBuffer.allocateDirect(size)
+        val buffer = reusable?.takeIf { it.capacity() == size }
+            ?: if (direct) ByteBuffer.allocateDirect(size) else ByteBuffer.allocate(size)
         buffer.clear()
         leased++
         return Lease(buffer) { synchronized(this) { leased--; free.addLast(it) } }
