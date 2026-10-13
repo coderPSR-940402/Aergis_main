@@ -241,6 +241,20 @@ class CalibrationEngineIntegrationTest {
 
     @Test
     fun slowCameraPinchWithCroppedWristDispatchesExactlyOneNativeTap() {
+        assertSlowCameraPinchDispatchesOneTap(hand().toMutableList().apply {
+            this[0] = NormalizedLandmark.create(.5f, 1.02f, 0f)
+        })
+    }
+
+    @Test
+    fun slowCameraPinchWithExtendedIndexDispatchesExactlyOneNativeTap() {
+        assertSlowCameraPinchDispatchesOneTap(hand().toMutableList().apply {
+            // 1.75 times palm width is a plausible extended index, not a broken pinch.
+            this[8] = NormalizedLandmark.create(.4f, .15f, 0f)
+        })
+    }
+
+    private fun assertSlowCameraPinchDispatchesOneTap(open: List<NormalizedLandmark>) {
         val controller = org.robolectric.Robolectric.buildService(AirAccessibilityService::class.java).create()
         val service = controller.get()
         val instance = AirAccessibilityService::class.java.getDeclaredField("instance").apply { isAccessible = true }
@@ -249,7 +263,6 @@ class CalibrationEngineIntegrationTest {
             AirRuntime.gesturesEnabled = true
             AirRuntime.resetActionDispatchTelemetry()
             val shadow = org.robolectric.Shadows.shadowOf(service)
-            val open = hand().toMutableList().apply { this[0] = NormalizedLandmark.create(.5f, 1.02f, 0f) }
             val closed = open.toMutableList().apply { this[4] = NormalizedLandmark.create(.56f, .65f, 0f) }
             publish(open, 1000L, delayMs = 500L)
             publish(open, 1200L, delayMs = 500L)

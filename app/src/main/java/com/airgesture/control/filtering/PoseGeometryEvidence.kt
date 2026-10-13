@@ -78,7 +78,12 @@ class PoseGeometryEvidenceEvaluator(
         val boundedPalmWidth = palmWidth.coerceIn(0f, 1f)
         val boundedBoneRatio = indexBoneRatio.coerceIn(0f, maximumIndexBoneToPalmRatio * 2f)
         val boundedFingertipRatio = fingertipRatio.coerceIn(0f, 2f)
-        if (indexBoneRatio > maximumIndexBoneToPalmRatio) {
+        // Projected palm width shrinks when a hand turns, while an extended index may
+        // remain long. That ratio is not evidence against thumb-middle contact. The
+        // pointer path already requires visible finite landmarks, nonzero palm width,
+        // trusted cursor motion and an observed open/contact/release sequence.
+        // Keep the legacy whole-hand constraint for classifier commands only.
+        if (!pointerOnly && indexBoneRatio > maximumIndexBoneToPalmRatio) {
             return PoseGeometryEvidence(
                 landmarkCount = landmarks.size,
                 finiteLandmarkCount = finiteCount,

@@ -8,6 +8,38 @@ import org.junit.Test
 
 class PoseGeometryEvidenceTest {
     @Test
+    fun extendedIndexDoesNotVetoThumbMiddleContactWhenPalmIsForeshortened() {
+        val evaluator = PoseGeometryEvidenceEvaluator()
+        for (width in listOf(.20f, .12f, .06f)) {
+            val pose = validLandmarks().toMutableList().apply {
+                this[5] = Point3D(.5f - width / 2, .6f)
+                this[17] = Point3D(.5f + width / 2, .6f)
+                this[8] = Point3D(.5f - width / 2, .35f)
+                this[4] = Point3D(.5f, .55f)
+                this[12] = Point3D(.505f, .55f)
+            }
+            val pointer = evaluator.evaluatePointer(pose, .75f)
+            assertTrue("Visible pinch must not depend on index-to-palm ratio at width $width", pointer.accepted)
+            assertFalse("Classifier geometry remains strict", evaluator.evaluate(pose, .75f).accepted)
+            assertTrue(KinematicValidator().calculateNormalizedFingerDistance(pose, .75f) < .18f)
+        }
+    }
+
+    @Test
+    fun pointerContactStillRejectsMissingInvisibleAndDegenerateEvidence() {
+        val evaluator = PoseGeometryEvidenceEvaluator()
+        assertFalse(evaluator.evaluatePointer(validLandmarks().take(12)).accepted)
+        for (index in listOf(4, 5, 8, 12, 17)) {
+            for (bad in listOf(Point3D(Float.NaN, .5f), Point3D(1.01f, .5f))) {
+                val pose = validLandmarks().toMutableList().apply { this[index] = bad }
+                assertFalse("Required landmark $index must be usable", evaluator.evaluatePointer(pose).accepted)
+            }
+        }
+        val collapsed = validLandmarks().toMutableList().apply { this[17] = this[5] }
+        assertFalse(evaluator.evaluatePointer(collapsed).accepted)
+    }
+
+    @Test
     fun validPoseProducesOnlyBoundedAggregateMetrics() {
         val evidence = PoseGeometryEvidenceEvaluator().evaluate(validLandmarks())
 
