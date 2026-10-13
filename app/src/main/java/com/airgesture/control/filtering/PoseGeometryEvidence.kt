@@ -32,7 +32,14 @@ class PoseGeometryEvidenceEvaluator(
     private val minimumPalmWidth: Float = 0.001f,
     private val maximumIndexBoneToPalmRatio: Float = 1.35f
 ) {
-    fun evaluate(landmarks: List<Point3D>, aspectRatio: Float = 1f): PoseGeometryEvidence {
+    fun evaluate(landmarks: List<Point3D>, aspectRatio: Float = 1f): PoseGeometryEvidence =
+        evaluate(landmarks, aspectRatio, pointerOnly = false)
+
+    /** Pointer pinch needs its fingertips and palm anchors visible, not the wrist or little tip. */
+    fun evaluatePointer(landmarks: List<Point3D>, aspectRatio: Float = 1f): PoseGeometryEvidence =
+        evaluate(landmarks, aspectRatio, pointerOnly = true)
+
+    private fun evaluate(landmarks: List<Point3D>, aspectRatio: Float, pointerOnly: Boolean): PoseGeometryEvidence {
         val finiteCount = landmarks.count { point ->
             point.x.isFinite() && point.y.isFinite() && point.z.isFinite()
         }
@@ -45,7 +52,10 @@ class PoseGeometryEvidenceEvaluator(
         if (finiteCount != landmarks.size) {
             return rejected(landmarks.size, finiteCount, PoseGeometryRejectionReason.NON_FINITE_LANDMARK)
         }
-        if (landmarks.any { point -> point.x !in 0f..1f || point.y !in 0f..1f }) {
+        val visiblePoints = if (pointerOnly) listOf(KinematicValidator.THUMB_TIP,
+            KinematicValidator.INDEX_MCP, KinematicValidator.INDEX_TIP,
+            KinematicValidator.MIDDLE_TIP, KinematicValidator.PINKY_MCP).map(landmarks::get) else landmarks
+        if (visiblePoints.any { point -> point.x !in 0f..1f || point.y !in 0f..1f }) {
             return rejected(landmarks.size, finiteCount, PoseGeometryRejectionReason.OUT_OF_RANGE_LANDMARK)
         }
 

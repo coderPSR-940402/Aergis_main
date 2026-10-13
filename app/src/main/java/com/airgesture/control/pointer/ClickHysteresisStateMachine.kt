@@ -12,6 +12,7 @@ class ClickHysteresisStateMachine(
     private var currentState = State.IDLE
     private var observedOpen = false
     private var contactSince: Long? = null
+    private var contactSampleIntervalMs = 0L
     private var lastClickAt: Long? = null
     private var lastTimestampMs: Long? = null
 
@@ -29,10 +30,18 @@ class ClickHysteresisStateMachine(
         val coolingDown = lastClickAt?.let { timestampMs - it < refractoryPeriodMs } ?: false
 
         if (dNorm >= releaseThreshold) {
+            // At 4-6 fps a complete pinch can occupy one sample. Confirm that sequence on
+            // release; never synthesize a held press from it, and never accept a one-frame
+            // high-rate glitch. A held pinch has already clicked and cannot click twice.
+            val releaseClick = currentState == State.ENGAGING && !coolingDown &&
+                contactSampleIntervalMs >= 80L &&
+                contactSince?.let { timestampMs - it >= confirmationMs } == true
+            if (releaseClick) lastClickAt = timestampMs
             observedOpen = true
             contactSince = null
-            currentState = if (coolingDown) State.REFRACTORY else State.IDLE
-            return false
+            contactSampleIntervalMs = 0L
+            currentState = if (coolingDown || releaseClick) State.REFRACTORY else State.IDLE
+            return releaseClick
         }
         if (currentState == State.CLICKED) return false
         if (!observedOpen || coolingDown) return false
@@ -43,7 +52,10 @@ class ClickHysteresisStateMachine(
             contactSince = null
             return false
         }
-        val start = contactSince ?: timestampMs.also { contactSince = it }
+        val start = contactSince ?: timestampMs.also {
+            contactSince = it
+            contactSampleIntervalMs = previous?.let { prior -> timestampMs - prior } ?: 0L
+        }
         if (timestampMs - start < confirmationMs) return false
 
         currentState = State.CLICKED
@@ -60,7 +72,8 @@ class ClickHysteresisStateMachine(
         contactSince = null
         lastClickAt = null
         lastTimestampMs = null
+        contactSampleIntervalMs = 0L
     }
 
-    private companion object { const val MAX_GAP_MS = 250L }
+    private companion object { const val MAX_GAP_MS = 350L }
 }

@@ -250,6 +250,8 @@ class AirAccessibilityServiceDispatchTest {
         shadowOf(Looper.getMainLooper()).idle()
         val first = shadow.gesturesDispatched.single()
         shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(300L))
+        assertEquals("Normal slow-camera cadence must not cancel the press", 1, shadow.gesturesDispatched.size)
+        shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(75L))
         assertEquals(2, shadow.gesturesDispatched.size)
         first.callback()!!.onCompleted(first.description())
         assertEquals(2, shadow.gesturesDispatched.size)

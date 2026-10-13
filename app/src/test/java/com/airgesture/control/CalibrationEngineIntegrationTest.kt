@@ -239,6 +239,79 @@ class CalibrationEngineIntegrationTest {
         assertFalse(AirRuntime.pointerTracking)
     }
 
+    @Test
+    fun slowCameraPinchWithCroppedWristDispatchesExactlyOneNativeTap() {
+        val controller = org.robolectric.Robolectric.buildService(AirAccessibilityService::class.java).create()
+        val service = controller.get()
+        val instance = AirAccessibilityService::class.java.getDeclaredField("instance").apply { isAccessible = true }
+        instance.set(null, service)
+        try {
+            AirRuntime.gesturesEnabled = true
+            AirRuntime.resetActionDispatchTelemetry()
+            val shadow = org.robolectric.Shadows.shadowOf(service)
+            val open = hand().toMutableList().apply { this[0] = NormalizedLandmark.create(.5f, 1.02f, 0f) }
+            val closed = open.toMutableList().apply { this[4] = NormalizedLandmark.create(.56f, .65f, 0f) }
+            publish(open, 1000L, delayMs = 500L)
+            publish(open, 1200L, delayMs = 500L)
+            publish(closed, 1400L, delayMs = 500L)
+            assertEquals(PointerInteractionPhase.PINCHING, AirRuntime.pointerInteraction)
+            val anchor = AirRuntime.pointerSnapshot()
+            publish(open, 1600L, delayMs = 500L)
+            org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+            assertEquals("The full camera-to-accessibility path must request a tap", 1, shadow.gesturesDispatched.size)
+            val tap = shadow.gesturesDispatched.single()
+            assertFalse("A short pinch must be a complete tap, not a stuck held touch", tap.description().getStroke(0).willContinue())
+            tap.callback()!!.onCompleted(tap.description())
+            assertEquals(1L, AirRuntime.state.value.actionDispatchTelemetry.completed)
+            assertEquals(anchor.x, AirRuntime.pointerX, .0001f)
+            assertEquals(anchor.y, AirRuntime.pointerY, .0001f)
+            publish(open, 1800L, delayMs = 500L)
+            org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+            assertEquals(1, shadow.gesturesDispatched.size)
+        } finally { controller.destroy() }
+    }
+
+    @Test
+    fun delayedPointerPinchCancelsAcrossStaleResultAndDisarm() {
+        AirRuntime.gesturesEnabled = true
+        val open = hand()
+        val closed = open.toMutableList().apply { this[4] = NormalizedLandmark.create(.56f, .65f, 0f) }
+        publish(open, 1000L, delayMs = 500L)
+        publish(open, 1200L, delayMs = 500L)
+        publish(closed, 1400L, delayMs = 500L)
+        assertEquals(PointerInteractionPhase.PINCHING, AirRuntime.pointerInteraction)
+        publish(closed, 1600L, delayMs = 601L)
+        assertEquals(PointerInteractionPhase.IDLE, AirRuntime.pointerInteraction)
+        publish(closed, 1800L, delayMs = 500L)
+        assertEquals("Recovery must observe open fingers again", PointerInteractionPhase.AIMING, AirRuntime.pointerInteraction)
+        AirRuntime.controlMode = ControlMode.PAUSED
+        publish(closed, 2000L, delayMs = 500L)
+        assertEquals(PointerInteractionPhase.IDLE, AirRuntime.pointerInteraction)
+        assertFalse(AirRuntime.pointerTracking)
+    }
+
+    @Test
+    fun delayedBriefGapRetainsSameHandFilterHistory() {
+        TestingTools.setFilterMode(PointerFilterMode.VC49)
+        publish(hand(), 1000L, delayMs = 500L)
+        val previous = AirRuntime.pointerSnapshot()
+        publish(emptyList(), 1131L, delayMs = 500L)
+        publish(hand().toMutableList().apply { this[8] = NormalizedLandmark.create(.8f, .65f, 0f) },
+            1200L, delayMs = 500L)
+        assertTrue("Retention uses observed time, not camera age plus gap",
+            kotlin.math.abs(AirRuntime.pointerX - previous.x) < .06f)
+    }
+
+    @Test
+    fun delayedClassifierEvidenceStillCannotConfirmCommands() {
+        AirRuntime.pointerEnabled = false
+        AirRuntime.gesturesEnabled = true
+        repeat(8) { publish(hand(), 1000L + it * 200L, gestureName = "Victory", delayMs = 500L) }
+        val field = GestureRecognitionEngine::class.java.getDeclaredField("gestureTransaction").apply { isAccessible = true }
+        assertEquals(GestureTransactionStateMachine.State.NEUTRAL,
+            (field.get(engine) as GestureTransactionStateMachine).currentState())
+    }
+
     private fun hand(): List<NormalizedLandmark> = MutableList(21) {
         NormalizedLandmark.create(0.5f, 0.5f, 0f)
     }.apply {
@@ -248,7 +321,7 @@ class CalibrationEngineIntegrationTest {
         this[12] = NormalizedLandmark.create(0.55f, 0.65f, 0f)
     }
 
-    private fun publish(landmarks: List<NormalizedLandmark>, timestamp: Long, rawHandedness: String = "Left", gestureName: String = "None") {
+    private fun publish(landmarks: List<NormalizedLandmark>, timestamp: Long, rawHandedness: String = "Left", gestureName: String = "None", delayMs: Long = 0L) {
         val hands = if (landmarks.isEmpty()) emptyList() else listOf(
             LandmarkProto.NormalizedLandmarkList.newBuilder().addAllLandmark(landmarks.map {
                 LandmarkProto.NormalizedLandmark.newBuilder().setX(it.x()).setY(it.y()).setZ(it.z()).build()
@@ -272,6 +345,6 @@ class CalibrationEngineIntegrationTest {
         val method = GestureRecognitionEngine::class.java.getDeclaredMethod(
             "publish", GestureRecognizerResult::class.java, java.lang.Long.TYPE, java.lang.Long.TYPE, java.lang.Integer.TYPE
         ).apply { isAccessible = true }
-        method.invoke(engine, result, timestamp, timestamp, 0)
+        method.invoke(engine, result, timestamp, timestamp + delayMs, 0)
     }
 }
