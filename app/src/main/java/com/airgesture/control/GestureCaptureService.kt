@@ -158,7 +158,7 @@ class GestureCaptureService : Service(), LifecycleOwner, SensorEventListener {
                     ))
                     .build()
                 val useCase = ImageAnalysis.Builder()
-                    .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
+                    .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
                     .setResolutionSelector(resolutionSelector)
                     .setTargetRotation(displayRotation())
                     .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)

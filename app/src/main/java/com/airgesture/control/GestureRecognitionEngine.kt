@@ -74,8 +74,8 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
     }
 
     internal fun analyze(frame: CapturedCameraFrame) {
-        val image = frame.data
         if (closed.get()) return
+        var diagnosticImage: RgbaFrameData? = null
         val diagnosticStartedAt = SystemClock.uptimeMillis()
         var diagnosticResult: GestureRecognizerResult? = null
         var diagnosticError: String? = null
@@ -87,7 +87,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             metrics.recordAnalyzerFrame(analysisStartUptime)
             // One clock domain for the whole pipeline: the camera frame's own timestamp. Detected once
             // per session so frame age, inter-frame gaps and every filter dt describe physical time.
-            val cameraNs = image.timestampNs
+            val cameraNs = frame.timestampNs
             val source = timeSource ?: CameraClock.detect(cameraNs, frame.receivedUptimeMs,
                 frame.receivedElapsedMs).also { timeSource = it }
             val timestamp = if (source == FrameTimeSource.ANALYZER_UPTIME) frame.receivedUptimeMs else cameraNs / 1_000_000L
@@ -102,6 +102,8 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             if (closed.get()) return
             lastSubmittedTimestampMs = timestamp
             val preStart = SystemClock.uptimeMillis()
+            val image = frame.data
+            diagnosticImage = image
             val mpImage = frame.createImage()
             val preEnd = SystemClock.uptimeMillis()
             try {
@@ -146,7 +148,8 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             }
         } finally {
             synchronized(this) {
-                if (!closed.get() && TestingTools.needsFrames()) runCatching {
+                val image = diagnosticImage
+                if (!closed.get() && image != null && TestingTools.needsFrames()) runCatching {
                     TestingTools.onFrame(context, image, diagnosticResult, diagnosticStartedAt,
                         SystemClock.uptimeMillis() - diagnosticStartedAt, diagnosticTrace, diagnosticError,
                         lastPipelineAgeMs)
