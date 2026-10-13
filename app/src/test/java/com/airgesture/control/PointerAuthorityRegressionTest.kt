@@ -8,6 +8,8 @@ class PointerAuthorityRegressionTest {
     @Test
     fun rejectedPoseCannotPullIndexTipTowardPalm() {
         val hand = MutableList(21) { Point3D(0.5f, 0.5f) }.apply {
+            // Reject actual missing pinch evidence, not a plausible extended index.
+            this[4] = Point3D(1.02f, 0.5f)
             this[5] = Point3D(0.4f, 0.5f)
             this[17] = Point3D(0.5f, 0.5f)
             this[8] = Point3D(0.4f, 0.68f)
