@@ -31,14 +31,20 @@ internal object DiagnosticCameraImage {
         require((((h - 1) * height / h).toLong() * rowStride) + columnOffset[w - 1] + 3 < limit) {
             "Incomplete RGBA camera plane"
         }
+        // One bulk direct-buffer transfer per sampled row. Per-channel direct reads
+        // can cross the native boundary hundreds of thousands of times on Android,
+        // blocking the next inference whenever the live mirror is visible.
+        val rowPixels = ByteArray(columnOffset[w - 1] + 4)
         for (y in 0 until h) {
             val rowBase = (y * height / h) * rowStride
+            data.position(rowBase)
+            data.get(rowPixels)
             for (x in 0 until w) {
-                val index = rowBase + columnOffset[x]
-                val color = ((data.get(index + 3).toInt() and 255) shl 24) or
-                    ((data.get(index).toInt() and 255) shl 16) or
-                    ((data.get(index + 1).toInt() and 255) shl 8) or
-                    (data.get(index + 2).toInt() and 255)
+                val index = columnOffset[x]
+                val color = ((rowPixels[index + 3].toInt() and 255) shl 24) or
+                    ((rowPixels[index].toInt() and 255) shl 16) or
+                    ((rowPixels[index + 1].toInt() and 255) shl 8) or
+                    (rowPixels[index + 2].toInt() and 255)
                 val uprightX = when (rotation) { 90 -> h - 1 - y; 180 -> w - 1 - x; 270 -> y; else -> x }
                 val uprightY = when (rotation) { 90 -> x; 180 -> h - 1 - y; 270 -> w - 1 - x; else -> y }
                 pixels[uprightY * outW + outW - 1 - uprightX] = color

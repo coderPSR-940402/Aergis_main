@@ -325,6 +325,32 @@ class CalibrationEngineIntegrationTest {
             (field.get(engine) as GestureTransactionStateMachine).currentState())
     }
 
+    @Test fun unsynchronizedSensorEpochDoesNotCreateStaleRejections() {
+        publish(hand(), 1_000L, delayMs = 100_000L, measuredAgeMs = 100L)
+        publish(hand(), 1_200L, delayMs = 100_000L, measuredAgeMs = 100L)
+        assertTrue(AirRuntime.pointerTracking)
+        assertEquals(PointerFeedback.TRACKING, AirRuntime.pointerFeedback)
+        // A real processing backlog is still stale regardless of clock origin.
+        publish(hand(), 1_400L, delayMs = 100_000L, measuredAgeMs = 601L)
+        assertFalse(AirRuntime.pointerTracking)
+        assertEquals(PointerInteractionPhase.IDLE, AirRuntime.pointerInteraction)
+    }
+
+    @Test fun slowCadenceGapKeepsCursorPositionButCancelsTouchImmediately() {
+        AirRuntime.gesturesEnabled = true
+        publish(hand(), 1000L)
+        publish(hand(), 1200L)
+        val point = AirRuntime.pointerSnapshot()
+        publish(emptyList(), 1400L)
+        assertEquals(PointerFeedback.COASTING, AirRuntime.pointerFeedback)
+        assertFalse("Held position is not fresh evidence", AirRuntime.pointerTracking)
+        assertEquals(PointerInteractionPhase.IDLE, AirRuntime.pointerInteraction)
+        assertEquals(point.x, AirRuntime.pointerX, 0f)
+        assertEquals(point.y, AirRuntime.pointerY, 0f)
+        publish(emptyList(), 1800L)
+        assertEquals(PointerFeedback.NO_HAND, AirRuntime.pointerFeedback)
+    }
+
     private fun hand(): List<NormalizedLandmark> = MutableList(21) {
         NormalizedLandmark.create(0.5f, 0.5f, 0f)
     }.apply {
@@ -334,7 +360,7 @@ class CalibrationEngineIntegrationTest {
         this[12] = NormalizedLandmark.create(0.55f, 0.65f, 0f)
     }
 
-    private fun publish(landmarks: List<NormalizedLandmark>, timestamp: Long, rawHandedness: String = "Left", gestureName: String = "None", delayMs: Long = 0L) {
+    private fun publish(landmarks: List<NormalizedLandmark>, timestamp: Long, rawHandedness: String = "Left", gestureName: String = "None", delayMs: Long = 0L, measuredAgeMs: Long? = null) {
         val hands = if (landmarks.isEmpty()) emptyList() else listOf(
             LandmarkProto.NormalizedLandmarkList.newBuilder().addAllLandmark(landmarks.map {
                 LandmarkProto.NormalizedLandmark.newBuilder().setX(it.x()).setY(it.y()).setZ(it.z()).build()
@@ -355,6 +381,14 @@ class CalibrationEngineIntegrationTest {
             ).build()
         )
         val result = factory.invoke(null, hands, emptyList<Any>(), handedness, gestures, timestamp) as GestureRecognizerResult
+        if (measuredAgeMs != null) {
+            val method = GestureRecognitionEngine::class.java.getDeclaredMethod(
+                "publishWithAge", GestureRecognizerResult::class.java, java.lang.Long.TYPE,
+                java.lang.Long.TYPE, java.lang.Integer.TYPE, java.lang.Long.TYPE
+            ).apply { isAccessible = true }
+            method.invoke(engine, result, timestamp, timestamp + delayMs, 0, measuredAgeMs)
+            return
+        }
         val method = GestureRecognitionEngine::class.java.getDeclaredMethod(
             "publish", GestureRecognizerResult::class.java, java.lang.Long.TYPE, java.lang.Long.TYPE, java.lang.Integer.TYPE
         ).apply { isAccessible = true }
