@@ -51,6 +51,8 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
     // stricter age limit; deliberate pointer pinches follow the displayed pointer stream.
     private val freshnessPolicy = VisionResultFreshnessPolicy(POINTER_MAX_AGE_MS, POINTER_MAX_GAP_MS)
     private var timeSource: FrameTimeSource? = null
+    private var sensorTimeline: Boolean? = null
+    @Volatile internal var cameraTimestampsRealtime = false
     private var lastSubmittedTimestampMs = Long.MIN_VALUE
     private var lastPipelineAgeMs = -1L
     private var recognizerFailureCount = 0
@@ -88,10 +90,19 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             // One clock domain for the whole pipeline: the camera frame's own timestamp. Detected once
             // per session so frame age, inter-frame gaps and every filter dt describe physical time.
             val cameraNs = frame.timestampNs
+            val useSensorTimeline = sensorTimeline ?: (cameraNs > 0L).also { sensorTimeline = it }
+            if (useSensorTimeline && cameraNs <= 0L) {
+                metrics.recordOutOfOrderSkip()
+                return
+            }
             val source = timeSource ?: CameraClock.detect(cameraNs, frame.receivedUptimeMs,
-                frame.receivedElapsedMs).also { timeSource = it }
-            val timestamp = if (source == FrameTimeSource.ANALYZER_UPTIME) frame.receivedUptimeMs else cameraNs / 1_000_000L
-            val frameAgeAtStart = (nowIn(source) - timestamp).coerceAtLeast(0L)
+                frame.receivedElapsedMs, cameraTimestampsRealtime).also { timeSource = it }
+            // Never change sample-clock origin mid-session after a missing timestamp.
+            val timestamp = if (useSensorTimeline) CameraClock.sampleTimestampMs(cameraNs, frame.receivedUptimeMs)
+                else frame.receivedUptimeMs
+            fun frameAge() = CameraClock.ageMs(source, cameraNs, frame.receivedUptimeMs,
+                SystemClock.uptimeMillis(), SystemClock.elapsedRealtime())
+            val frameAgeAtStart = frameAge().coerceAtLeast(0L)
             // MediaPipe VIDEO mode needs strictly increasing timestamps; never submit older work.
             if (timestamp <= lastSubmittedTimestampMs) {
                 metrics.recordOutOfOrderSkip()
@@ -118,9 +129,9 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 val inferenceEnd = SystemClock.uptimeMillis()
                 diagnosticResult = result
                 frameAspectRatio = CameraCoordinateTransform.uprightAspectRatio(image.width, image.height, image.rotationDegrees)
-                publish(result, timestamp, nowIn(source), image.rotationDegrees)
+                publishWithAge(result, timestamp, nowIn(source), image.rotationDegrees, frameAge())
                 val publishEnd = SystemClock.uptimeMillis()
-                lastPipelineAgeMs = (nowIn(source) - timestamp).coerceAtLeast(0L)
+                lastPipelineAgeMs = frameAge().coerceAtLeast(0L)
                 metrics.recordFrame(publishEnd, frameAgeAtStart, preEnd - preStart,
                     inferenceEnd - preEnd, publishEnd - inferenceEnd, lastPipelineAgeMs)
                 diagnosticTrace?.put("timing", org.json.JSONObject()
@@ -201,9 +212,15 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         timestamp: Long,
         observedAtMs: Long,
         rotationDegrees: Int
-    ) {
+    ) = publishWithAge(result, timestamp, observedAtMs, rotationDegrees, observedAtMs - timestamp)
+
+    @Synchronized
+    private fun publishWithAge(result: GestureRecognizerResult, timestamp: Long,
+        observedAtMs: Long, rotationDegrees: Int, ageMs: Long) {
         if (closed.get()) return
-        val freshness = freshnessPolicy.evaluate(timestamp, observedAtMs)
+        // Ordering and filter dt use the sensor clock. Age uses only comparable clocks;
+        // UNKNOWN cameras have no reliable absolute exposure-to-delivery measurement.
+        val freshness = freshnessPolicy.evaluate(timestamp, (timestamp + ageMs).coerceAtLeast(0L))
         diagnosticTrace?.put("freshness", org.json.JSONObject().put("reason", freshness.reason.name)
             .put("ageMs", freshness.ageMs).put("gapMs", freshness.gapMs))
         AirRuntime.recordVisionResult(freshness)
@@ -548,7 +565,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             AirRuntime.pointerFeedback = if (feedback == PointerFeedback.VISION_REJECTED) feedback else PointerFeedback.COASTING
             AirAccessibilityService.instance?.updatePointer(held.x, held.y, true, false)
         } else {
-            // Hide after 130 ms, but keep same-owner filter history for up to 500 ms.
+            // Visibility grace follows cadence; keep same-owner filter history for 500 ms.
             // Identity, calibration, filter and safety changes explicitly clear history.
             if (!pointerActive || !coastAllowed || lastPointerAt == 0L || now - lastPointerObservedAt > 500L) {
                 resetTrackingState()

@@ -27,8 +27,9 @@ internal data class TestingState(val mirror: Boolean = false, val filterMode: Po
 internal data class MirrorFrame(val bitmap: Bitmap?, val hands: List<List<Point3D>>, val label: String,
     val selectedHandIndex: Int? = null, val detail: String = "", val timestampMs: Long = 0L,
     val calibration: PointerCalibrationProfile? = null,
-    /** Camera-frame timestamp → pointer update, in ms; -1 when unknown. This is the true pipeline latency. */
-    val pipelineAgeMs: Long = -1L) {
+    /** Exposure age only for a synchronized sensor; otherwise capture-callback age. */
+    val pipelineAgeMs: Long = -1L,
+    val sensorClockSynchronized: Boolean = true) {
     fun isLive(nowMs: Long): Boolean = bitmap != null && nowMs - timestampMs in 0L..1000L
 }
 
@@ -145,7 +146,8 @@ internal object TestingTools {
                         imageError ?: mirrorDetail(trace), timestamp,
                         PointerCalibrationStore(context).activeProfile(AirRuntime.handPreference,
                             context.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE),
-                        pipelineAgeMs)
+                        pipelineAgeMs,
+                        trace?.optJSONObject("timing")?.optString("timeSource") == FrameTimeSource.CAMERA_ELAPSED_REALTIME.name)
                 }
             }
             if (imageDue) lastImage = timestamp

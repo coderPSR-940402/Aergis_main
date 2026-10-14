@@ -80,10 +80,10 @@ internal class PrecisionPointerFilter {
         velocityY += derivativeAlpha * (dy / dt - velocityY)
         // Keep stationary aim quiet; coherent travel receives the higher cutoff below.
         // The jump gate remains responsible for rejecting isolated spikes.
-        var cutoff = .65f + 20f * (hypot(velocityX, velocityY) - .06f).coerceAtLeast(0f)
+        var cutoff = .35f + 20f * (hypot(velocityX, velocityY) - .06f).coerceAtLeast(0f)
         recent.addLast(Sample(measured, timestampMs))
         while (recent.size > 16 || (recent.size > 4 && timestampMs - recent.first().timestampMs > 200L)) recent.removeFirst()
-        if (recent.size >= 4) {
+        if (recent.size >= 3) {
             var path = 0f
             for (i in 1 until recent.size) path += hypot(recent[i].point.x - recent[i - 1].point.x, recent[i].point.y - recent[i - 1].point.y)
             val displacement = hypot(measured.x - recent.first().point.x, measured.y - recent.first().point.y)

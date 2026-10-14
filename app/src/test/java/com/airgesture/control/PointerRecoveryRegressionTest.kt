@@ -7,6 +7,19 @@ import com.airgesture.control.filtering.PoseGeometryEvidenceEvaluator
 import org.junit.Test
 
 class PointerRecoveryRegressionTest {
+    @Test fun lowCadenceCursorSurvivesOneMissingResultButCannotPersistIndefinitely() {
+        val visibility = PointerVisibilityGrace()
+        val point = PointerCoordinateMapper.Point(.4f, .6f)
+        visibility.record(point, 1000L)
+        visibility.record(point, 1200L)
+        assertEquals("A missing 5 fps sample is already 200 ms old", point, visibility.heldAt(1400L))
+        assertEquals(point, visibility.heldAt(1600L))
+        assertNull("Retention is bounded", visibility.heldAt(1701L))
+        visibility.reset()
+        assertNull(visibility.heldAt(1400L))
+        visibility.record(point, 2000L)
+        assertNull("New sessions must not inherit a slow cadence", visibility.heldAt(2131L))
+    }
     @Test fun croppedWristDoesNotInvalidateVisiblePinchFingers() {
         val evaluator = PoseGeometryEvidenceEvaluator()
         val pose = MutableList(21) { Point3D(.5f, .5f) }.apply {

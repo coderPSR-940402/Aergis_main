@@ -342,6 +342,32 @@ class TestingToolsRegressionTest {
         assertEquals("Preview must not mutate another consumer's position", buffer.limit(), buffer.position())
     }
 
+    @Test fun bulkPreviewReadsPreserveEveryRotationWithPixelAndRowPadding() {
+        val colors = intArrayOf(android.graphics.Color.RED, android.graphics.Color.GREEN,
+            android.graphics.Color.BLUE, android.graphics.Color.YELLOW,
+            android.graphics.Color.MAGENTA, android.graphics.Color.CYAN)
+        val buffer = ByteBuffer.allocateDirect(48)
+        for (i in colors.indices) {
+            val offset = i / 3 * 28 + i % 3 * 8
+            val c = colors[i]
+            buffer.put(offset, (c shr 16).toByte()); buffer.put(offset + 1, (c shr 8).toByte())
+            buffer.put(offset + 2, c.toByte()); buffer.put(offset + 3, (-1).toByte())
+        }
+        buffer.position(7)
+        val orders = mapOf(0 to listOf(2,1,0,5,4,3), 90 to listOf(0,3,1,4,2,5),
+            180 to listOf(3,4,5,0,1,2), 270 to listOf(5,2,4,1,3,0))
+        for ((rotation, order) in orders) {
+            val image = DiagnosticCameraImage.decodeRgba(buffer, 3, 2, 28, 8, rotation, 3)
+            val width = if (rotation % 180 == 0) 3 else 2
+            for (i in order.indices) assertEquals(colors[order[i]], image.getPixel(i % width, i / width))
+        }
+        val small = DiagnosticCameraImage.decodeRgba(buffer, 3, 2, 28, 8, 0, 2)
+        assertEquals(2, small.width); assertEquals(1, small.height)
+        assertEquals(colors[1], small.getPixel(0, 0)); assertEquals(colors[0], small.getPixel(1, 0))
+        assertEquals(7, buffer.position())
+        assertEquals(48, buffer.limit())
+    }
+
     @Test fun corruptCameraPlaneReplacesOldPreviewWithVisibleError() {
         val context = org.robolectric.RuntimeEnvironment.getApplication()
         TestingTools.setMirror(true)

@@ -11,6 +11,8 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import android.hardware.camera2.CameraCharacteristics
+import androidx.camera.camera2.interop.Camera2CameraInfo
 import android.hardware.display.DisplayManager
 import android.os.Handler
 import android.os.IBinder
@@ -128,6 +130,7 @@ class GestureCaptureService : Service(), LifecycleOwner, SensorEventListener {
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
 
     @ExperimentalGetImage
+    @androidx.annotation.OptIn(androidx.camera.camera2.interop.ExperimentalCamera2Interop::class)
     private fun setupCamera() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
             AirRuntime.cameraReady = false
@@ -187,6 +190,11 @@ class GestureCaptureService : Service(), LifecycleOwner, SensorEventListener {
                 val selector = CameraSelector.DEFAULT_FRONT_CAMERA
                 val defaultSession = SessionConfig.Builder(useCase).build()
                 val cameraInfo = selector.filter(provider.availableCameraInfos).first()
+                engine.cameraTimestampsRealtime = runCatching {
+                    Camera2CameraInfo.from(cameraInfo).getCameraCharacteristic(
+                        CameraCharacteristics.SENSOR_INFO_TIMESTAMP_SOURCE
+                    ) == CameraCharacteristics.SENSOR_INFO_TIMESTAMP_SOURCE_REALTIME
+                }.getOrDefault(false)
                 // Query this stream combination, not the sensor's unrestricted FPS list.
                 // 60 FPS capture is a target; inference throughput is measured separately.
                 val frameRate = runCatching {
