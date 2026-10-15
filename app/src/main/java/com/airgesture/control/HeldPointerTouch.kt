@@ -17,6 +17,7 @@ internal class HeldPointerTouch(
     private var endpoint = PointerCoordinateMapper.Point(0f, 0f)
     private var target = endpoint
     private var pressed = false
+    private var releaseRequested = false
     private var blockedUntilOpen = false
     private var epoch = 0L
     private var generation = 0L
@@ -49,12 +50,13 @@ internal class HeldPointerTouch(
         }
         lastSampleAt = sampledAt
         pressed = isPressed
+        // Finger-up belongs to the current touch and cannot be undone by the next pinch.
+        if (stroke != null && !isPressed) releaseRequested = true
         // Release at the last held point, not at an already-recovering aiming coordinate.
         if (isPressed) target = point
         if (stroke == null && isPressed) {
             epoch = requestEpoch
             endpoint = point
-            generation++
             send(ending = false)
             if (stroke != null) handler.postDelayed(watchdog, WATCHDOG_MS)
         }
@@ -71,17 +73,24 @@ internal class HeldPointerTouch(
             ?: GestureDescription.StrokeDescription(path, 0L, CHUNK_MS, true)
         stroke = next
         endpoint = to
-        val token = generation
+        val token = ++generation
         val gesture = GestureDescription.Builder().addStroke(next).build()
         val accepted = dispatch(gesture, object : AccessibilityService.GestureResultCallback() {
             override fun onCompleted(gestureDescription: GestureDescription?) {
                 if (token != generation) return
                 if (ending) {
+                    // Retain only a currently held, fresh next press; never replay a
+                    // backlog of contacts that ended while Android was completing up.
+                    val nextPressed = pressed
+                    val nextTarget = target
+                    val nextEpoch = epoch
+                    val nextSampleAt = lastSampleAt
                     clear()
                     record(ActionDispatchOutcome.COMPLETED)
+                    if (nextPressed) update(nextTarget, true, nextEpoch, nextSampleAt)
                 } else if (!permitted(epoch) || SystemClock.uptimeMillis() - lastSampleAt > MAX_IDLE_MS) {
                     cancel()
-                } else send(ending = !pressed)
+                } else send(ending = releaseRequested || !pressed)
             }
 
             override fun onCancelled(gestureDescription: GestureDescription?) {
@@ -125,6 +134,7 @@ internal class HeldPointerTouch(
         generation++
         stroke = null
         pressed = false
+        releaseRequested = false
         handler.removeCallbacks(watchdog)
     }
 
