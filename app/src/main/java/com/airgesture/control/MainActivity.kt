@@ -379,7 +379,7 @@ class MainActivity : ComponentActivity() {
             contentPadding = androidx.compose.foundation.layout.PaddingValues(20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            item { CalibrationCard(rawTracking, runtime.controlMode) }
+            item { CalibrationCard(rawTracking, runtime.controlMode, runtime.running && runtime.cameraReady) }
             item { PracticeCard(runtime.controlMode) }
         }
     }
@@ -495,7 +495,7 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
-    private fun CalibrationCard(sampleAvailable: Boolean, controlMode: ControlMode) {
+    private fun CalibrationCard(sampleAvailable: Boolean, controlMode: ControlMode, cameraAvailable: Boolean) {
         var advanced by rememberSaveable { mutableStateOf(false) }
         val capturing = calibrationState != PointerCalibrationSession.State.IDLE
         AergisPanel {
@@ -545,7 +545,7 @@ class MainActivity : ComponentActivity() {
             } else {
                 Text(stringResource(R.string.calibration_guided_intro))
                 if (!sampleAvailable) Text(stringResource(R.string.calibration_wait_for_tracking), color = AergisColors.Caution)
-                AergisButton(onClick = { advanced = false; startCalibration() }, enabled = sampleAvailable,
+                AergisButton(onClick = { advanced = false; startCalibration() }, enabled = cameraAvailable,
                     primary = true, modifier = Modifier.fillMaxWidth()) {
                     Text(stringResource(R.string.calibration_begin_guided))
                 }

@@ -300,26 +300,48 @@ class AirAccessibilityServiceDispatchTest {
         assertEquals(2, shadow.gesturesDispatched.size)
     }
 
-    @Test fun heldTouchContinuesForLongPressAndMovesForDragScrolling() {
-        service.updatePointerTouch(0.4f, 0.5f, true)
+    @Test fun stationaryHoldSurvivesThenDragsPausesAndReleases() {
+        service.updatePointerTouch(.4f, .5f, true)
         shadowOf(Looper.getMainLooper()).idle()
+        val down = shadow.gesturesDispatched.single()
+        down.callback()!!.onCompleted(down.description())
         repeat(12) {
-            val previous = shadow.gesturesDispatched.last()
-            service.updatePointerTouch(0.4f, 0.5f, true)
+            shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(100))
+            service.updatePointerTouch(.4000001f, .5000001f, true)
             shadowOf(Looper.getMainLooper()).idle()
-            previous.callback()!!.onCompleted(previous.description())
-            assertTrue(shadow.gesturesDispatched.last().description().getStroke(0).willContinue())
+            assertEquals("Stationary/subpixel continuation would have no Android motion events", 1,
+                shadow.gesturesDispatched.size)
         }
-        service.updatePointerTouch(0.4f, 0.7f, true)
+        service.updatePointerTouch(.4f, .7f, true)
         shadowOf(Looper.getMainLooper()).idle()
-        val stationary = shadow.gesturesDispatched.last()
-        stationary.callback()!!.onCompleted(stationary.description())
-        val drag = shadow.gesturesDispatched.last().description().getStroke(0)
+        assertEquals(2, shadow.gesturesDispatched.size)
+        val drag = shadow.gesturesDispatched.last()
         val bounds = RectF()
-        drag.path.computeBounds(bounds, true)
-        assertTrue(drag.willContinue())
+        drag.description().getStroke(0).path.computeBounds(bounds, true)
         assertTrue(bounds.bottom > bounds.top)
-        assertEquals(0L, AirRuntime.state.value.actionDispatchTelemetry.completed)
+        assertTrue(drag.description().getStroke(0).willContinue())
+        drag.callback()!!.onCompleted(drag.description())
+        assertEquals("Pausing a drag must retain finger-down without an empty continuation", 2,
+            shadow.gesturesDispatched.size)
+        service.updatePointerTouch(.4f, .7f, false)
+        shadowOf(Looper.getMainLooper()).idle()
+        val release = shadow.gesturesDispatched.last()
+        assertEquals(3, shadow.gesturesDispatched.size)
+        assertFalse(release.description().getStroke(0).willContinue())
+        release.callback()!!.onCompleted(release.description())
+        assertEquals(1L, AirRuntime.state.value.actionDispatchTelemetry.completed)
+        assertEquals(0L, AirRuntime.state.value.actionDispatchTelemetry.cancelled)
+    }
+
+    @Test fun completedDownStillHasWatchdogProtectionWhileWaitingForMovement() {
+        service.updatePointerTouch(.4f, .5f, true)
+        shadowOf(Looper.getMainLooper()).idle()
+        val down = shadow.gesturesDispatched.single()
+        down.callback()!!.onCompleted(down.description())
+        shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(375))
+        assertEquals("A held finger must cancel when camera samples stop", 2, shadow.gesturesDispatched.size)
+        down.callback()!!.onCompleted(down.description())
+        assertEquals(2, shadow.gesturesDispatched.size)
     }
 
     @Test fun lossOrSafetyChangeCancelsTouchAndLateCallbacksCannotRestartIt() {

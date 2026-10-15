@@ -451,11 +451,12 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 processed.isPinchPressed
             )
             PipelineMetrics.shared.recordCursorUpdate(SystemClock.uptimeMillis())
-        } else if (AirRuntime.controlMode == ControlMode.READY && AirRuntime.pointerEnabled &&
+        } else if (AirRuntime.controlMode == ControlMode.READY &&
             !AirRuntime.motionActive && AirRuntime.state.value.foregroundContext.safety == ForegroundSafety.SAFE &&
-            actionsFresh && handSelection != null && indexTip != null &&
+            freshness.accepted && handSelection != null && indexTip != null &&
             reusablePointsList[INDEX_TIP].let { it.x.isFinite() && it.y.isFinite() && it.x in 0f..1f && it.y in 0f..1f }) {
-            // Read-only calibration coordinates. READY never grants pointer or action
+            // Read-only calibration uses the bounded tracking stream, independent of
+            // pointer/action switches and the stricter command age. READY never grants pointer or action
             // authority; retain hand ownership so a stable preview can be acquired.
             resetPointerTouch()
             interpreter.reset()

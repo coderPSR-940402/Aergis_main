@@ -249,7 +249,7 @@
     <string name="calibration_raw_preview">Hand position within the camera view</string>
     <string name="calibration_guided_intro">Choose a relaxed hand position. Capture the four corners of your comfortable movement area, then save. Starting calibration disarms actions; use the touchscreen for these controls.</string>
     <string name="calibration_begin_guided">Calibrate comfortable reach</string>
-    <string name="calibration_actions_disarmed">Actions are disarmed. Enable them from Control when you are ready to test.</string>
+    <string name="calibration_actions_disarmed">Keep actions off while capturing all four corners. Hand tracking stays on; use the touchscreen to capture and save. Enable actions only after saving.</string>
     <string name="calibration_corner_top_left">1 of 4 · Move to your comfortable top-left corner.</string>
     <string name="calibration_corner_top_right">2 of 4 · Move to your comfortable top-right corner.</string>
     <string name="calibration_corner_bottom_right">3 of 4 · Move to your comfortable bottom-right corner.</string>
