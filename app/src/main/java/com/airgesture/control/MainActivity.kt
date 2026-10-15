@@ -701,8 +701,9 @@ class MainActivity : ComponentActivity() {
         if (showPicker) ActionMappingPicker(
             gestureName = gestureName, source = source, current = current,
             pointerEnabled = pointerEnabled,
-            onSave = { target ->
-                ActionMappingStore(this).setMapping(source, target)
+            tuning = ActionMappingStore(this).tuning(source),
+            onSave = { target, tuning ->
+                ActionMappingStore(this).saveBinding(source, target, tuning)
                 mappingsVersion++
                 showPicker = false
             },

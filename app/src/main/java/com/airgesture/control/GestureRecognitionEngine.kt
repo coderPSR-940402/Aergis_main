@@ -499,6 +499,11 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 })
         }
 
+        val registeredGesture = RegisteredGesture.fromSignal(gestureName)
+        val gestureTuning = registeredGesture?.let(mappings::tuning)?.let {
+            // Landmark poses use geometric evidence, not a classifier confidence score.
+            if (registeredGesture?.isLandmarkPose == true) it.copy(confidencePercent = 65) else it
+        }
         val decision = if (AirRuntime.gesturesEnabled && !pinchInProgress && gestureName != "None") {
             val classified = interpreter.interpret(GestureSignal(gestureName, gestureScore))
             if (GestureActionPolicy.isClassifierActionEnabled(true, classified.action, pointerActive)) {
@@ -514,13 +519,14 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 timestampMs = timestamp,
                 tracking = commandTracking && !pinchInProgress,
                 ownershipId = commandOwnerId,
-                gestureId = RegisteredGesture.fromSignal(gestureName)?.name
+                gestureId = registeredGesture?.name,
+                tuning = gestureTuning
             )
         )
         if (confirmedAction != null &&
             GestureActionPolicy.isClassifierActionEnabled(AirRuntime.gesturesEnabled, confirmedAction, pointerActive)
         ) {
-            AirAccessibilityService.instance?.dispatch(confirmedAction)
+            AirAccessibilityService.instance?.dispatch(confirmedAction, gestureTuning ?: GestureTuning())
         }
         AirRuntime.visionError = null
         AirRuntime.visionReady = true

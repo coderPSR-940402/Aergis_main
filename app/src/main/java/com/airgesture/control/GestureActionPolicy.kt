@@ -23,9 +23,6 @@ object GestureActionPolicy {
         // Pointer aiming commonly resembles Pointing_Up. Its legacy double-tap
         // mapping must not compete with a deliberate pinch touch session.
         if (!pointerControlActive) return true
-        return when (action) {
-            AirAction.BACK, AirAction.HOME, AirAction.RECENTS -> true
-            else -> false
-        }
+        return !action.usesPointerTouch
     }
 }

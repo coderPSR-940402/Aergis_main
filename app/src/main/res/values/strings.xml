@@ -278,4 +278,24 @@
     <string name="pose_shaka_help">Extend thumb and pinky; fold the three middle fingers.</string>
     <string name="pose_pinky_help">Extend only your pinky; fold the other fingers and thumb.</string>
     <string name="pose_builtin_help">Hold the pose steadily, then relax your hand before repeating.</string>
+    <string name="action_notifications">Open notifications</string>
+    <string name="action_quick_settings">Open quick settings</string>
+    <string name="action_dismiss_shade">Close notification shade</string>
+    <string name="action_volume_up">Media volume up</string>
+    <string name="action_volume_down">Media volume down</string>
+    <string name="action_media_play_pause">Play / pause media</string>
+    <string name="action_media_next">Next track</string>
+    <string name="action_media_previous">Previous track</string>
+    <string name="action_screenshot">Take screenshot</string>
+    <string name="action_lock_screen">Lock screen</string>
+    <string name="action_unavailable">Unavailable on this Android version</string>
+    <string name="action_media_help">Controls the current media player. Open a player first; support depends on that app.</string>
+    <string name="gesture_tuning_title">Tune this gesture</string>
+    <string name="gesture_tuning_help">Longer holds reduce accidental commands. Relax your hand before repeating. Changes apply only when saved.</string>
+    <string name="tuning_hold">Hold to activate: %1$d ms</string>
+    <string name="tuning_repeat">Minimum repeat delay: %1$d ms</string>
+    <string name="tuning_confidence">Recognition confidence: %1$d%%</string>
+    <string name="tuning_volume">Volume steps: %1$d</string>
+    <string name="tuning_scroll">Scroll distance: %1$d%% of screen</string>
+    <string name="tuning_long_press">Touch hold duration: %1$d ms</string>
 </resources>

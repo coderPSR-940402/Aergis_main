@@ -57,6 +57,58 @@ class AirAccessibilityServiceDispatchTest {
     }
 
     @Test
+    @Config(sdk = [26])
+    fun unavailableActionsCannotDispatchOnOlderAndroid() {
+        service.dispatch(AirAction.SCREENSHOT)
+        service.dispatch(AirAction.LOCK_SCREEN)
+        service.dispatch(AirAction.DISMISS_SHADE)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertTrue(shadow.globalActionsPerformed.isEmpty())
+        assertEquals(3L, AirRuntime.state.value.actionDispatchTelemetry.platformRejected)
+    }
+
+    @Test fun newSystemActionsReachTheirCorrespondingAndroidCommands() {
+        val pairs = listOf(
+            AirAction.NOTIFICATIONS to android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_NOTIFICATIONS,
+            AirAction.QUICK_SETTINGS to android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_QUICK_SETTINGS,
+            AirAction.DISMISS_SHADE to android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_DISMISS_NOTIFICATION_SHADE,
+            AirAction.SCREENSHOT to android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_TAKE_SCREENSHOT,
+            AirAction.LOCK_SCREEN to android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_LOCK_SCREEN)
+        pairs.forEach { (action, _) -> service.dispatch(action) }
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(pairs.map { it.second }, shadow.globalActionsPerformed)
+    }
+
+    @Test fun volumeBindingUsesItsConfiguredStepsAndRemainsSafetyGated() {
+        val audio = service.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
+        audio.setStreamVolume(android.media.AudioManager.STREAM_MUSIC, 4, 0)
+        service.dispatch(AirAction.VOLUME_UP, GestureTuning(volumeSteps = 3))
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(7, audio.getStreamVolume(android.media.AudioManager.STREAM_MUSIC))
+        service.dispatch(AirAction.VOLUME_DOWN, GestureTuning(volumeSteps = 2))
+        AirRuntime.motionActive = true
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(7, audio.getStreamVolume(android.media.AudioManager.STREAM_MUSIC))
+    }
+
+    @Test fun configuredLongPressDurationReachesNativeStroke() {
+        service.dispatch(AirAction.LONG_PRESS, GestureTuning(longPressMs = 1200))
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(1200L, shadow.gesturesDispatched.single().description().getStroke(0).duration)
+    }
+
+    @Test fun mediaCommandsSubmitMatchedDownAndUpKeys() {
+        for (action in listOf(AirAction.MEDIA_PLAY_PAUSE, AirAction.MEDIA_NEXT, AirAction.MEDIA_PREVIOUS)) service.dispatch(action)
+        shadowOf(Looper.getMainLooper()).idle()
+        val audio = service.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
+        val events = shadowOf(audio).dispatchedMediaKeyEvents
+        assertEquals(listOf(85, 85, 87, 87, 88, 88), events.map { it.keyCode })
+        assertEquals(listOf(0, 1, 0, 1, 0, 1), events.map { it.action })
+        assertEquals(3L, AirRuntime.state.value.actionDispatchTelemetry.submitted)
+        assertEquals(0L, AirRuntime.state.value.actionDispatchTelemetry.completed)
+    }
+
+    @Test
     fun acceptedGestureIsRecordedOnlyWhenPlatformCallbackCompletes() {
         service.dispatch(AirAction.TAP)
         shadowOf(Looper.getMainLooper()).idle()

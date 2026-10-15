@@ -15,6 +15,8 @@ enum class RegisteredGesture(val signalName: String, val defaultAction: AirActio
     SHAKA("Shaka", AirAction.NONE),
     PINKY_ONLY("Pinky_Only", AirAction.NONE);
 
+    val isLandmarkPose: Boolean get() = ordinal >= OK.ordinal
+
     companion object {
         fun fromSignal(name: String): RegisteredGesture? = entries.firstOrNull {
             it.signalName.equals(name, ignoreCase = true)

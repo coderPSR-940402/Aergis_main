@@ -28,6 +28,24 @@ class ActionMappingStore(context: Context) {
     fun setMapping(gesture: RegisteredGesture, target: AirAction) =
         prefs.edit().putString("gesture_${gesture.name}", target.name).apply()
 
+    fun tuning(gesture: RegisteredGesture): GestureTuning {
+        val key = "tune_${gesture.name}_"
+        return runCatching { GestureTuning(
+            prefs.getLong(key + "hold", 100L), prefs.getLong(key + "repeat", 700L),
+            prefs.getInt(key + "confidence", 65), prefs.getInt(key + "volume", 1),
+            prefs.getInt(key + "scroll", 50), prefs.getLong(key + "longPress", 650L)
+        ).bounded() }.getOrDefault(GestureTuning())
+    }
+
+    fun saveBinding(gesture: RegisteredGesture, target: AirAction, tuning: GestureTuning) {
+        val value = tuning.bounded()
+        val key = "tune_${gesture.name}_"
+        prefs.edit().putString("gesture_${gesture.name}", target.name)
+            .putLong(key + "hold", value.holdMs).putLong(key + "repeat", value.repeatDelayMs)
+            .putInt(key + "confidence", value.confidencePercent).putInt(key + "volume", value.volumeSteps)
+            .putInt(key + "scroll", value.scrollPercent).putLong(key + "longPress", value.longPressMs).apply()
+    }
+
     fun handPreference(): ControlHandPreference = runCatching {
         ControlHandPreference.valueOf(prefs.getString(KEY_HAND_PREF, ControlHandPreference.EITHER.name) ?: ControlHandPreference.EITHER.name)
     }.getOrDefault(ControlHandPreference.EITHER)

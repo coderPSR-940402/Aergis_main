@@ -11,6 +11,19 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class GestureMappingPersistenceTest {
+    @Test fun actionAndTuningPersistTogetherWithoutChangingAnotherGesture() {
+        val context = RuntimeEnvironment.getApplication()
+        val prefs = context.getSharedPreferences("aergis_mappings", Context.MODE_PRIVATE)
+        prefs.edit().clear().commit()
+        val tuning = GestureTuning(400, 1200, 85, 3, 75, 900)
+        ActionMappingStore(context).saveBinding(RegisteredGesture.SHAKA, AirAction.VOLUME_UP, tuning)
+        val reopened = ActionMappingStore(context)
+        assertEquals(AirAction.VOLUME_UP, reopened.mapping(RegisteredGesture.SHAKA))
+        assertEquals(tuning, reopened.tuning(RegisteredGesture.SHAKA))
+        assertEquals(GestureTuning(), reopened.tuning(RegisteredGesture.OK))
+        prefs.edit().clear().commit()
+    }
+
     @Test fun legacyMappingsSurviveAndEveryGestureCanBeSavedIndependently() {
         val context = RuntimeEnvironment.getApplication()
         val prefs = context.getSharedPreferences("aergis_mappings", Context.MODE_PRIVATE)
