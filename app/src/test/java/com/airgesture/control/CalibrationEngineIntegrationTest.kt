@@ -375,6 +375,31 @@ class CalibrationEngineIntegrationTest {
         }
     }
 
+    @Test fun recordedDeviceLatencyCanConfirmMappedCommandsExactlyOnce() {
+        val controller = org.robolectric.Robolectric.buildService(AirAccessibilityService::class.java).create()
+        val service = controller.get()
+        AirAccessibilityService::class.java.getDeclaredField("instance").apply { isAccessible = true }.set(null, service)
+        try {
+            AirRuntime.gesturesEnabled = true
+            val ages = listOf(242L, 231L, 225L, 255L, 248L, 318L, 250L, 245L)
+            ages.forEachIndexed { index, age ->
+                publish(hand(), 1000L + index * 134L, gestureName = "Victory", delayMs = age)
+            }
+            org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+            assertEquals(listOf(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK),
+                org.robolectric.Shadows.shadowOf(service).globalActionsPerformed)
+        } finally { controller.destroy() }
+    }
+
+    @Test fun commandAgeLimitStillRejectsBacklogWhileCursorCanTrack() {
+        AirRuntime.gesturesEnabled = true
+        repeat(8) { publish(hand(), 1000L + it * 134L, gestureName = "Victory", delayMs = 351L) }
+        assertTrue(AirRuntime.pointerTracking)
+        val field = GestureRecognitionEngine::class.java.getDeclaredField("gestureTransaction").apply { isAccessible = true }
+        assertEquals(GestureTransactionStateMachine.State.NEUTRAL,
+            (field.get(engine) as GestureTransactionStateMachine).currentState())
+    }
+
     private fun hand(): List<NormalizedLandmark> = MutableList(21) {
         NormalizedLandmark.create(0.5f, 0.5f, 0f)
     }.apply {

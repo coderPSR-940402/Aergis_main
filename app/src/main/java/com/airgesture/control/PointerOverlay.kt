@@ -15,6 +15,10 @@ class PointerOverlay(private val context: Context) {
     private val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
     private var rootView: FrameLayout? = null
     private var cursorView: CursorView? = null
+    private val origin = IntArray(2)
+    private var screenX = 0f
+    private var screenY = 0f
+    private var hasPosition = false
 
     val isVisible: Boolean
         get() = rootView?.isAttachedToWindow == true
@@ -42,6 +46,7 @@ class PointerOverlay(private val context: Context) {
         )
         rootView = root
         cursorView = cursor
+        root.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> applyScreenPosition() }
         try {
             windowManager.addView(root, params)
         } catch (e: Exception) {
@@ -62,14 +67,28 @@ class PointerOverlay(private val context: Context) {
         } finally {
             cursorView = null
             rootView = null
+            hasPosition = false
         }
     }
 
     fun updatePosition(x: Float, y: Float, isClicking: Boolean = false) {
         val cursor = cursorView ?: return
         cursor.setClicking(isClicking)
-        cursor.translationX = x - cursor.sizePx / 2f
-        cursor.translationY = y - cursor.sizePx / 2f
+        screenX = x
+        screenY = y
+        hasPosition = true
+        applyScreenPosition()
+    }
+
+    private fun applyScreenPosition() {
+        if (!hasPosition) return
+        val root = rootView ?: return
+        val cursor = cursorView ?: return
+        // Accessibility dispatch uses display coordinates; an overlay window can start
+        // below the status bar or beside a cutout. Keep its hotspot at the same point.
+        root.getLocationOnScreen(origin)
+        cursor.translationX = screenX - origin[0] - cursor.left - cursor.sizePx / 2f
+        cursor.translationY = screenY - origin[1] - cursor.top - cursor.sizePx / 2f
     }
 
     /** Opt-in recording evidence for clipping/inset failures; no screen pixels are captured. */

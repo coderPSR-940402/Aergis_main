@@ -80,7 +80,9 @@ internal class VisionResultFreshnessPolicy(
     }
 
     companion object {
-        const val DEFAULT_MAX_AGE_MS = 220L
+        // Includes sensor delivery, conversion and inference on supported phones.
+        // Confirmation still requires ordered samples no more than 250 ms apart.
+        const val DEFAULT_MAX_AGE_MS = 350L
         const val DEFAULT_MAX_GAP_MS = 250L
     }
 }

@@ -225,7 +225,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             .put("ageMs", freshness.ageMs).put("gapMs", freshness.gapMs))
         AirRuntime.recordVisionResult(freshness)
         if (!freshness.accepted) PipelineMetrics.shared.recordRejection("VISION_${freshness.reason.name}")
-        // Strict limit for anything that can dispatch an action; cursor motion tolerates more.
+        // Bounded command latency includes sensor delivery and inference; cursor motion tolerates more.
         val actionsFresh = freshness.accepted &&
             freshness.ageMs <= VisionResultFreshnessPolicy.DEFAULT_MAX_AGE_MS
         diagnosticTrace?.put("actionsFresh", actionsFresh)
@@ -363,7 +363,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             ?.put("commandPoseReason", selectedPoseEvidence?.rejectionReason?.name ?: "NO_POSE")
 
         // Pinch control follows the visible cursor, while classifier commands retain the
-        // stricter 220 ms rule. Ordered results over 600 ms old are rejected above; a gap
+        // stricter 350 ms rule. Ordered results over 600 ms old are rejected above; a gap
         // over 350 ms cannot carry a pointer-touch transaction into the next sample.
         val pointerTouchTracking = freshness.gapMs <= 350L && !mappingChanged && !ownerChanged && !filterChanged &&
             CommandTrackingEligibility.isEligible(controlSafe, handSelection != null,
