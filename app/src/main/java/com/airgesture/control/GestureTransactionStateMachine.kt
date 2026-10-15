@@ -15,7 +15,8 @@ internal class GestureTransactionStateMachine(
         val confidence: Float,
         val timestampMs: Long,
         val tracking: Boolean,
-        val ownershipId: String?
+        val ownershipId: String?,
+        val gestureId: String? = null
     )
 
     init {
@@ -27,6 +28,7 @@ internal class GestureTransactionStateMachine(
     private var state = State.NEUTRAL
     private var candidateAction = AirAction.NONE
     private var candidateOwner: String? = null
+    private var candidateGesture: String? = null
     private var candidateSince = 0L
     private var neutralOwner: String? = null
     private var neutralSince: Long? = null
@@ -60,9 +62,10 @@ internal class GestureTransactionStateMachine(
         if (state == State.COOLDOWN) return null
 
         if (state != State.CANDIDATE || candidateAction != input.action ||
-            candidateOwner != input.ownershipId) {
+            candidateOwner != input.ownershipId || candidateGesture != input.gestureId) {
             candidateAction = input.action
             candidateOwner = input.ownershipId
+            candidateGesture = input.gestureId
             candidateSince = input.timestampMs
             state = State.CANDIDATE
             return null
@@ -86,6 +89,7 @@ internal class GestureTransactionStateMachine(
         if (state != State.COOLDOWN) state = State.NEUTRAL
         candidateAction = AirAction.NONE
         candidateOwner = null
+        candidateGesture = null
         candidateSince = 0L
         neutralOwner = null
         neutralSince = null

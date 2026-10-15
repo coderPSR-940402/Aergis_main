@@ -269,7 +269,7 @@ class MainActivity : ComponentActivity() {
         calibrationMessage = getString(R.string.calibration_reset)
     }
 
-    private fun mapping(source: AirAction, version: Int): AirAction {
+    private fun mapping(source: RegisteredGesture, version: Int): AirAction {
         return ActionMappingStore(this).mapping(source)
     }
 
@@ -431,11 +431,9 @@ class MainActivity : ComponentActivity() {
                 }
             }
             item { Text(stringResource(R.string.ui_mapping_selection_help), color = AergisColors.Muted, style = MaterialTheme.typography.bodyMedium) }
-            item { MappingRow(R.string.mapping_thumb_up, AirAction.TAP) }
-            item { MappingRow(R.string.mapping_victory, AirAction.BACK) }
-            item { MappingRow(R.string.mapping_open_palm, AirAction.HOME) }
-            item { MappingRow(R.string.mapping_fist, AirAction.RECENTS) }
-            item { MappingRow(R.string.mapping_pointing_up, AirAction.DOUBLE_TAP) }
+            RegisteredGesture.entries.forEach { gesture ->
+                item(key = gesture.name) { MappingRow(gesture) }
+            }
             item {
                 AergisPanel {
                     Text(stringResource(R.string.practice_title), style = MaterialTheme.typography.titleMedium)
@@ -664,12 +662,33 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
-    private fun MappingRow(labelRes: Int, source: AirAction) {
+    private fun MappingRow(source: RegisteredGesture) {
         var showPicker by rememberSaveable(source.name) { mutableStateOf(false) }
         val current = mapping(source, mappingsVersion)
-        val gestureName = stringResource(labelRes)
+        val gestureName = stringResource(when (source) {
+            RegisteredGesture.THUMB_UP -> R.string.mapping_thumb_up
+            RegisteredGesture.VICTORY -> R.string.mapping_victory
+            RegisteredGesture.OPEN_PALM -> R.string.mapping_open_palm
+            RegisteredGesture.CLOSED_FIST -> R.string.mapping_fist
+            RegisteredGesture.POINTING_UP -> R.string.mapping_pointing_up
+            RegisteredGesture.THUMB_DOWN -> R.string.mapping_thumb_down
+            RegisteredGesture.I_LOVE_YOU -> R.string.mapping_i_love_you
+            RegisteredGesture.OK -> R.string.mapping_ok
+            RegisteredGesture.THREE_FINGERS -> R.string.mapping_three
+            RegisteredGesture.FOUR_FINGERS -> R.string.mapping_four
+            RegisteredGesture.SHAKA -> R.string.mapping_shaka
+            RegisteredGesture.PINKY_ONLY -> R.string.mapping_pinky
+        })
         AergisPanel {
             Text(gestureName, style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(when (source) {
+                RegisteredGesture.OK -> R.string.pose_ok_help
+                RegisteredGesture.THREE_FINGERS -> R.string.pose_three_help
+                RegisteredGesture.FOUR_FINGERS -> R.string.pose_four_help
+                RegisteredGesture.SHAKA -> R.string.pose_shaka_help
+                RegisteredGesture.PINKY_ONLY -> R.string.pose_pinky_help
+                else -> R.string.pose_builtin_help
+            }), color = AergisColors.Muted, style = MaterialTheme.typography.bodySmall)
             AergisButton(onClick = { showPicker = true }, modifier = Modifier.fillMaxWidth()) {
                 Text(stringResource(R.string.ui_change_mapping, actionLabel(current)))
             }

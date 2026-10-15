@@ -193,7 +193,7 @@
     <string name="ui_tracking_title">Precision in motion.</string>
     <string name="ui_tracking_screen_description">Tune your reach. See what tracking sees.</string>
     <string name="ui_gestures_title">Make movement useful.</string>
-    <string name="ui_gestures_screen_description">Existing gestures and their assigned device actions.</string>
+    <string name="ui_gestures_screen_description">12 gestures, each with its own device action. New gestures start disabled until assigned.</string>
     <string name="ui_implemented">Available</string>
     <string name="ui_pointer_gestures">Pointer interaction</string>
     <string name="ui_pointer_gestures_description">Fingertip movement, tap and vertical scroll are supported by the current pointer engine. Start with actions disarmed to practice.</string>
@@ -265,4 +265,17 @@
     <string name="calibration_show_advanced">Show advanced adjustments</string>
     <string name="calibration_hide_advanced">Hide advanced adjustments</string>
     <string name="calibration_restart_disarmed">Control mode changed. Restart calibration to disarm actions before capturing or saving.</string>
+    <string name="mapping_thumb_down">Thumbs down</string>
+    <string name="mapping_i_love_you">I love you</string>
+    <string name="mapping_ok">OK sign</string>
+    <string name="mapping_three">Three fingers</string>
+    <string name="mapping_four">Four fingers</string>
+    <string name="mapping_shaka">Shaka</string>
+    <string name="mapping_pinky">Pinky only</string>
+    <string name="pose_ok_help">Touch thumb to index; extend middle, ring and pinky. Face your palm toward the camera.</string>
+    <string name="pose_three_help">Extend index, middle and ring. Fold thumb and pinky.</string>
+    <string name="pose_four_help">Extend all four fingers with your thumb folded across your palm.</string>
+    <string name="pose_shaka_help">Extend thumb and pinky; fold the three middle fingers.</string>
+    <string name="pose_pinky_help">Extend only your pinky; fold the other fingers and thumb.</string>
+    <string name="pose_builtin_help">Hold the pose steadily, then relax your hand before repeating.</string>
 </resources>

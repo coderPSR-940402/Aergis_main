@@ -38,7 +38,7 @@ class PointerOverlay(private val context: Context) {
         val cursor = CursorView(context)
         root.addView(
             cursor,
-            FrameLayout.LayoutParams(CursorView.SIZE, CursorView.SIZE)
+            FrameLayout.LayoutParams(cursor.sizePx, cursor.sizePx)
         )
         rootView = root
         cursorView = cursor
@@ -68,8 +68,8 @@ class PointerOverlay(private val context: Context) {
     fun updatePosition(x: Float, y: Float, isClicking: Boolean = false) {
         val cursor = cursorView ?: return
         cursor.setClicking(isClicking)
-        cursor.translationX = x - CursorView.SIZE / 2f
-        cursor.translationY = y - CursorView.SIZE / 2f
+        cursor.translationX = x - cursor.sizePx / 2f
+        cursor.translationY = y - cursor.sizePx / 2f
     }
 
     /** Opt-in recording evidence for clipping/inset failures; no screen pixels are captured. */
@@ -85,28 +85,25 @@ class PointerOverlay(private val context: Context) {
         const val TAG = "PointerOverlay"
     }
 
-    private class CursorView(context: Context) : View(context) {
-        companion object {
-            const val SIZE = 50
-        }
-
+    internal class CursorView(context: Context) : View(context) {
+        private val density = resources.displayMetrics.density
+        val sizePx = (32f * density).toInt().coerceAtLeast(1)
         private var isClicking = false
-        private val outerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#80000000")
-            style = Paint.Style.FILL
+        private val outline = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.rgb(18, 18, 24)
+            style = Paint.Style.STROKE
+            strokeWidth = 4f * density
         }
-        private val innerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#00E5FF")
-            style = Paint.Style.FILL
+        private val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.rgb(225, 228, 235)
+            style = Paint.Style.STROKE
+            strokeWidth = 1.5f * density
         }
-        private val activePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#FF1744")
-            style = Paint.Style.FILL
-        }
-
-        init {
-            minimumWidth = SIZE
-            minimumHeight = SIZE
+        private val core = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(255, 214, 0) }
+        private val accent = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.rgb(172, 126, 255)
+            style = Paint.Style.STROKE
+            strokeWidth = 2.5f * density
         }
 
         fun setClicking(clicking: Boolean) {
@@ -117,16 +114,19 @@ class PointerOverlay(private val context: Context) {
         }
 
         override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-            setMeasuredDimension(SIZE, SIZE)
+            setMeasuredDimension(sizePx, sizePx)
         }
 
         override fun onDraw(canvas: Canvas) {
             super.onDraw(canvas)
             val centerX = width / 2f
             val centerY = height / 2f
-            val radius = 20f
-            canvas.drawCircle(centerX, centerY, radius, outerPaint)
-            canvas.drawCircle(centerX, centerY, radius * 0.6f, if (isClicking) activePaint else innerPaint)
+            val radius = (if (isClicking) 8f else 10f) * density
+            // Transparent center preserves the target; the center dot remains the exact hotspot.
+            canvas.drawCircle(centerX, centerY, radius, outline)
+            canvas.drawCircle(centerX, centerY, radius, if (isClicking) accent else ring)
+            canvas.drawCircle(centerX, centerY, 3.5f * density, outline)
+            canvas.drawCircle(centerX, centerY, 2f * density, core)
         }
     }
 }

@@ -285,9 +285,8 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             result.gestures(),
             handSelection?.index
         )
-        val gestureName = gesture?.categoryName()?.takeIf { it.isNotBlank() } ?: "None"
-        val gestureScore = gesture?.score() ?: 0f
-        AirRuntime.lastGesture = gestureName
+        var gestureName = gesture?.categoryName()?.takeIf { it.isNotBlank() } ?: "None"
+        var gestureScore = gesture?.score() ?: 0f
         val indexTip = selectedHand?.getOrNull(INDEX_TIP)
         val commandOwnerId = handSelection?.ownerId
         diagnosticTrace?.put("selectedHandIndex", pointerHandIndex ?: org.json.JSONObject.NULL)
@@ -302,6 +301,13 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 )
             }
         }
+        if (handSelection != null) {
+            LandmarkGestureRecognizer.recognize(reusablePointsList, frameAspectRatio)?.let {
+                gestureName = it.name
+                gestureScore = it.score
+            }
+        }
+        AirRuntime.lastGesture = gestureName
         val selectedPoseEvidence = if (selectedHand != null) {
             poseEvidenceEvaluator.evaluate(reusablePointsList, frameAspectRatio)
         } else {
@@ -507,7 +513,8 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 confidence = decision.confidence,
                 timestampMs = timestamp,
                 tracking = commandTracking && !pinchInProgress,
-                ownershipId = commandOwnerId
+                ownershipId = commandOwnerId,
+                gestureId = RegisteredGesture.fromSignal(gestureName)?.name
             )
         )
         if (confirmedAction != null &&

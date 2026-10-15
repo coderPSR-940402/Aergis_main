@@ -28,12 +28,13 @@ import androidx.compose.ui.unit.dp
 import com.airgesture.control.AirAction
 import com.airgesture.control.GestureActionPolicy
 import com.airgesture.control.R
+import com.airgesture.control.RegisteredGesture
 
 /** Draft selection is local: Back, outside-tap and Cancel never write preferences. */
 @Composable
 internal fun ActionMappingPicker(
     gestureName: String,
-    source: AirAction,
+    source: RegisteredGesture,
     current: AirAction,
     pointerEnabled: Boolean,
     onSave: (AirAction) -> Unit,
@@ -69,7 +70,7 @@ internal fun ActionMappingPicker(
                         }
                     }
                 }
-                TextButton(onClick = { draftName = source.name }, modifier = Modifier.heightIn(min = 48.dp)) {
+                TextButton(onClick = { draftName = source.defaultAction.name }, modifier = Modifier.heightIn(min = 48.dp)) {
                     Text(stringResource(R.string.ui_mapping_restore_default))
                 }
             }

@@ -18,6 +18,16 @@ class ActionMappingStore(context: Context) {
     fun setMapping(source: AirAction, target: AirAction) =
         prefs.edit().putString("map_${source.name}", target.name).apply()
 
+    fun mapping(gesture: RegisteredGesture): AirAction {
+        val fallback = gesture.legacySource?.let(::mapping) ?: gesture.defaultAction
+        return runCatching {
+            AirAction.valueOf(prefs.getString("gesture_${gesture.name}", fallback.name) ?: fallback.name)
+        }.getOrDefault(fallback)
+    }
+
+    fun setMapping(gesture: RegisteredGesture, target: AirAction) =
+        prefs.edit().putString("gesture_${gesture.name}", target.name).apply()
+
     fun handPreference(): ControlHandPreference = runCatching {
         ControlHandPreference.valueOf(prefs.getString(KEY_HAND_PREF, ControlHandPreference.EITHER.name) ?: ControlHandPreference.EITHER.name)
     }.getOrDefault(ControlHandPreference.EITHER)

@@ -351,6 +351,30 @@ class CalibrationEngineIntegrationTest {
         assertEquals(PointerFeedback.NO_HAND, AirRuntime.pointerFeedback)
     }
 
+    @Test fun landmarkPoseUsesItsSavedMappingThroughTheFullEngine() {
+        val context = RuntimeEnvironment.getApplication() as Context
+        val prefs = context.getSharedPreferences("aergis_mappings", Context.MODE_PRIVATE)
+        val controller = org.robolectric.Robolectric.buildService(AirAccessibilityService::class.java).create()
+        val service = controller.get()
+        AirAccessibilityService::class.java.getDeclaredField("instance").apply { isAccessible = true }.set(null, service)
+        try {
+            ActionMappingStore(context).setMapping(RegisteredGesture.SHAKA, AirAction.TAP)
+            AirRuntime.pointerEnabled = false
+            AirRuntime.gesturesEnabled = true
+            val pose = LandmarkGestureRecognizerTest.pose(RegisteredGesture.SHAKA).map {
+                NormalizedLandmark.create(it.x, it.y, it.z)
+            }
+            repeat(8) { publish(pose, 1000L + it * 40L) }
+            org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+            assertEquals("Shaka", AirRuntime.lastGesture)
+            assertEquals("Owned landmark gesture must reach native dispatch once", 1,
+                org.robolectric.Shadows.shadowOf(service).gesturesDispatched.size)
+        } finally {
+            prefs.edit().remove("gesture_SHAKA").commit()
+            controller.destroy()
+        }
+    }
+
     private fun hand(): List<NormalizedLandmark> = MutableList(21) {
         NormalizedLandmark.create(0.5f, 0.5f, 0f)
     }.apply {
