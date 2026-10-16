@@ -57,7 +57,6 @@ internal object DiagnosticFrameData {
             .put("error", error ?: JSONObject.NULL).put("pointer", pointer(state.pointer)).put("rawUprightTip", pointer(state.rawPointer))
             .put("handPreference", state.handPreference.name).put("controlMode", state.controlMode.name)
             .put("pointerEnabled", state.pointerEnabled).put("gesturesEnabled", state.gesturesEnabled)
-            .put("motion", JSONObject().put("active", state.motionActive).put("magnitude", number(state.motionMagnitude)).put("reason", state.motionReason ?: JSONObject.NULL))
             .put("foregroundSafety", state.foregroundContext.safety.name).put("safetyReason", state.foregroundContext.reason)
             .put("pose", pose ?: JSONObject.NULL).put("actionEpoch", state.actionEpoch)
             .put("calibration", calibration?.let(PointerCalibrationProfileCodec::encode) ?: "Default linear full-frame mapping")

@@ -7,10 +7,6 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.hardware.Sensor
-import android.hardware.SensorEvent
-import android.hardware.SensorEventListener
-import android.hardware.SensorManager
 import android.hardware.camera2.CameraCharacteristics
 import androidx.camera.camera2.interop.Camera2CameraInfo
 import android.hardware.display.DisplayManager
@@ -35,9 +31,8 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
-import kotlin.math.sqrt
 
-class GestureCaptureService : Service(), LifecycleOwner, SensorEventListener {
+class GestureCaptureService : Service(), LifecycleOwner {
     private var executor: ExecutorService? = null
     private var captureExecutor: ExecutorService? = null
     private var frameProcessor: LatestFrameProcessor<CapturedCameraFrame>? = null
@@ -53,10 +48,6 @@ class GestureCaptureService : Service(), LifecycleOwner, SensorEventListener {
         }
     }
     private val lifecycleRegistry = LifecycleRegistry(this)
-    private val motionMonitor = DeviceMotionCancellation()
-    private lateinit var sensorManager: SensorManager
-    private var latestGyroMagnitude = 0f
-    private var latestAccelerationDeviation = 0f
 
     override val lifecycle: Lifecycle
         get() = lifecycleRegistry
@@ -81,53 +72,12 @@ class GestureCaptureService : Service(), LifecycleOwner, SensorEventListener {
                 AirRuntime.visionReady = false
                 AirRuntime.visionError = it.message ?: it.javaClass.simpleName
             }
-        registerMotionSensors()
         getSystemService(DisplayManager::class.java).registerDisplayListener(displayListener, Handler(Looper.getMainLooper()))
         setupCamera()
     }
 
     // Capture must be explicitly started again after Android kills this process.
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_NOT_STICKY
-
-    private fun registerMotionSensors() {
-        sensorManager = getSystemService(SENSOR_SERVICE) as SensorManager
-        val gyro = sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
-        val accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
-        AirRuntime.motionSensorsAvailable = gyro != null || accelerometer != null
-        if (gyro == null && accelerometer == null) {
-            AirRuntime.setMotionState(motionMonitor.reset())
-            return
-        }
-        gyro?.let { sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_GAME) }
-        accelerometer?.let { sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_GAME) }
-    }
-
-    override fun onSensorChanged(event: SensorEvent) {
-        when (event.sensor.type) {
-            Sensor.TYPE_GYROSCOPE -> {
-                latestGyroMagnitude = sqrt(
-                    event.values[0] * event.values[0] +
-                        event.values[1] * event.values[1] +
-                        event.values[2] * event.values[2]
-                )
-            }
-            Sensor.TYPE_ACCELEROMETER -> {
-                latestAccelerationDeviation = accelerationDeviation(
-                    event.values[0], event.values[1], event.values[2]
-                )
-            }
-            else -> return
-        }
-        AirRuntime.setMotionState(
-            motionMonitor.update(
-                latestGyroMagnitude,
-                latestAccelerationDeviation,
-                event.timestamp / 1_000_000L
-            )
-        )
-    }
-
-    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
 
     @ExperimentalGetImage
     @androidx.annotation.OptIn(androidx.camera.camera2.interop.ExperimentalCamera2Interop::class)
@@ -256,9 +206,6 @@ class GestureCaptureService : Service(), LifecycleOwner, SensorEventListener {
         // A capture already copying can finish; the closed processor recycles its late frame.
         captureExecutor?.shutdown()
         captureExecutor = null
-        if (::sensorManager.isInitialized) sensorManager.unregisterListener(this)
-        AirRuntime.setMotionState(motionMonitor.reset())
-        AirRuntime.motionSensorsAvailable = false
         // GPU creation, inference and native disposal all belong to the same executor.
         // stop() already prevents an old frame from publishing into a restarted session.
         executor?.let { exec ->

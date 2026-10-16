@@ -43,7 +43,7 @@ internal fun ControlScreen(
     val accent = status.color()
     val modeText = stringResource(when {
         !gesturesEnabled -> R.string.ui_actions_disabled
-        runtime.controlMode == ControlMode.PAUSED || runtime.motionActive ||
+        runtime.controlMode == ControlMode.PAUSED ||
             (runtime.controlMode == ControlMode.ARMED && runtime.foregroundSafety != ForegroundSafety.SAFE) -> R.string.ui_actions_paused
         runtime.controlMode == ControlMode.ARMED -> R.string.ui_actions_armed
         else -> R.string.ui_actions_disarmed
@@ -87,7 +87,7 @@ internal fun ControlScreen(
                 }
                 AergisArmControl(
                     armed = runtime.controlMode == ControlMode.ARMED,
-                    enabled = runtime.running && (runtime.controlMode == ControlMode.ARMED || !runtime.motionActive),
+                    enabled = runtime.running,
                     stateText = modeText, onClick = onArm
                 )
                 // Tracking and control authority are different facts and are shown as separate chips.

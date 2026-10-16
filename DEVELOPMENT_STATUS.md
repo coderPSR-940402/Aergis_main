@@ -50,7 +50,7 @@
 ## Important unresolved issues
 
 - Primary-hand ownership still needs device validation across occlusion, rapid crossings, and large hand-scale changes.
-- IMU device-motion cancellation is implemented but still needs physical-device threshold validation.
+- Device-motion sensing and cancellation were removed at user request. No gyro/accelerometer readings gate pointer, gestures, dragging or calibration.
 - Protected foreground-context policy and explicit READY/ARMED control mode are implemented; device coverage remains outstanding.
 - Physical-device false-positive, latency, jitter, thermal, and battery measurements are unavailable.
 
@@ -62,4 +62,4 @@
 
 ## Next frontier
 
-Run the physical-device false-positive campaign, validate motion thresholds and protected-context coverage, then expand the gesture vocabulary only if the measured safety gates remain green.
+Run the physical-device false-positive campaign, verify movement continuity and protected-context coverage, then expand the gesture vocabulary only if the measured safety gates remain green.

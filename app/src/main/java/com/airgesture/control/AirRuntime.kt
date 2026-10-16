@@ -54,10 +54,6 @@ data class AirRuntimeState(
     val pointerEnabled: Boolean = true,
     val gesturesEnabled: Boolean = true,
     val controlMode: ControlMode = ControlMode.OFF,
-    val motionActive: Boolean = false,
-    val motionMagnitude: Float = 0f,
-    val motionReason: String? = null,
-    val motionSensorsAvailable: Boolean = false,
     val foregroundContext: ForegroundContextState = ForegroundContextState(),
     val handPreference: ControlHandPreference = ControlHandPreference.EITHER,
     val visionReady: Boolean = false,
@@ -97,8 +93,6 @@ data class AirRuntimeUiState(
     val pointerTracking: Boolean,
     val pointerFeedback: PointerFeedback,
     val controlMode: ControlMode,
-    val motionActive: Boolean,
-    val motionSensorsAvailable: Boolean,
     val foregroundSafety: ForegroundSafety,
     val safetyReason: String,
     val visionTelemetry: VisionTelemetry,
@@ -118,10 +112,8 @@ private fun AirRuntimeState.toUiState(): AirRuntimeUiState = AirRuntimeUiState(
     pointerTracking = pointerTracking,
     pointerFeedback = pointerFeedback,
     controlMode = controlMode,
-    motionActive = motionActive,
-    motionSensorsAvailable = motionSensorsAvailable,
     foregroundSafety = foregroundContext.safety,
-    safetyReason = motionReason ?: foregroundContext.reason,
+    safetyReason = foregroundContext.reason,
     visionTelemetry = visionTelemetry,
     actionDispatchTelemetry = actionDispatchTelemetry,
     poseEvidence = poseEvidence,
@@ -165,32 +157,6 @@ object AirRuntime {
             if (it.controlMode == value) it
             else it.copy(controlMode = value, actionEpoch = it.actionEpoch + 1L)
         }
-
-    var motionActive: Boolean
-        get() = state.value.motionActive
-        set(value) = _state.update {
-            if (it.motionActive == value) it
-            else it.copy(motionActive = value, actionEpoch = it.actionEpoch + 1L)
-        }
-
-    fun setMotionState(state: MotionState) {
-        _state.update {
-            if (it.motionActive == state.active && it.motionReason == state.reason) {
-                it.copy(motionMagnitude = state.magnitude)
-            } else {
-                it.copy(
-                    motionActive = state.active,
-                    motionMagnitude = state.magnitude,
-                    motionReason = state.reason,
-                    actionEpoch = it.actionEpoch + 1L
-                )
-            }
-        }
-    }
-
-    var motionSensorsAvailable: Boolean
-        get() = state.value.motionSensorsAvailable
-        set(value) = _state.update { it.copy(motionSensorsAvailable = value) }
 
     fun setForegroundContext(context: ForegroundContextState) {
         _state.update {

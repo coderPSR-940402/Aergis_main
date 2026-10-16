@@ -18,6 +18,7 @@ internal class HeldPointerTouch(
     private var target = endpoint
     private var pressed = false
     private var releaseRequested = false
+    private var releaseTarget: PointerCoordinateMapper.Point? = null
     private var blockedUntilOpen = false
     private var epoch = 0L
     private var generation = 0L
@@ -52,7 +53,12 @@ internal class HeldPointerTouch(
         lastSampleAt = sampledAt
         pressed = isPressed
         // Finger-up belongs to the current touch and cannot be undone by the next pinch.
-        if (stroke != null && !isPressed) releaseRequested = true
+        if (stroke != null && !isPressed && !releaseRequested) {
+            releaseRequested = true
+            // Preserve the last held target even if Android has not dispatched that
+            // movement yet. Neither aiming after release nor a new pinch may replace it.
+            releaseTarget = target
+        }
         // Release at the last held point, not at an already-recovering aiming coordinate.
         // GestureDescription rounds sampled positions to physical pixels. Differences
         // below that precision produce no MOVE event and cannot form a continuation.
@@ -70,7 +76,7 @@ internal class HeldPointerTouch(
 
     private fun send(ending: Boolean) {
         if (!permitted(epoch)) { cancel(); return }
-        val to = if (ending) endpoint else target
+        val to = if (ending) releaseTarget ?: endpoint else target
         // Android rejects empty event lists: a stationary continuing stroke has no
         // DOWN, MOVE or UP. The previous willContinue stroke already keeps the finger
         // down; retain it until a new target or release arrives (watchdog still runs).
@@ -79,7 +85,8 @@ internal class HeldPointerTouch(
             moveTo(endpoint.x, endpoint.y)
             if (to != endpoint) lineTo(to.x, to.y)
         }
-        val next = stroke?.continueStroke(path, 0L, if (ending) 1L else CHUNK_MS, !ending)
+        val duration = if (ending && to == endpoint) 1L else CHUNK_MS
+        val next = stroke?.continueStroke(path, 0L, duration, !ending)
             ?: GestureDescription.StrokeDescription(path, 0L, CHUNK_MS, true)
         stroke = next
         endpoint = to
@@ -149,6 +156,7 @@ internal class HeldPointerTouch(
         dispatchInFlight = false
         pressed = false
         releaseRequested = false
+        releaseTarget = null
         handler.removeCallbacks(watchdog)
     }
 

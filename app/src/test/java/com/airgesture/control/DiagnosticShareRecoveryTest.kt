@@ -45,7 +45,7 @@ class DiagnosticShareRecoveryTest {
             assertNotEquals(ForegroundSafety.SAFE, AirRuntime.state.value.foregroundContext.safety)
             assertEquals(ControlMode.READY, AirRuntime.controlMode)
             assertFalse(ActionSafetyPolicy.evaluate(AirAction.TAP, true, ControlMode.ARMED,
-                false, AirRuntime.state.value.foregroundContext.safety).allowed)
+                AirRuntime.state.value.foregroundContext.safety).allowed)
         } finally { activity.pause().stop().destroy() }
     }
 
@@ -62,10 +62,10 @@ class DiagnosticShareRecoveryTest {
             service.get().onAccessibilityEvent(event)
             assertEquals(ForegroundSafety.PROTECTED, AirRuntime.state.value.foregroundContext.safety)
             assertFalse(ActionSafetyPolicy.evaluate(AirAction.TAP, true, ControlMode.ARMED,
-                false, AirRuntime.state.value.foregroundContext.safety).allowed)
+                AirRuntime.state.value.foregroundContext.safety).allowed)
         } finally { service.destroy(); activity.pause().stop().destroy() }
     }
 
     private fun pointerActive() = PointerTrackingPolicy.isActive(AirRuntime.pointerEnabled,
-        AirRuntime.controlMode, false, AirRuntime.state.value.foregroundContext.safety)
+        AirRuntime.controlMode, AirRuntime.state.value.foregroundContext.safety)
 }

@@ -324,11 +324,6 @@ class MainActivity : ComponentActivity() {
                     Text(stringResource(R.string.gesture, runtime.lastGesture))
                     Text(stringResource(R.string.camera_status, stringResource(if (runtime.cameraReady) R.string.status_ready else R.string.status_not_active)))
                     Text(stringResource(R.string.vision_status, stringResource(if (runtime.visionReady) R.string.status_ready else R.string.status_not_ready)))
-                    Text(stringResource(R.string.motion_status, stringResource(when {
-                        !runtime.motionSensorsAvailable -> R.string.motion_unavailable
-                        runtime.motionActive -> R.string.motion_active
-                        else -> R.string.motion_inactive
-                    })))
                     Text(stringResource(R.string.foreground_status, stringResource(when (runtime.foregroundSafety) {
                         ForegroundSafety.SAFE -> R.string.foreground_safe
                         ForegroundSafety.PROTECTED -> R.string.foreground_protected

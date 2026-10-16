@@ -16,7 +16,6 @@ internal data class HomeUiState(
     val pointerTracking: Boolean,
     val pointerFeedback: PointerFeedback,
     val controlMode: ControlMode,
-    val motionActive: Boolean,
     val foregroundSafety: ForegroundSafety,
     val safetyReason: String
 ) {
@@ -26,7 +25,7 @@ internal data class HomeUiState(
         visionError != null -> HomeStatus.ERROR
         !cameraReady -> HomeStatus.CAMERA_STARTING
         !visionReady -> HomeStatus.VISION_STARTING
-        controlMode == ControlMode.PAUSED || motionActive ||
+        controlMode == ControlMode.PAUSED ||
             (controlMode == ControlMode.ARMED && foregroundSafety != ForegroundSafety.SAFE) -> HomeStatus.PAUSED
         !pointerEnabled || pointerFeedback == PointerFeedback.DISABLED -> HomeStatus.POINTER_PAUSED
         pointerTracking -> HomeStatus.TRACKING
@@ -37,7 +36,7 @@ internal data class HomeUiState(
         fun from(runtime: AirRuntimeUiState) = HomeUiState(
             runtime.running, runtime.cameraReady, runtime.visionReady, runtime.visionError,
             runtime.handsDetected, runtime.handedness, runtime.pointerTracking, runtime.pointerFeedback,
-            runtime.controlMode, runtime.motionActive, runtime.foregroundSafety, runtime.safetyReason
+            runtime.controlMode, runtime.foregroundSafety, runtime.safetyReason
         )
     }
 }

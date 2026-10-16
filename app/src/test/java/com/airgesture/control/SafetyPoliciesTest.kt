@@ -6,6 +6,19 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SafetyPoliciesTest {
+    @Test fun allConfiguredActionsDependOnlyOnExplicitControlAndForegroundState() {
+        for (action in AirAction.entries.filter { it != AirAction.NONE }) {
+            assertTrue(action.name, ActionSafetyPolicy.evaluate(action, true, ControlMode.ARMED, ForegroundSafety.SAFE).allowed)
+            for (mode in listOf(ControlMode.OFF, ControlMode.READY, ControlMode.PAUSED)) {
+                assertFalse(ActionSafetyPolicy.evaluate(action, true, mode, ForegroundSafety.SAFE).allowed)
+            }
+            assertFalse(ActionSafetyPolicy.evaluate(action, false, ControlMode.ARMED, ForegroundSafety.SAFE).allowed)
+            for (safety in listOf(ForegroundSafety.UNKNOWN, ForegroundSafety.PROTECTED)) {
+                assertFalse(ActionSafetyPolicy.evaluate(action, true, ControlMode.ARMED, safety).allowed)
+            }
+        }
+    }
+
     @Test
     fun settingsIsProtectedWithoutBlockingSimilarPackages() {
         assertEquals(ForegroundSafety.PROTECTED,
@@ -21,24 +34,6 @@ class SafetyPoliciesTest {
     }
 
     @Test
-    fun motionCancellationActivatesOnRotationAndReleasesAfterQuietPeriod() {
-        val monitor = DeviceMotionCancellation(releaseHoldMs = 100L)
-
-        assertTrue(monitor.update(1.5f, 0f, 0L).active)
-        assertTrue(monitor.update(0.2f, 0.1f, 50L).active)
-        assertFalse(monitor.update(0.2f, 0.1f, 150L).active)
-    }
-
-    @Test
-    fun accelerationDeviationDetectsDeviceMovementWithoutAssumingOrientation() {
-        val monitor = DeviceMotionCancellation()
-
-        val state = monitor.update(0f, accelerationDeviation(0f, 0f, 13f), 0L)
-
-        assertTrue(state.active)
-    }
-
-    @Test
     fun protectedForegroundContextsAreBlocked() {
         val context = ForegroundContextPolicy.evaluate(
             "com.android.systemui",
@@ -51,7 +46,6 @@ class SafetyPoliciesTest {
                 AirAction.BACK,
                 gesturesEnabled = true,
                 controlMode = ControlMode.ARMED,
-                motionActive = false,
                 foregroundSafety = context.safety
             ).allowed
         )
@@ -63,7 +57,6 @@ class SafetyPoliciesTest {
             AirAction.TAP,
             gesturesEnabled = true,
             controlMode = ControlMode.READY,
-            motionActive = false,
             foregroundSafety = ForegroundSafety.SAFE
         )
 
@@ -76,7 +69,6 @@ class SafetyPoliciesTest {
             AirAction.SCROLL_UP,
             gesturesEnabled = true,
             controlMode = ControlMode.ARMED,
-            motionActive = false,
             foregroundSafety = ForegroundSafety.SAFE
         )
 

@@ -21,15 +21,6 @@ class AirRuntimeTest {
     }
 
     @Test
-    fun motionMagnitudeUpdatesWithoutInvalidatingActionsForUnchangedGate() {
-        AirRuntime.setMotionState(MotionState(false, .1f, null))
-        val epoch = AirRuntime.actionEpoch
-        AirRuntime.setMotionState(MotionState(false, .7f, null))
-        assertEquals(.7f, AirRuntime.state.value.motionMagnitude, 0f)
-        assertEquals(epoch, AirRuntime.actionEpoch)
-    }
-
-    @Test
     fun pointerStateIsClampedAndPublishedAsOneSnapshot() {
         AirRuntime.setPointerState(-0.5f, 1.5f, tracking = true)
 
