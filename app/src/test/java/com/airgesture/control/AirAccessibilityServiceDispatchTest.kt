@@ -270,6 +270,52 @@ class AirAccessibilityServiceDispatchTest {
         assertEquals("Old callbacks cannot extend the next press", 3, shadow.gesturesDispatched.size)
     }
 
+    @Test fun queuedDragMovementReachesItsOwnReleaseTargetBeforeTheNextPress() {
+        service.updatePointerTouch(.2f, .2f, true)
+        shadowOf(Looper.getMainLooper()).idle()
+        val down = shadow.gesturesDispatched.single()
+        service.updatePointerTouch(.4f, .6f, true)
+        // Aiming after finger-up is not part of the drag; a next pinch has its own target.
+        service.updatePointerTouch(.9f, .9f, false)
+        service.updatePointerTouch(.7f, .8f, true)
+        shadowOf(Looper.getMainLooper()).idle()
+        down.callback()!!.onCompleted(down.description())
+        val release = shadow.gesturesDispatched.last()
+        val bounds = RectF()
+        release.description().getStroke(0).path.computeBounds(bounds, true)
+        val metrics = DisplayMetrics()
+        @Suppress("DEPRECATION")
+        (service.getSystemService(Context.WINDOW_SERVICE) as WindowManager).defaultDisplay.getRealMetrics(metrics)
+        assertEquals(Math.round(.4f * (metrics.widthPixels - 1)).toFloat(), bounds.right, 0f)
+        assertEquals(Math.round(.6f * (metrics.heightPixels - 1)).toFloat(), bounds.bottom, 0f)
+        assertFalse(release.description().getStroke(0).willContinue())
+        assertTrue("Pending movement uses a real movement interval", release.description().getStroke(0).duration > 1L)
+        release.callback()!!.onCompleted(release.description())
+        assertEquals(3, shadow.gesturesDispatched.size)
+        val nextBounds = RectF()
+        shadow.gesturesDispatched.last().description().getStroke(0).path.computeBounds(nextBounds, true)
+        assertEquals(Math.round(.7f * (metrics.widthPixels - 1)).toFloat(), nextBounds.left, 0f)
+        assertEquals(Math.round(.8f * (metrics.heightPixels - 1)).toFloat(), nextBounds.top, 0f)
+        assertEquals(1L, AirRuntime.state.value.actionDispatchTelemetry.completed)
+    }
+
+    @Test fun safetyChangeCancelsQueuedFinalMovementInsteadOfDropping() {
+        service.updatePointerTouch(.2f, .2f, true)
+        shadowOf(Looper.getMainLooper()).idle()
+        val down = shadow.gesturesDispatched.single()
+        service.updatePointerTouch(.4f, .6f, true)
+        service.updatePointerTouch(.9f, .9f, false)
+        shadowOf(Looper.getMainLooper()).idle()
+        AirRuntime.motionActive = true
+        down.callback()!!.onCompleted(down.description())
+        val cancellation = shadow.gesturesDispatched.last()
+        val bounds = RectF()
+        cancellation.description().getStroke(0).path.computeBounds(bounds, true)
+        assertEquals("Cancellation must not move to the queued drop target", 0f, bounds.width(), 0f)
+        assertEquals(0f, bounds.height(), 0f)
+        assertEquals(0L, AirRuntime.state.value.actionDispatchTelemetry.completed)
+    }
+
     @Test fun releaseDuringEndingDoesNotReplayAnotherTouch() {
         service.updatePointerTouch(.4f, .5f, true)
         shadowOf(Looper.getMainLooper()).idle()
