@@ -15,7 +15,9 @@ internal class GestureTransactionStateMachine(
         val confidence: Float,
         val timestampMs: Long,
         val tracking: Boolean,
-        val ownershipId: String?
+        val ownershipId: String?,
+        val gestureId: String? = null,
+        val tuning: GestureTuning? = null
     )
 
     init {
@@ -27,6 +29,9 @@ internal class GestureTransactionStateMachine(
     private var state = State.NEUTRAL
     private var candidateAction = AirAction.NONE
     private var candidateOwner: String? = null
+    private var candidateGesture: String? = null
+    private var candidateTuning: GestureTuning? = null
+    private var activeCooldownMs = cooldownMs
     private var candidateSince = 0L
     private var neutralOwner: String? = null
     private var neutralSince: Long? = null
@@ -50,7 +55,7 @@ internal class GestureTransactionStateMachine(
             processNeutral(input)
             return null
         }
-        if (input.confidence < minimumConfidence) {
+        if (input.confidence < (input.tuning?.bounded()?.confidencePercent?.div(100f) ?: minimumConfidence)) {
             discardEvidence()
             return null
         }
@@ -60,17 +65,20 @@ internal class GestureTransactionStateMachine(
         if (state == State.COOLDOWN) return null
 
         if (state != State.CANDIDATE || candidateAction != input.action ||
-            candidateOwner != input.ownershipId) {
+            candidateOwner != input.ownershipId || candidateGesture != input.gestureId || candidateTuning != input.tuning?.bounded()) {
             candidateAction = input.action
             candidateOwner = input.ownershipId
+            candidateGesture = input.gestureId
+            candidateTuning = input.tuning?.bounded()
             candidateSince = input.timestampMs
             state = State.CANDIDATE
             return null
         }
-        if (input.timestampMs - candidateSince < confirmationMs) return null
+        if (input.timestampMs - candidateSince < (candidateTuning?.holdMs ?: confirmationMs)) return null
 
         state = State.COOLDOWN
         cooldownStartedAt = input.timestampMs
+        activeCooldownMs = candidateTuning?.repeatDelayMs ?: cooldownMs
         return candidateAction
     }
 
@@ -86,6 +94,8 @@ internal class GestureTransactionStateMachine(
         if (state != State.COOLDOWN) state = State.NEUTRAL
         candidateAction = AirAction.NONE
         candidateOwner = null
+        candidateGesture = null
+        candidateTuning = null
         candidateSince = 0L
         neutralOwner = null
         neutralSince = null
@@ -101,7 +111,7 @@ internal class GestureTransactionStateMachine(
             neutralOwner = input.ownershipId
         }
         if (input.timestampMs - checkNotNull(neutralSince) >= neutralReleaseMs &&
-            input.timestampMs - cooldownStartedAt >= cooldownMs) {
+            input.timestampMs - cooldownStartedAt >= activeCooldownMs) {
             state = State.NEUTRAL
             discardEvidence()
         }

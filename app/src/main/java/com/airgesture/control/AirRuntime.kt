@@ -33,6 +33,7 @@ data class VisionTelemetry(
 enum class ActionDispatchOutcome {
     POLICY_DENIED,
     PLATFORM_REJECTED,
+    SUBMITTED,
     COMPLETED,
     CANCELLED
 }
@@ -42,6 +43,7 @@ data class ActionDispatchTelemetry(
     val policyDenied: Long = 0L,
     val platformRejected: Long = 0L,
     val completed: Long = 0L,
+    val submitted: Long = 0L,
     val cancelled: Long = 0L,
     val lastOutcome: ActionDispatchOutcome? = null
 )
@@ -323,6 +325,8 @@ object AirRuntime {
                     telemetry.copy(policyDenied = telemetry.policyDenied.safeIncrement())
                 ActionDispatchOutcome.PLATFORM_REJECTED ->
                     telemetry.copy(platformRejected = telemetry.platformRejected.safeIncrement())
+                ActionDispatchOutcome.SUBMITTED ->
+                    telemetry.copy(submitted = telemetry.submitted.safeIncrement())
                 ActionDispatchOutcome.COMPLETED ->
                     telemetry.copy(completed = telemetry.completed.safeIncrement())
                 ActionDispatchOutcome.CANCELLED ->

@@ -32,15 +32,9 @@ class GestureInterpreter(
 ) {
 
     fun interpret(signal: GestureSignal): GestureDecision {
-        val source = when (signal.name.lowercase()) {
-            "thumb_up", "thumbs_up" -> AirAction.TAP
-            "victory", "peace" -> AirAction.BACK
-            "open_palm", "open hand" -> AirAction.HOME
-            "closed_fist", "fist" -> AirAction.RECENTS
-            "pointing_up", "point" -> AirAction.DOUBLE_TAP
-            else -> AirAction.NONE
-        }
-        return GestureDecision(mappings?.mapping(source) ?: source, signal.score)
+        val gesture = RegisteredGesture.fromSignal(signal.name)
+            ?: return GestureDecision(AirAction.NONE, signal.score)
+        return GestureDecision(mappings?.mapping(gesture) ?: gesture.defaultAction, signal.score)
     }
 
     fun processFrame(landmarks: List<Point3D>, timestampMs: Long, actionsAllowed: Boolean = true, aspectRatio: Float = 1f): ProcessedGestureResult? {

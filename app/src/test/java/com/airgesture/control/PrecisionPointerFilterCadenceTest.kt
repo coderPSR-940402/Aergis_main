@@ -6,6 +6,18 @@ import org.junit.Test
 
 /** The jump gate is a physical-speed limit: a result cadence change must not make normal motion an outlier. */
 class PrecisionPointerFilterCadenceTest {
+    @Test fun rejectedObservationDoesNotDistortVelocityOnRecovery() {
+        val clean = PrecisionPointerFilter()
+        val noisy = PrecisionPointerFilter()
+        for (filter in listOf(clean, noisy)) filter.update(.3f, .5f, 1000)
+        noisy.update(.95f, .9f, 1033)
+        assertTrue(!noisy.measurementTrusted)
+        val expected = clean.update(.32f, .5f, 1066)
+        val recovered = noisy.update(.32f, .5f, 1066)
+        assertEquals("Rejected frames must not shorten accepted measurement dt", expected.x, recovered.x, .00001f)
+        assertEquals(clean.update(.33f, .5f, 1099).x, noisy.update(.33f, .5f, 1099).x, .00001f)
+    }
+
     @Test fun stationaryNoiseRemainsSuppressedAtActualSlowCameraRates() {
         for (fps in listOf(4, 5, 8, 15, 30, 60)) {
             val filter = PrecisionPointerFilter()

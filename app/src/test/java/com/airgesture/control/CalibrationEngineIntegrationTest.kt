@@ -224,6 +224,30 @@ class CalibrationEngineIntegrationTest {
         assertFalse(AirRuntime.rawPointerSnapshot().tracking)
     }
 
+    @Test fun fourCornerCalibrationWorksWithActionsAndPointerOffAtTrackingLatency() {
+        AirRuntime.controlMode = ControlMode.READY
+        AirRuntime.pointerEnabled = false
+        AirRuntime.gesturesEnabled = false
+        val session = PointerCalibrationSession().apply { start() }
+        var timestamp = 1000L
+        for ((x, y) in listOf(.2f to .2f, .8f to .2f, .8f to .8f, .2f to .8f)) {
+            val corner = hand().toMutableList().apply { this[8] = NormalizedLandmark.create(x, y, 0f) }
+            repeat(4) {
+                publish(corner, timestamp, delayMs = 500L)
+                timestamp += 134L
+            }
+            val sample = AirRuntime.rawPointerSnapshot()
+            assertTrue("Read-only calibration must not require action freshness or enabled pointer", sample.tracking)
+            assertTrue(session.addSample(sample.x, sample.y))
+            assertFalse(AirRuntime.pointerTracking)
+            assertEquals(PointerInteractionPhase.IDLE, AirRuntime.pointerInteraction)
+        }
+        assertEquals(4, session.sampleCount())
+        assertNotNull(session.complete())
+        publish(hand(), timestamp, delayMs = 601L)
+        assertFalse("Calibration must still discard truly stale frames", AirRuntime.rawPointerSnapshot().tracking)
+    }
+
     @Test
     fun calibrationPreviewRejectsProtectedContextAndDeviceMotion() {
         AirRuntime.controlMode = ControlMode.READY
@@ -252,6 +276,47 @@ class CalibrationEngineIntegrationTest {
             // 1.75 times palm width is a plausible extended index, not a broken pinch.
             this[8] = NormalizedLandmark.create(.4f, .15f, 0f)
         })
+    }
+
+    @Test fun trackedPinchCanHoldThenDragAndReleaseOneNativeTouch() {
+        val controller = org.robolectric.Robolectric.buildService(AirAccessibilityService::class.java).create()
+        val service = controller.get()
+        AirAccessibilityService::class.java.getDeclaredField("instance").apply { isAccessible = true }.set(null, service)
+        try {
+            AirRuntime.gesturesEnabled = true
+            AirRuntime.resetActionDispatchTelemetry()
+            val shadow = org.robolectric.Shadows.shadowOf(service)
+            val looper = org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper())
+            var timestamp = 1000L
+            var completedChunks = 0
+            fun frame(points: List<NormalizedLandmark>) {
+                publish(points, timestamp, delayMs = 250L)
+                timestamp += 134L
+                looper.idle()
+                while (completedChunks < shadow.gesturesDispatched.size) {
+                    val chunk = shadow.gesturesDispatched[completedChunks++]
+                    chunk.callback()!!.onCompleted(chunk.description())
+                }
+            }
+            val open = hand()
+            val closed = open.toMutableList().apply { this[4] = NormalizedLandmark.create(.56f, .65f, 0f) }
+            repeat(4) { frame(open) }
+            repeat(8) { frame(closed) }
+            assertEquals(PointerInteractionPhase.HOLDING, AirRuntime.pointerInteraction)
+            assertEquals("Hold must not dispatch empty continuations", 1, shadow.gesturesDispatched.size)
+            val moved = closed.toMutableList().apply { this[8] = NormalizedLandmark.create(.5f, .85f, 0f) }
+            repeat(12) { frame(moved) }
+            assertEquals(PointerInteractionPhase.DRAGGING, AirRuntime.pointerInteraction)
+            assertTrue(shadow.gesturesDispatched.drop(1).any {
+                val bounds = android.graphics.RectF()
+                it.description().getStroke(0).path.computeBounds(bounds, true)
+                bounds.height() > 0f
+            })
+            frame(moved.toMutableList().apply { this[4] = open[4] })
+            assertFalse(shadow.gesturesDispatched.last().description().getStroke(0).willContinue())
+            assertEquals(1L, AirRuntime.state.value.actionDispatchTelemetry.completed)
+            assertEquals(0L, AirRuntime.state.value.actionDispatchTelemetry.cancelled)
+        } finally { controller.destroy() }
     }
 
     private fun assertSlowCameraPinchDispatchesOneTap(open: List<NormalizedLandmark>) {
@@ -349,6 +414,55 @@ class CalibrationEngineIntegrationTest {
         assertEquals(point.y, AirRuntime.pointerY, 0f)
         publish(emptyList(), 1800L)
         assertEquals(PointerFeedback.NO_HAND, AirRuntime.pointerFeedback)
+    }
+
+    @Test fun landmarkPoseUsesItsSavedMappingThroughTheFullEngine() {
+        val context = RuntimeEnvironment.getApplication() as Context
+        val prefs = context.getSharedPreferences("aergis_mappings", Context.MODE_PRIVATE)
+        val controller = org.robolectric.Robolectric.buildService(AirAccessibilityService::class.java).create()
+        val service = controller.get()
+        AirAccessibilityService::class.java.getDeclaredField("instance").apply { isAccessible = true }.set(null, service)
+        try {
+            ActionMappingStore(context).setMapping(RegisteredGesture.SHAKA, AirAction.TAP)
+            AirRuntime.pointerEnabled = false
+            AirRuntime.gesturesEnabled = true
+            val pose = LandmarkGestureRecognizerTest.pose(RegisteredGesture.SHAKA).map {
+                NormalizedLandmark.create(it.x, it.y, it.z)
+            }
+            repeat(8) { publish(pose, 1000L + it * 40L) }
+            org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+            assertEquals("Shaka", AirRuntime.lastGesture)
+            assertEquals("Owned landmark gesture must reach native dispatch once", 1,
+                org.robolectric.Shadows.shadowOf(service).gesturesDispatched.size)
+        } finally {
+            prefs.edit().remove("gesture_SHAKA").commit()
+            controller.destroy()
+        }
+    }
+
+    @Test fun recordedDeviceLatencyCanConfirmMappedCommandsExactlyOnce() {
+        val controller = org.robolectric.Robolectric.buildService(AirAccessibilityService::class.java).create()
+        val service = controller.get()
+        AirAccessibilityService::class.java.getDeclaredField("instance").apply { isAccessible = true }.set(null, service)
+        try {
+            AirRuntime.gesturesEnabled = true
+            val ages = listOf(242L, 231L, 225L, 255L, 248L, 318L, 250L, 245L)
+            ages.forEachIndexed { index, age ->
+                publish(hand(), 1000L + index * 134L, gestureName = "Victory", delayMs = age)
+            }
+            org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+            assertEquals(listOf(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK),
+                org.robolectric.Shadows.shadowOf(service).globalActionsPerformed)
+        } finally { controller.destroy() }
+    }
+
+    @Test fun commandAgeLimitStillRejectsBacklogWhileCursorCanTrack() {
+        AirRuntime.gesturesEnabled = true
+        repeat(8) { publish(hand(), 1000L + it * 134L, gestureName = "Victory", delayMs = 351L) }
+        assertTrue(AirRuntime.pointerTracking)
+        val field = GestureRecognitionEngine::class.java.getDeclaredField("gestureTransaction").apply { isAccessible = true }
+        assertEquals(GestureTransactionStateMachine.State.NEUTRAL,
+            (field.get(engine) as GestureTransactionStateMachine).currentState())
     }
 
     private fun hand(): List<NormalizedLandmark> = MutableList(21) {

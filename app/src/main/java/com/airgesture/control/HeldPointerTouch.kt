@@ -6,7 +6,7 @@ import android.graphics.Path
 import android.os.Handler
 import android.os.SystemClock
 
-/** Main-thread single-finger touch, maintained in short, callback-chained strokes. */
+/** Main-thread native finger-down, continued only for movement or release. */
 internal class HeldPointerTouch(
     private val handler: Handler,
     private val dispatch: (GestureDescription, AccessibilityService.GestureResultCallback) -> Boolean,
@@ -17,9 +17,11 @@ internal class HeldPointerTouch(
     private var endpoint = PointerCoordinateMapper.Point(0f, 0f)
     private var target = endpoint
     private var pressed = false
+    private var releaseRequested = false
     private var blockedUntilOpen = false
     private var epoch = 0L
     private var generation = 0L
+    private var dispatchInFlight = false
     private var lastSampleAt = 0L
 
     private val watchdog = object : Runnable {
@@ -49,20 +51,30 @@ internal class HeldPointerTouch(
         }
         lastSampleAt = sampledAt
         pressed = isPressed
+        // Finger-up belongs to the current touch and cannot be undone by the next pinch.
+        if (stroke != null && !isPressed) releaseRequested = true
         // Release at the last held point, not at an already-recovering aiming coordinate.
-        if (isPressed) target = point
+        // GestureDescription rounds sampled positions to physical pixels. Differences
+        // below that precision produce no MOVE event and cannot form a continuation.
+        val pixelPoint = PointerCoordinateMapper.Point(Math.round(point.x).toFloat(), Math.round(point.y).toFloat())
+        if (isPressed) target = pixelPoint
         if (stroke == null && isPressed) {
             epoch = requestEpoch
-            endpoint = point
-            generation++
+            endpoint = pixelPoint
             send(ending = false)
             if (stroke != null) handler.postDelayed(watchdog, WATCHDOG_MS)
+        } else if (stroke != null && !dispatchInFlight) {
+            send(ending = releaseRequested || !pressed)
         }
     }
 
     private fun send(ending: Boolean) {
         if (!permitted(epoch)) { cancel(); return }
         val to = if (ending) endpoint else target
+        // Android rejects empty event lists: a stationary continuing stroke has no
+        // DOWN, MOVE or UP. The previous willContinue stroke already keeps the finger
+        // down; retain it until a new target or release arrives (watchdog still runs).
+        if (stroke != null && !ending && to == endpoint) return
         val path = Path().apply {
             moveTo(endpoint.x, endpoint.y)
             if (to != endpoint) lineTo(to.x, to.y)
@@ -71,21 +83,31 @@ internal class HeldPointerTouch(
             ?: GestureDescription.StrokeDescription(path, 0L, CHUNK_MS, true)
         stroke = next
         endpoint = to
-        val token = generation
+        val token = ++generation
+        dispatchInFlight = true
         val gesture = GestureDescription.Builder().addStroke(next).build()
         val accepted = dispatch(gesture, object : AccessibilityService.GestureResultCallback() {
             override fun onCompleted(gestureDescription: GestureDescription?) {
-                if (token != generation) return
+                if (token != generation || !dispatchInFlight) return
+                dispatchInFlight = false
                 if (ending) {
+                    // Retain only a currently held, fresh next press; never replay a
+                    // backlog of contacts that ended while Android was completing up.
+                    val nextPressed = pressed
+                    val nextTarget = target
+                    val nextEpoch = epoch
+                    val nextSampleAt = lastSampleAt
                     clear()
                     record(ActionDispatchOutcome.COMPLETED)
+                    if (nextPressed) update(nextTarget, true, nextEpoch, nextSampleAt)
                 } else if (!permitted(epoch) || SystemClock.uptimeMillis() - lastSampleAt > MAX_IDLE_MS) {
                     cancel()
-                } else send(ending = !pressed)
+                } else send(ending = releaseRequested || !pressed)
             }
 
             override fun onCancelled(gestureDescription: GestureDescription?) {
-                if (token != generation) return
+                if (token != generation || !dispatchInFlight) return
+                dispatchInFlight = false
                 clear()
                 blockedUntilOpen = true
                 record(ActionDispatchOutcome.CANCELLED)
@@ -124,7 +146,9 @@ internal class HeldPointerTouch(
     private fun clear() {
         generation++
         stroke = null
+        dispatchInFlight = false
         pressed = false
+        releaseRequested = false
         handler.removeCallbacks(watchdog)
     }
 

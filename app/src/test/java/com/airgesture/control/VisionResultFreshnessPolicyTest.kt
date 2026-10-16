@@ -6,6 +6,18 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class VisionResultFreshnessPolicyTest {
+    @Test fun devicePipelineLatencyStillAllowsOrderedCommandsButNotBacklogs() {
+        val policy = VisionResultFreshnessPolicy()
+        val ages = listOf(242L, 231L, 225L, 255L, 318L, 350L)
+        ages.forEachIndexed { index, age ->
+            val timestamp = 1000L + index * 134L
+            assertTrue("Recorded device latency $age must permit confirmation", policy.evaluate(timestamp, timestamp + age).accepted)
+        }
+        assertFalse(policy.evaluate(1804L, 2155L).accepted)
+        assertTrue(policy.evaluate(1938L, 2180L).accepted)
+        assertFalse("Age allowance must not loosen continuity", policy.evaluate(2300L, 2542L).accepted)
+    }
+
     @Test
     fun acceptsOrderedFreshResults() {
         val policy = VisionResultFreshnessPolicy(maxAgeMs = 220L, maxGapMs = 250L)

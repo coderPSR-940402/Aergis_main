@@ -225,7 +225,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             .put("ageMs", freshness.ageMs).put("gapMs", freshness.gapMs))
         AirRuntime.recordVisionResult(freshness)
         if (!freshness.accepted) PipelineMetrics.shared.recordRejection("VISION_${freshness.reason.name}")
-        // Strict limit for anything that can dispatch an action; cursor motion tolerates more.
+        // Bounded command latency includes sensor delivery and inference; cursor motion tolerates more.
         val actionsFresh = freshness.accepted &&
             freshness.ageMs <= VisionResultFreshnessPolicy.DEFAULT_MAX_AGE_MS
         diagnosticTrace?.put("actionsFresh", actionsFresh)
@@ -285,9 +285,8 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             result.gestures(),
             handSelection?.index
         )
-        val gestureName = gesture?.categoryName()?.takeIf { it.isNotBlank() } ?: "None"
-        val gestureScore = gesture?.score() ?: 0f
-        AirRuntime.lastGesture = gestureName
+        var gestureName = gesture?.categoryName()?.takeIf { it.isNotBlank() } ?: "None"
+        var gestureScore = gesture?.score() ?: 0f
         val indexTip = selectedHand?.getOrNull(INDEX_TIP)
         val commandOwnerId = handSelection?.ownerId
         diagnosticTrace?.put("selectedHandIndex", pointerHandIndex ?: org.json.JSONObject.NULL)
@@ -302,6 +301,13 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 )
             }
         }
+        if (handSelection != null) {
+            LandmarkGestureRecognizer.recognize(reusablePointsList, frameAspectRatio)?.let {
+                gestureName = it.name
+                gestureScore = it.score
+            }
+        }
+        AirRuntime.lastGesture = gestureName
         val selectedPoseEvidence = if (selectedHand != null) {
             poseEvidenceEvaluator.evaluate(reusablePointsList, frameAspectRatio)
         } else {
@@ -357,7 +363,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             ?.put("commandPoseReason", selectedPoseEvidence?.rejectionReason?.name ?: "NO_POSE")
 
         // Pinch control follows the visible cursor, while classifier commands retain the
-        // stricter 220 ms rule. Ordered results over 600 ms old are rejected above; a gap
+        // stricter 350 ms rule. Ordered results over 600 ms old are rejected above; a gap
         // over 350 ms cannot carry a pointer-touch transaction into the next sample.
         val pointerTouchTracking = freshness.gapMs <= 350L && !mappingChanged && !ownerChanged && !filterChanged &&
             CommandTrackingEligibility.isEligible(controlSafe, handSelection != null,
@@ -445,11 +451,12 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 processed.isPinchPressed
             )
             PipelineMetrics.shared.recordCursorUpdate(SystemClock.uptimeMillis())
-        } else if (AirRuntime.controlMode == ControlMode.READY && AirRuntime.pointerEnabled &&
+        } else if (AirRuntime.controlMode == ControlMode.READY &&
             !AirRuntime.motionActive && AirRuntime.state.value.foregroundContext.safety == ForegroundSafety.SAFE &&
-            actionsFresh && handSelection != null && indexTip != null &&
+            freshness.accepted && handSelection != null && indexTip != null &&
             reusablePointsList[INDEX_TIP].let { it.x.isFinite() && it.y.isFinite() && it.x in 0f..1f && it.y in 0f..1f }) {
-            // Read-only calibration coordinates. READY never grants pointer or action
+            // Read-only calibration uses the bounded tracking stream, independent of
+            // pointer/action switches and the stricter command age. READY never grants pointer or action
             // authority; retain hand ownership so a stable preview can be acquired.
             resetPointerTouch()
             interpreter.reset()
@@ -493,6 +500,11 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 })
         }
 
+        val registeredGesture = RegisteredGesture.fromSignal(gestureName)
+        val gestureTuning = registeredGesture?.let(mappings::tuning)?.let {
+            // Landmark poses use geometric evidence, not a classifier confidence score.
+            if (registeredGesture?.isLandmarkPose == true) it.copy(confidencePercent = 65) else it
+        }
         val decision = if (AirRuntime.gesturesEnabled && !pinchInProgress && gestureName != "None") {
             val classified = interpreter.interpret(GestureSignal(gestureName, gestureScore))
             if (GestureActionPolicy.isClassifierActionEnabled(true, classified.action, pointerActive)) {
@@ -507,13 +519,15 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 confidence = decision.confidence,
                 timestampMs = timestamp,
                 tracking = commandTracking && !pinchInProgress,
-                ownershipId = commandOwnerId
+                ownershipId = commandOwnerId,
+                gestureId = registeredGesture?.name,
+                tuning = gestureTuning
             )
         )
         if (confirmedAction != null &&
             GestureActionPolicy.isClassifierActionEnabled(AirRuntime.gesturesEnabled, confirmedAction, pointerActive)
         ) {
-            AirAccessibilityService.instance?.dispatch(confirmedAction)
+            AirAccessibilityService.instance?.dispatch(confirmedAction, gestureTuning ?: GestureTuning())
         }
         AirRuntime.visionError = null
         AirRuntime.visionReady = true

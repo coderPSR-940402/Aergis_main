@@ -24,6 +24,7 @@ internal class Yuv420Pixels private constructor(
         val yBytes = y.buffer.array(); val yBase = y.buffer.arrayOffset()
         val uBytes = u.buffer.array(); val uBase = u.buffer.arrayOffset()
         val vBytes = v.buffer.array(); val vBase = v.buffer.arrayOffset()
+        val rgbaRow = IntArray(width)
         for (row in 0 until height) {
             val yRow = yBase + row * y.rowStride
             val uRow = uBase + (row / 2) * u.rowStride
@@ -41,8 +42,10 @@ internal class Yuv420Pixels private constructor(
                 val r = ((luminance + red + 128) shr 8).coerceIn(0, 255)
                 val g = ((luminance + green + 128) shr 8).coerceIn(0, 255)
                 val b = ((luminance + blue + 128) shr 8).coerceIn(0, 255)
-                pixels.put(r or (g shl 8) or (b shl 16) or (255 shl 24))
+                rgbaRow[column] = r or (g shl 8) or (b shl 16) or (255 shl 24)
             }
+            // One bulk native-buffer write per row instead of one JNI write per pixel.
+            pixels.put(rgbaRow)
         }
         target.position(0)
     }

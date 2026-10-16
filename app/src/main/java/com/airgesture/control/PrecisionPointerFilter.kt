@@ -16,6 +16,7 @@ internal class PrecisionPointerFilter {
     private var measurement: PointerCoordinateMapper.Point? = null
     private var pendingJump: PointerCoordinateMapper.Point? = null
     private var lastTimestamp: Long? = null
+    private var lastAcceptedTimestamp: Long? = null
     private data class Sample(val point: PointerCoordinateMapper.Point, val timestampMs: Long)
     private val recent = ArrayDeque<Sample>()
     private var velocityX = 0f
@@ -41,14 +42,16 @@ internal class PrecisionPointerFilter {
             return previous ?: PointerCoordinateMapper.Point(.5f, .5f)
         }
         val measured = PointerCoordinateMapper.Point(x.coerceIn(0f, 1f), y.coerceIn(0f, 1f))
-        val elapsed = lastTimestamp?.let { timestampMs - it }
+        val elapsed = lastAcceptedTimestamp?.let { timestampMs - it }
         lastTimestamp = timestampMs
         if (previous == null || elapsed == null || elapsed > 500L) {
             velocityX = 0f; velocityY = 0f; pendingJump = null
             recent.clear(); recent.addLast(Sample(measured, timestampMs))
             measurement = measured; output = measured; measurementTrusted = true
+            lastAcceptedTimestamp = timestampMs
             return measured
         }
+        // Rejected observations do not advance the measurement clock or distort velocity.
         val dt = elapsed / 1000f
         val raw = measurement ?: measured
         val dx = measured.x - raw.x
@@ -97,11 +100,12 @@ internal class PrecisionPointerFilter {
             previous.y + gain * (measured.y - previous.y)
         )
         measurement = measured; output = result; measurementTrusted = true
+        lastAcceptedTimestamp = timestampMs
         return result
     }
 
     fun reset() {
-        output = null; measurement = null; pendingJump = null; lastTimestamp = null
+        output = null; measurement = null; pendingJump = null; lastTimestamp = null; lastAcceptedTimestamp = null
         velocityX = 0f; velocityY = 0f; measurementTrusted = false; recent.clear()
         lastRejection = PrecisionRejection.NONE; lastJumpDistance = 0f; lastJumpLimit = 0f
     }
