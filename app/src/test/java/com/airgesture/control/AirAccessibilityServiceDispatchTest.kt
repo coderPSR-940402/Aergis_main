@@ -34,7 +34,6 @@ class AirAccessibilityServiceDispatchTest {
         AirRuntime.gesturesEnabled = true
         AirRuntime.pointerEnabled = true
         AirRuntime.controlMode = ControlMode.ARMED
-        AirRuntime.motionActive = false
         AirRuntime.setForegroundContext(
             ForegroundContextState(
                 packageName = "com.example.safe",
@@ -86,7 +85,7 @@ class AirAccessibilityServiceDispatchTest {
         shadowOf(Looper.getMainLooper()).idle()
         assertEquals(7, audio.getStreamVolume(android.media.AudioManager.STREAM_MUSIC))
         service.dispatch(AirAction.VOLUME_DOWN, GestureTuning(volumeSteps = 2))
-        AirRuntime.motionActive = true
+        AirRuntime.controlMode = ControlMode.PAUSED
         shadowOf(Looper.getMainLooper()).idle()
         assertEquals(7, audio.getStreamVolume(android.media.AudioManager.STREAM_MUSIC))
     }
@@ -168,7 +167,7 @@ class AirAccessibilityServiceDispatchTest {
     @Test
     fun epochChangeDeniesQueuedActionBeforePlatformDispatch() {
         service.dispatch(AirAction.TAP)
-        AirRuntime.motionActive = true
+        AirRuntime.controlMode = ControlMode.PAUSED
         shadowOf(Looper.getMainLooper()).idle()
 
         val telemetry = AirRuntime.state.value.actionDispatchTelemetry
@@ -306,7 +305,7 @@ class AirAccessibilityServiceDispatchTest {
         service.updatePointerTouch(.4f, .6f, true)
         service.updatePointerTouch(.9f, .9f, false)
         shadowOf(Looper.getMainLooper()).idle()
-        AirRuntime.motionActive = true
+        AirRuntime.controlMode = ControlMode.PAUSED
         down.callback()!!.onCompleted(down.description())
         val cancellation = shadow.gesturesDispatched.last()
         val bounds = RectF()
@@ -341,7 +340,7 @@ class AirAccessibilityServiceDispatchTest {
         shadowOf(Looper.getMainLooper()).idle()
         first.callback()!!.onCompleted(first.description())
         val ending = shadow.gesturesDispatched.last()
-        AirRuntime.motionActive = true
+        AirRuntime.controlMode = ControlMode.PAUSED
         ending.callback()!!.onCompleted(ending.description())
         assertEquals(2, shadow.gesturesDispatched.size)
     }
@@ -392,7 +391,7 @@ class AirAccessibilityServiceDispatchTest {
 
     @Test fun lossOrSafetyChangeCancelsTouchAndLateCallbacksCannotRestartIt() {
         for (safetyChanged in listOf(false, true)) {
-            AirRuntime.motionActive = false
+            AirRuntime.controlMode = ControlMode.ARMED
             service.updatePointerTouch(0.4f, 0.5f, false)
             shadowOf(Looper.getMainLooper()).idle()
             val oldCount = shadow.gesturesDispatched.size
@@ -400,7 +399,7 @@ class AirAccessibilityServiceDispatchTest {
             shadowOf(Looper.getMainLooper()).idle()
             val first = shadow.gesturesDispatched.last()
             if (safetyChanged) {
-                AirRuntime.motionActive = true
+                AirRuntime.controlMode = ControlMode.PAUSED
                 first.callback()!!.onCompleted(first.description())
             } else {
                 service.cancelPointerTouch()

@@ -129,7 +129,7 @@ class AirAccessibilityService : AccessibilityService() {
         val targetY = target.y
         mainHandler.post {
             // Safety state can change while this action waits for the main thread
-            // (for example, after a device-motion or protected-screen event). Check
+            // (for example, after a disarm or protected-screen event). Check
             // again immediately before injecting instead of trusting the frame-time
             // decision above.
             if (!isActionAllowed(action, dispatchEpoch)) {
@@ -176,7 +176,6 @@ class AirAccessibilityService : AccessibilityService() {
             currentEpoch = AirRuntime.actionEpoch,
             gesturesEnabled = AirRuntime.gesturesEnabled,
             controlMode = AirRuntime.controlMode,
-            motionActive = AirRuntime.motionActive,
             foregroundSafety = AirRuntime.state.value.foregroundContext.safety
         ).allowed
     }

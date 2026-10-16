@@ -9,7 +9,7 @@ The campaign tests the current safety architecture:
 - `READY` mode must never inject gesture actions.
 - `ARMED` mode must require stable gesture transactions.
 - Ambiguous or lost hand ownership must cancel commands.
-- Device motion must pause control.
+- Device movement alone must not pause control; no motion sensors are registered.
 - Protected or unknown foreground contexts must block actions.
 - Pointer continuity must remain separate from one-shot command dispatch.
 
@@ -19,9 +19,9 @@ Run the minimum campaign on three physical Android devices:
 
 | Device class | Required characteristics |
 |---|---|
-| Modern flagship | Android 14 or newer, gyroscope and accelerometer |
+| Modern flagship | Android 14 or newer |
 | Mid-range device | Android 12–14, representative OEM camera stack |
-| Lower-performance device | Android 10–12 or lowest supported API, gyroscope preferred |
+| Lower-performance device | Android 10–12 or lowest supported API |
 
 Record model, Android version, API level, camera resolution, refresh rate, available sensors, battery level, and ambient temperature before each run.
 
@@ -53,10 +53,10 @@ Each scenario is a 10-minute run unless otherwise specified. Record every intend
 | FP-07 | Two hands entering together | ARMED | Ambiguous ownership is rejected; zero commands |
 | FP-08 | Hands crossing | ARMED | Original owner is retained or control is cancelled; no takeover |
 | FP-09 | Primary hand occlusion and reacquisition | ARMED | Transaction is cancelled and requires fresh evidence |
-| FP-10 | Phone rotation | ARMED | Motion cancellation pauses actions |
-| FP-11 | Picking the phone up | ARMED | Motion cancellation pauses actions |
+| FP-10 | Phone rotation | ARMED | No device-motion pause; deliberate gestures remain available |
+| FP-11 | Picking the phone up | ARMED | No device-motion pause; deliberate gestures remain available |
 | FP-12 | Walking or vehicle vibration | ARMED | No unintended commands |
-| FP-13 | Cable or desk bump | ARMED | Motion cancellation pauses actions |
+| FP-13 | Cable or desk bump | ARMED | No device-motion pause; deliberate gestures remain available |
 | FP-14 | Screen rotation | ARMED | Pointer and command state reset safely |
 | FP-15 | Screen off/on | ARMED | Actions remain blocked until valid recovery and re-arming if required |
 | FP-16 | Permission dialog | ARMED | Action blocked as protected context |
@@ -84,7 +84,7 @@ Record true positives, missed commands, duplicate commands, latency from stable 
 
 ## Motion tests
 
-Measure the motion monitor separately:
+Verify movement does not introduce a sensor-based pause while a hand remains tracked:
 
 - Rotate the device slowly, then rapidly, around each axis.
 - Lift the device from a table.
@@ -93,7 +93,7 @@ Measure the motion monitor separately:
 - Attach and remove a charging cable.
 - Place the device on a moving vehicle surface where safe.
 
-Record activation latency, release latency, false pauses while stationary, and any action that escaped during motion. The expected behavior is conservative cancellation, not uninterrupted control.
+Record tracking continuity and deliberate action success. Phone movement is not a blocking condition. Missing hands, stale vision, protected context and explicit disarming still apply.
 
 ## Protected-context tests
 
@@ -122,7 +122,7 @@ Record these metrics per device and scenario:
 | Re-arm violations | Same gesture firing again without neutral release |
 | Median / p95 latency | Stable evidence to accessibility dispatch |
 | Ownership takeover rate | Commands caused by a competing hand |
-| Motion escape rate | Actions fired while motion cancellation should be active |
+| Movement continuity | Deliberate actions remain available while moving the phone with a tracked hand |
 | Protected-context escape rate | Actions fired in protected or unknown context |
 | Pointer jitter | RMS displacement while hand is held stationary |
 | Analyzer drop rate | Dropped or late frames during the run |
@@ -149,7 +149,7 @@ A release candidate should not advance until all of the following are true:
 
 1. Zero unexplained actions occur in FP-01 through FP-24 on every required device.
 2. Protected-context escape rate is zero.
-3. Motion escape rate is zero in the defined motion suite.
+3. Device movement alone does not pause control in the movement suite.
 4. No re-arm violation or duplicate-fire regression is observed.
 5. Accessibility interruption does not deliver stale queued actions.
 6. CI, CodeQL, and release APK validation are green.

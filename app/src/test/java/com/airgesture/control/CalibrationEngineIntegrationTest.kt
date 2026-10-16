@@ -30,7 +30,6 @@ class CalibrationEngineIntegrationTest {
         AirRuntime.gesturesEnabled = false
         AirRuntime.handPreference = ControlHandPreference.EITHER
         AirRuntime.controlMode = ControlMode.ARMED
-        AirRuntime.motionActive = false
         AirRuntime.setForegroundContext(ForegroundContextState(safety = ForegroundSafety.SAFE))
         engine = GestureRecognitionEngine(context)
     }
@@ -219,7 +218,7 @@ class CalibrationEngineIntegrationTest {
         assertFalse(AirRuntime.pointerTracking)
         assertEquals(PointerInteractionPhase.IDLE, AirRuntime.pointerInteraction)
         assertFalse(ActionSafetyPolicy.evaluate(AirAction.TAP, true, AirRuntime.controlMode,
-            false, ForegroundSafety.SAFE).allowed)
+            ForegroundSafety.SAFE).allowed)
         publish(emptyList(), 1200L)
         assertFalse(AirRuntime.rawPointerSnapshot().tracking)
     }
@@ -249,14 +248,10 @@ class CalibrationEngineIntegrationTest {
     }
 
     @Test
-    fun calibrationPreviewRejectsProtectedContextAndDeviceMotion() {
+    fun calibrationPreviewRejectsProtectedContext() {
         AirRuntime.controlMode = ControlMode.READY
         repeat(6) { publish(hand(), 1000L + it * 33L) }
         assertTrue(AirRuntime.rawPointerSnapshot().tracking)
-        AirRuntime.motionActive = true
-        publish(hand(), 1200L)
-        assertFalse(AirRuntime.rawPointerSnapshot().tracking)
-        AirRuntime.motionActive = false
         AirRuntime.setForegroundContext(ForegroundContextState(safety = ForegroundSafety.PROTECTED))
         publish(hand(), 1233L)
         assertFalse(AirRuntime.rawPointerSnapshot().tracking)

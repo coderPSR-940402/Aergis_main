@@ -143,8 +143,7 @@ of taps, long presses and scrolling, so an aiming pose cannot trigger a legacy
 classifier double-tap. Classifier system actions remain available outside a
 pointer pinch; all classifier actions pause during a pinch.
 
-Tracking loss, disarming, disabled gestures, unsafe foreground context, phone
-motion or display changes cancel the held touch. A freshness watchdog also
+Tracking loss, disarming, disabled gestures, unsafe foreground context or display changes cancel the held touch. A freshness watchdog also
 handles camera stalls. Native touch cancellation uses an undispatched-stroke
 continuation: Android rejects it and cancels the previous touch without injecting
 another tap. This follows AOSP `MotionEventInjector` continuation validation and
@@ -196,3 +195,5 @@ when the set of recorded candidates changes.
 
 Run `python3 -m unittest discover -s tools -p 'test_*.py'` for the recording analyzer,
 APK model/package checks and preview signing regression suite.
+
+Device-motion sensing is removed. Aergis does not register gyroscope or accelerometer listeners, collect device-motion readings, or pause pointer, pinch, gesture actions or calibration based on phone movement. Camera/display orientation mapping still keeps screen coordinates aligned.

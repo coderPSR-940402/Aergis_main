@@ -89,7 +89,7 @@ internal object DiagnosticReport {
                 y += 13f
                 text(c, "Final frame state", 36f, y, 14f, true); y += 24f
                 val frame = summary.optJSONObject("lastFrame")
-                for (key in listOf("reason", "controlMode", "motion", "foregroundSafety", "handPreference", "selectedHandIndex", "commandOwnerId", "calibration", "pose")) {
+                for (key in listOf("reason", "controlMode", "foregroundSafety", "handPreference", "selectedHandIndex", "commandOwnerId", "calibration", "pose")) {
                     if (frame?.has(key) == true) y = wrap(c, "$key: ${frame.opt(key)}", y) + 3f
                 }
                 val error = summary.optString("writeError").takeIf { it != "null" && it.isNotBlank() }

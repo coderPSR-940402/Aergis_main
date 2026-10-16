@@ -8,19 +8,19 @@ import org.junit.Test
 
 class PointerContinuityTest {
     @Test
-    fun phoneMotionKeepsPointerActiveButBlocksActions() {
-        assertTrue(PointerTrackingPolicy.isActive(true, ControlMode.ARMED, true, ForegroundSafety.SAFE))
-        assertFalse(ActionSafetyPolicy.evaluate(AirAction.TAP, true, ControlMode.ARMED, true, ForegroundSafety.SAFE).allowed)
+    fun armedSafeControlAllowsPointerAndActionsWithoutSensorInput() {
+        assertTrue(PointerTrackingPolicy.isActive(true, ControlMode.ARMED, ForegroundSafety.SAFE))
+        assertTrue(ActionSafetyPolicy.evaluate(AirAction.TAP, true, ControlMode.ARMED, ForegroundSafety.SAFE).allowed)
     }
 
     @Test
     fun pointerStillRespectsDisablePauseAndForegroundGates() {
-        assertFalse(PointerTrackingPolicy.isActive(false, ControlMode.ARMED, true, ForegroundSafety.SAFE))
+        assertFalse(PointerTrackingPolicy.isActive(false, ControlMode.ARMED, ForegroundSafety.SAFE))
         for (mode in listOf(ControlMode.OFF, ControlMode.READY, ControlMode.PAUSED)) {
-            assertFalse(PointerTrackingPolicy.isActive(true, mode, false, ForegroundSafety.SAFE))
+            assertFalse(PointerTrackingPolicy.isActive(true, mode, ForegroundSafety.SAFE))
         }
         for (safety in listOf(ForegroundSafety.UNKNOWN, ForegroundSafety.PROTECTED)) {
-            assertFalse(PointerTrackingPolicy.isActive(true, ControlMode.ARMED, false, safety))
+            assertFalse(PointerTrackingPolicy.isActive(true, ControlMode.ARMED, safety))
         }
     }
 
@@ -55,7 +55,7 @@ class PointerContinuityTest {
     }
 
     @Test
-    fun motionFramesClearClickDwellWithoutResettingPointerFilters() {
+    fun disarmedFramesClearClickDwellWithoutResettingPointerFilters() {
         val interpreter = GestureInterpreter()
         interpreter.processFrame(closePose().toMutableList().apply {
             this[KinematicValidator.THUMB_TIP] = Point3D(0.2f, 0.5f)
@@ -67,7 +67,7 @@ class PointerContinuityTest {
         assertFalse(moving.isClickEngaged)
         assertEquals(SwipeDirection.NONE, moving.detectedSwipe)
         val resumed = interpreter.processFrame(closePose(), 67L)!!
-        assertFalse("Motion must cancel prior click dwell", resumed.isClickEngaged)
+        assertFalse("Disarming must cancel prior click dwell", resumed.isClickEngaged)
     }
 
     @Test

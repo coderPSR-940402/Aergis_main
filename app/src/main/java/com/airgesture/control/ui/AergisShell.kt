@@ -85,12 +85,12 @@ private fun SessionLabel(gesturesEnabled: Boolean) {
     val flow = remember {
         AirRuntime.uiState.map {
             Triple(it.running, it.controlMode,
-                it.motionActive || (it.controlMode == ControlMode.ARMED && it.foregroundSafety != ForegroundSafety.SAFE))
+                (it.controlMode == ControlMode.ARMED && it.foregroundSafety != ForegroundSafety.SAFE))
         }.distinctUntilChanged()
     }
     val initial = AirRuntime.uiStateSnapshot()
     val state by flow.collectAsStateWithLifecycle(initialValue = Triple(initial.running, initial.controlMode,
-        initial.motionActive || (initial.controlMode == ControlMode.ARMED && initial.foregroundSafety != ForegroundSafety.SAFE)))
+        (initial.controlMode == ControlMode.ARMED && initial.foregroundSafety != ForegroundSafety.SAFE)))
     val capture = stringResource(if (state.first) R.string.ui_capture_on else R.string.ui_capture_off)
     val actions = stringResource(when {
         !gesturesEnabled -> R.string.ui_actions_disabled

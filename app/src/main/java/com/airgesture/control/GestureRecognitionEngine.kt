@@ -233,7 +233,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             Log.d(TAG, "Vision result rejected: ${freshness.reason}")
             handlePointerGap(observedAtMs,
                 PointerTrackingPolicy.isActive(AirRuntime.pointerEnabled, AirRuntime.controlMode,
-                    AirRuntime.motionActive, AirRuntime.state.value.foregroundContext.safety),
+                    AirRuntime.state.value.foregroundContext.safety),
                 coastAllowed = true, reason = "VISION_${freshness.reason.name}",
                 feedback = PointerFeedback.VISION_REJECTED)
             return
@@ -262,10 +262,9 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         AirRuntime.handedness = handednessList.firstOrNull() ?: "Unknown"
 
         val controlSafe = AirRuntime.controlMode == ControlMode.ARMED &&
-            !AirRuntime.motionActive &&
             AirRuntime.state.value.foregroundContext.safety == ForegroundSafety.SAFE
         val pointerActive = PointerTrackingPolicy.isActive(
-            AirRuntime.pointerEnabled, AirRuntime.controlMode, AirRuntime.motionActive,
+            AirRuntime.pointerEnabled, AirRuntime.controlMode,
             AirRuntime.state.value.foregroundContext.safety
         )
         val handSelection = selectPointerHand(landmarks, handednessList, timestamp, rotationDegrees)
@@ -452,7 +451,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             )
             PipelineMetrics.shared.recordCursorUpdate(SystemClock.uptimeMillis())
         } else if (AirRuntime.controlMode == ControlMode.READY &&
-            !AirRuntime.motionActive && AirRuntime.state.value.foregroundContext.safety == ForegroundSafety.SAFE &&
+            AirRuntime.state.value.foregroundContext.safety == ForegroundSafety.SAFE &&
             freshness.accepted && handSelection != null && indexTip != null &&
             reusablePointsList[INDEX_TIP].let { it.x.isFinite() && it.y.isFinite() && it.x in 0f..1f && it.y in 0f..1f }) {
             // Read-only calibration uses the bounded tracking stream, independent of

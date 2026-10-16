@@ -31,7 +31,7 @@
     <string name="calibration_reset_button">Reset calibration</string>
     <string name="practice_title">Practice</string>
     <string name="practice_description">Practice pointer movement while control is disarmed. Arm only when you intentionally want an action to execute.</string>
-    <string name="practice_safety_note">Protected screens, motion, stale vision results, and uncertain geometry remain blocked.</string>
+    <string name="practice_safety_note">Protected screens, stale vision results, and uncertain geometry remain blocked.</string>
     <string name="practice_disarm">Disarm for practice</string>
     <string name="diagnostics_title">Diagnostics</string>
     <string name="diagnostics_vision_counts">Vision results: %1$d accepted • %2$d rejected</string>
@@ -63,10 +63,6 @@
     <string name="pointer_tracking">Pointer tracking: %1$s</string>
     <string name="pointer_tracking_active">Tracking</string>
     <string name="pointer_tracking_inactive">No hand</string>
-    <string name="motion_status">Device motion: %1$s</string>
-    <string name="motion_active">Actions paused; pointer remains active</string>
-    <string name="motion_inactive">Stable</string>
-    <string name="motion_unavailable">Sensors unavailable</string>
     <string name="foreground_status">Foreground safety: %1$s</string>
     <string name="foreground_safe">Allowed</string>
     <string name="foreground_protected">Protected screen</string>
@@ -261,7 +257,7 @@
     <string name="calibration_restart">Restart capture</string>
     <string name="calibration_cancel">Cancel calibration</string>
     <string name="calibration_cancelled">Capture cancelled. Your saved calibration is unchanged.</string>
-    <string name="calibration_wait_for_tracking">Start camera capture and keep your chosen hand visible and the phone steady.</string>
+    <string name="calibration_wait_for_tracking">Start camera capture and keep your chosen hand visible.</string>
     <string name="calibration_show_advanced">Show advanced adjustments</string>
     <string name="calibration_hide_advanced">Hide advanced adjustments</string>
     <string name="calibration_restart_disarmed">Control mode changed. Restart calibration to disarm actions before capturing or saving.</string>

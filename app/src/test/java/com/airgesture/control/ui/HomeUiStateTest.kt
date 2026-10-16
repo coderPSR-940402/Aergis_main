@@ -9,7 +9,7 @@ class HomeUiStateTest {
         running = true, cameraReady = true, visionReady = true, visionError = null,
         handsDetected = 0, handedness = "Unknown", pointerTracking = false,
         pointerFeedback = PointerFeedback.NO_HAND, controlMode = ControlMode.READY,
-        motionActive = false, foregroundSafety = ForegroundSafety.SAFE, safetyReason = "Allowed"
+        foregroundSafety = ForegroundSafety.SAFE, safetyReason = "Allowed"
     )
 
     @Test fun cameraReadyWithoutHandDoesNotClaimTracking() {
@@ -35,7 +35,7 @@ class HomeUiStateTest {
             )).status(true))
         }
         assertEquals(HomeStatus.PAUSED, HomeUiState.from(ready().copy(
-            controlMode = ControlMode.ARMED, motionActive = true
+            controlMode = ControlMode.PAUSED
         )).status(true))
     }
 

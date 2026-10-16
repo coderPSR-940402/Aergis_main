@@ -14,7 +14,6 @@ class ActionDispatchGateTest {
             currentEpoch = 11L,
             gesturesEnabled = true,
             controlMode = ControlMode.ARMED,
-            motionActive = false,
             foregroundSafety = ForegroundSafety.SAFE
         )
 
@@ -30,7 +29,6 @@ class ActionDispatchGateTest {
             currentEpoch = 7L,
             gesturesEnabled = true,
             controlMode = ControlMode.ARMED,
-            motionActive = false,
             foregroundSafety = ForegroundSafety.SAFE
         )
 
@@ -46,7 +44,6 @@ class ActionDispatchGateTest {
             currentEpoch = 4L,
             gesturesEnabled = true,
             controlMode = ControlMode.ARMED,
-            motionActive = false,
             foregroundSafety = ForegroundSafety.PROTECTED
         )
 
@@ -62,7 +59,6 @@ class ActionDispatchGateTest {
             currentEpoch = 99L,
             gesturesEnabled = false,
             controlMode = ControlMode.ARMED,
-            motionActive = false,
             foregroundSafety = ForegroundSafety.SAFE
         )
 

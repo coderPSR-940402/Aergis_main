@@ -14,7 +14,6 @@ internal object ActionDispatchGate {
         currentEpoch: Long,
         gesturesEnabled: Boolean,
         controlMode: ControlMode,
-        motionActive: Boolean,
         foregroundSafety: ForegroundSafety
     ): ActionSafetyDecision {
         if (expectedEpoch != null && expectedEpoch != currentEpoch) {
@@ -24,7 +23,6 @@ internal object ActionDispatchGate {
             action = action,
             gesturesEnabled = gesturesEnabled,
             controlMode = controlMode,
-            motionActive = motionActive,
             foregroundSafety = foregroundSafety
         )
     }
