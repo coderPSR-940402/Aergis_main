@@ -1,12 +1,156 @@
 # Aergis Evidence Ledger and Decision Log
 
-## Current audit
+## Current implementation record — 2026-10-17
 
-The authoritative baseline is always the remote `baseline-successful-apk` ref.
-For the 2026-10-08 audit it resolved to `008056747c93fb7f60f699b0c9eecf21d8dd09cd`.
-See [the implementation and validation ledger](plans/2026-10-08-reliability-audit.md).
-The current workspace has Java 17 and Android SDK 36 and can execute tests, lint
-and both APK builds. Historical environment limitations below are not current.
+### Baseline identity and authority
+
+The owner's current directive supersedes historical CI-only "functional baseline"
+wording. Preserve current work; do not reset main to an older APK.
+
+| Evidence | Identity / status |
+|---|---|
+| Latest located explicit device acceptance | Owner: "APK works" / establish working point, 2026-09-27; retrieved prior conversation associates it with CI #50 |
+| Accepted source and rollback branch | `f4e51949491adc9d5a68f3fa701aee147ad3ed72`; `known-good/commit-50` resolves to that SHA |
+| Accepted source CI | [Aergis CI #50](https://github.com/coderPSR-940402/Aergis_main/actions/runs/36311499379), success |
+| Retained rollback artifact | [Aergis-apks-f4e51949491adc9d5a68f3fa701aee147ad3ed72](https://github.com/coderPSR-940402/Aergis_main/actions/runs/36311499379/artifacts/10929107070), not expired at inspection; debug file `app-debug.apk` |
+| Artifact archive digest | `sha256:5187983a7a6653a0054f962ee6c87a260b765000f9b70a74c82cd51a3718836e` (ZIP digest, not APK checksum) |
+| Development base / automatic CI marker | `d86a094e74740bfcb886f3b264dc1ae169d319a1`; main and `baseline-successful-apk` agree |
+| Latest main build | [Aergis CI #272](https://github.com/coderPSR-940402/Aergis_main/actions/runs/38844686053), success; [APK artifact](https://github.com/coderPSR-940402/Aergis_main/actions/runs/38844686053/artifacts/12022463110) |
+| Current development device status | No explicit acceptance located for d86a094; newer tested builds with reported defects are not accepted baselines |
+| Current work | [Draft PR #63](https://github.com/coderPSR-940402/Aergis_main/pull/63), implementation commit `d24d0300dccd229a424b4aefe061cdfa59977296`; owner authorised commit, push and PR on 2026-10-17 |
+
+The historical acceptance is not release certification, and its exact installed APK
+checksum/signing identity was not supplied in the confirmation. The retained artifact
+and source reference make rollback investigable; cross-version update/signature
+compatibility is not established. Current preview signing certificate SHA-256 is
+`c32815743b86b5ee2af3514fd03e135bbd04047a281fe4400eea80abc6cdac44` per
+`ci/preview-certificate.sha256`; do not assume it matches the old APK. Do not uninstall
+or clear data to test rollback without preserving settings/profile data.
+
+### Interaction-contract audit and selected unit
+
+Confirmed in current source, not inferred from historical symptoms:
+
+- The classifier gate processed `AirAction.NONE` as neutral before confidence checks;
+  the engine also replaced blocked commands with `NONE` / confidence 0. Low-confidence
+  `None`, disabled and suppressed poses could therefore release a consumed command.
+- Gate construction started ready. Reset while ready, tracking loss and owner changes
+  could permit a continuing pose to execute without fresh neutral.
+- Saved `holdMs` (100–1500 ms) and `repeatDelayMs` (300–3000 ms) controlled command
+  activation/rearm. These conflict with the owner's new recognition-triggered contract.
+- The 12 `RegisteredGesture` names and `gesture_<NAME>` preference keys are preserved;
+  no ID, assignment, default or pointer-action restriction is changed in this unit.
+
+Selected unit: classifier occurrence consumption/rearming and its necessary timing
+migration. Acceptance: after valid neutral, one confident recognition emits one
+mapped command immediately; persistent pose, weak/missing/blank/unknown evidence,
+Disabled, ownership change, tracking loss, epoch changes and engine recreation cannot
+replay it. Rearm requires 100 ms of fresh same-owner confident classifier `None`
+evidence. No configured activation hold or automatic repetition is introduced.
+
+Implemented:
+
+- Start/reset/invalid tracking waits for neutral; retain timestamp high-water mark.
+- Keep recognition identity separate from assignment/policy. Consume even an unavailable
+  occurrence; only a real confident `None` category can rearm. Existing dispatch policy
+  and queue-time checks remain in force.
+- Pass runtime action epoch into the gate to catch pause/resume or switch changes
+  between camera frames, not only when an invalid frame happens to be observed.
+- Ignore legacy activation/repeat timers; retain their stored values for rollback.
+  Remove those two sliders and explain the migration on Gestures and in the picker.
+  Saving active settings preserves all 12 mappings and legacy timing fields.
+- Update baseline terminology in AGENTS/README; CI workflow and remote refs are unchanged.
+
+Affected: classifier recognition-to-dispatch gating and small mapping-UI integration.
+CameraX, MediaPipe model/delegate, pointer mapping/filtering, calibration and native
+accessibility touch/cancellation implementations are unchanged. Lifecycle events
+now invalidate classifier readiness through the existing action epoch.
+
+### Verification and limitations
+
+- Before production changes, 9 of 10 new host Kotlin/JUnit tests failed against d86a094
+  for the expected reasons (replay or prohibited hold/repeat delay). The cadence test
+  already passed and was retained.
+- After implementation, 30 focused Kotlin/JUnit tests pass: occurrence regressions,
+  transaction boundaries, registered identities and tuning. Covers 15/30/60 FPS,
+  134/200 ms and irregular cadence, invalid/duplicate/out-of-order input, ownership,
+  reset and action epochs. Compiled actual production pure classes with host Kotlin
+  2.2.0 / Java 17 and JUnit 4.13.2; this is not the Android project compiler/build.
+- Added/updated Robolectric engine-to-native-dispatch tests for real neutral versus
+  weak/missing/unknown/blank/disabled categories, startup, restart, between-frame
+  pause/resume, saved landmark mappings and command-age bounds. Added persistence
+  coverage for all 12 mappings and retained rollback settings. The Android unit-test
+  step passed in CI #273 below.
+- Local `./gradlew :app:testDebugUnitTest --tests '*GestureTransactionStateMachineTest'`
+  could not start: distribution download from services.gradle.org failed with
+  `Network is unreachable`. This local limitation remains; Android CI subsequently
+  passed as recorded below.
+- Resource XML/changed string references and `git diff --check` are checked locally.
+- Removing hold delay changes false-trigger risk. Classifier score thresholds and
+  fixed geometric scores are not measured accuracy. Device testing remains required.
+- Native cancellation is unchanged and has not been physically verified here. This
+  unit does not certify the complete interaction contract or release readiness.
+
+### Galaxy A54 test after approved commit and green CI
+
+1. Install the exact candidate debug APK from its PR CI artifact without clearing data.
+   Confirm all 12 saved assignments, Disabled entries and calibration survive. Open
+   Gestures: no hold/repeat sliders; migration text appears.
+2. Use a harmless test screen. With pointer disabled, assign a comfortable pose to
+   Back. Start/arm while showing it: expect no action. Relax to an unclassified hand
+   pose, then perform it: expect one Back without deliberate holding.
+3. Keep the command visible for 3 seconds, briefly occlude/reacquire, switch to a
+   disabled pose, and return: expect no extra command until valid neutral. Repeat
+   after Pause/Resume, Stop/Start and switching the selected hand.
+4. Relax and perform a fresh occurrence: expect exactly one more action. Repeat with
+   pointer enabled for a compatible non-touch action; pinch must suppress competing
+   classifier commands. Verify unchanged pointer reach, click placement and Stop.
+5. Record candidate SHA/run, assignments, lighting, hand, distance, recognition delay,
+   intended actions and unintended extras. Any reproducible extra command blocks
+   this candidate. No baseline promotion from CI alone.
+
+### Delivery, rollback and next task
+
+Owner authorised committing this unit, publishing its feature branch and opening a
+PR on 2026-10-17. [Draft PR #63](https://github.com/coderPSR-940402/Aergis_main/pull/63)
+contains implementation commit
+[`d24d0300dccd229a424b4aefe061cdfa59977296`](https://github.com/coderPSR-940402/Aergis_main/commit/d24d0300dccd229a424b4aefe061cdfa59977296).
+The GitHub connector published the exact approved tree
+`849fe9a68b5ea89507893d2950f1a3d8305ddac2`; shell push lacked credentials.
+
+Post-submission evidence for that implementation (2026-10-17):
+
+- [Aergis CI #273](https://github.com/coderPSR-940402/Aergis_main/actions/runs/39020165829)
+  passed Android unit tests, lint, debug and minified release builds, package/version/
+  model checks, persistent preview signing verification, and checksums.
+- [CodeQL #262](https://github.com/coderPSR-940402/Aergis_main/actions/runs/39020165859)
+  passed. No attributable CI failures required repair.
+- Tested PR merge ref: `ba9637fb83fb459b3be911f39438c1d8c1f54b96` (artifact names use
+  the PR test-merge SHA, distinct from its source head d24d030).
+- [APK artifact](https://github.com/coderPSR-940402/Aergis_main/actions/runs/39020165829/artifacts/12096138993):
+  `Aergis-apks-ba9637fb83fb459b3be911f39438c1d8c1f54b96`.
+  Debug APK SHA-256: `f19348725d492343be5cb2341904de03ace75075d61aadc48abe4f98ff054871`.
+  [Test/lint reports](https://github.com/coderPSR-940402/Aergis_main/actions/runs/39020165829/artifacts/12096084120).
+- The automatic baseline-update job was skipped for the PR, as intended. Neither
+  the CI build reference nor the device-accepted rollback reference was advanced.
+- This evidence-record update changes documentation only. Its separate final-head
+  CI result/artifact links are maintained in [PR #63 checks](https://github.com/coderPSR-940402/Aergis_main/pull/63/checks)
+  and the PR description, avoiding self-referential evidence-only commit loops.
+
+Implemented and CI-passed; not device-verified or release-ready. No merge/release
+permission is assumed. The exact next external gate is the A54 procedure above.
+
+Development rollback: revert this unit on top of current main; no remote history
+reset. Legacy timing keys remain intact, so rollback restores their earlier values.
+Keep `known-good/commit-50` untouched as historical device-accepted source reference.
+
+Next coherent unit: migrate thumb-middle recognition from release-tap/native held
+input to one bounded tap at the visible hotspot, with competing recognition arbitration
+and real cancellation checks. Current held-pinch long press/drag remains incompatible
+and blocks release. Do not silently remap it. Then continue the ordered geometry,
+calibration and action-catalogue work. Catalogue audit also finds volume multi-step
+settings and lock-without-disarm; App search/web/settings actions and truthful
+capability states remain incomplete. No new gestures or rotation actions are enabled.
 
 ## Historical Phase 0 evidence ledger
 

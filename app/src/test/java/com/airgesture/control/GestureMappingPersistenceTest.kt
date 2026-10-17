@@ -24,6 +24,32 @@ class GestureMappingPersistenceTest {
         prefs.edit().clear().commit()
     }
 
+    @Test fun recognitionMigrationPreservesAllSavedIdsAndLegacyTimingForRollback() {
+        val context = RuntimeEnvironment.getApplication()
+        val prefs = context.getSharedPreferences("aergis_mappings", Context.MODE_PRIVATE)
+        prefs.edit().clear().commit()
+        val store = ActionMappingStore(context)
+        val legacy = GestureTuning(1500, 3000, 85, 3, 75, 900)
+        val assignments = RegisteredGesture.entries.associateWith {
+            if (it == RegisteredGesture.THUMB_DOWN) AirAction.NONE else AirAction.BACK
+        }
+        assignments.forEach { (gesture, action) -> store.saveBinding(gesture, action, legacy) }
+        val snapshot = prefs.all.toMap()
+        val reopened = ActionMappingStore(context)
+        assignments.forEach { (gesture, action) ->
+            assertEquals(action, reopened.mapping(gesture))
+            val tuning = reopened.tuning(gesture)
+            assertEquals(legacy, tuning)
+            // Same copy operation used by the picker: active controls may change;
+            // ignored legacy timing must survive a save for rollback.
+            reopened.saveBinding(gesture, action, tuning.copy(confidencePercent = 90))
+            assertEquals(legacy.holdMs, reopened.tuning(gesture).holdMs)
+            assertEquals(legacy.repeatDelayMs, reopened.tuning(gesture).repeatDelayMs)
+            assertEquals(snapshot["gesture_${gesture.name}"], prefs.all["gesture_${gesture.name}"])
+        }
+        prefs.edit().clear().commit()
+    }
+
     @Test fun legacyMappingsSurviveAndEveryGestureCanBeSavedIndependently() {
         val context = RuntimeEnvironment.getApplication()
         val prefs = context.getSharedPreferences("aergis_mappings", Context.MODE_PRIVATE)

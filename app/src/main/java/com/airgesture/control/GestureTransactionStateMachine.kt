@@ -1,14 +1,13 @@
 package com.airgesture.control
 
-/** Deliberate one-shot classifier commands; independent of pointer and pinch touches. */
+/** One classifier command per occurrence. A fresh, confident neutral interval rearms it. */
 internal class GestureTransactionStateMachine(
     private val minimumConfidence: Float = 0.65f,
-    private val confirmationMs: Long = 100L,
     private val neutralReleaseMs: Long = 100L,
-    private val cooldownMs: Long = 700L,
     private val maxFrameGapMs: Long = 250L
 ) {
-    enum class State { NEUTRAL, CANDIDATE, COOLDOWN }
+    // NEUTRAL means ready; COOLDOWN means consumed/waiting for neutral, not a timer.
+    enum class State { NEUTRAL, COOLDOWN }
 
     data class Input(
         val action: AirAction,
@@ -16,26 +15,22 @@ internal class GestureTransactionStateMachine(
         val timestampMs: Long,
         val tracking: Boolean,
         val ownershipId: String?,
+        // null only for explicit classifier None evidence; never for a disabled pose.
         val gestureId: String? = null,
-        val tuning: GestureTuning? = null
+        val tuning: GestureTuning? = null,
+        val actionEpoch: Long = 0L
     )
 
     init {
         require(minimumConfidence.isFinite() && minimumConfidence in 0f..1f)
-        require(confirmationMs > 0L && neutralReleaseMs > 0L)
-        require(cooldownMs >= 0L && maxFrameGapMs > 0L)
+        require(neutralReleaseMs > 0L && maxFrameGapMs > 0L)
     }
 
-    private var state = State.NEUTRAL
-    private var candidateAction = AirAction.NONE
-    private var candidateOwner: String? = null
-    private var candidateGesture: String? = null
-    private var candidateTuning: GestureTuning? = null
-    private var activeCooldownMs = cooldownMs
-    private var candidateSince = 0L
-    private var neutralOwner: String? = null
+    // Starting/recreating an engine with a pose already visible must not execute it.
+    private var state = State.COOLDOWN
+    private var owner: String? = null
+    private var epoch: Long? = null
     private var neutralSince: Long? = null
-    private var cooldownStartedAt = 0L
     private var lastTimestampMs: Long? = null
 
     fun process(input: Input): AirAction? {
@@ -45,75 +40,40 @@ internal class GestureTransactionStateMachine(
         if (previous != null && input.timestampMs - previous > maxFrameGapMs) reset()
         lastTimestampMs = input.timestampMs
 
-        // Missing/ambiguous tracking is absence of evidence, never proof of release.
-        if (!input.tracking || input.ownershipId.isNullOrBlank() ||
-            !input.confidence.isFinite() || input.confidence !in 0f..1f) {
-            discardEvidence()
+        if (epoch != input.actionEpoch || owner != input.ownershipId) reset()
+        epoch = input.actionEpoch
+        owner = input.ownershipId
+        if (!input.tracking || input.ownershipId.isNullOrBlank()) {
+            reset()
             return null
         }
-        if (input.action == AirAction.NONE) {
-            processNeutral(input)
+        val threshold = input.tuning?.bounded()?.confidencePercent?.div(100f) ?: minimumConfidence
+        if (!input.confidence.isFinite() || input.confidence !in threshold..1f) {
+            // An uncertain category is not release; break any partial neutral interval.
+            neutralSince = null
             return null
         }
-        if (input.confidence < (input.tuning?.bounded()?.confidencePercent?.div(100f) ?: minimumConfidence)) {
-            discardEvidence()
+
+        if (input.action == AirAction.NONE && input.gestureId == null) {
+            if (neutralSince == null) neutralSince = input.timestampMs
+            if (input.timestampMs - checkNotNull(neutralSince) >= neutralReleaseMs) state = State.NEUTRAL
             return null
         }
 
         neutralSince = null
-        neutralOwner = null
-        if (state == State.COOLDOWN) return null
-
-        if (state != State.CANDIDATE || candidateAction != input.action ||
-            candidateOwner != input.ownershipId || candidateGesture != input.gestureId || candidateTuning != input.tuning?.bounded()) {
-            candidateAction = input.action
-            candidateOwner = input.ownershipId
-            candidateGesture = input.gestureId
-            candidateTuning = input.tuning?.bounded()
-            candidateSince = input.timestampMs
-            state = State.CANDIDATE
-            return null
-        }
-        if (input.timestampMs - candidateSince < (candidateTuning?.holdMs ?: confirmationMs)) return null
-
+        if (state != State.NEUTRAL) return null
+        // Consume even an unavailable/disabled assignment. Changing eligibility while
+        // this pose persists must not turn it into a new occurrence or an automatic retry.
         state = State.COOLDOWN
-        cooldownStartedAt = input.timestampMs
-        activeCooldownMs = candidateTuning?.repeatDelayMs ?: cooldownMs
-        return candidateAction
+        return input.action.takeUnless { it == AirAction.NONE }
     }
 
     fun currentState(): State = state
 
-    /** Loss/recovery resets evidence, but cannot replay a command still being held. */
+    /** Invalidation always requires fresh neutral, including when no command had fired. */
     fun reset() {
-        discardEvidence()
-        lastTimestampMs = null
-    }
-
-    private fun discardEvidence() {
-        if (state != State.COOLDOWN) state = State.NEUTRAL
-        candidateAction = AirAction.NONE
-        candidateOwner = null
-        candidateGesture = null
-        candidateTuning = null
-        candidateSince = 0L
-        neutralOwner = null
+        state = State.COOLDOWN
         neutralSince = null
-    }
-
-    private fun processNeutral(input: Input) {
-        if (state != State.COOLDOWN) {
-            discardEvidence()
-            return
-        }
-        if (neutralSince == null || neutralOwner != input.ownershipId) {
-            neutralSince = input.timestampMs
-            neutralOwner = input.ownershipId
-        }
-        if (input.timestampMs - checkNotNull(neutralSince) >= neutralReleaseMs &&
-            input.timestampMs - cooldownStartedAt >= activeCooldownMs) {
-            state = State.NEUTRAL
-            discardEvidence()
-        }
+        // Retain the timestamp high-water mark: reset cannot make old samples fresh.
     }
 }

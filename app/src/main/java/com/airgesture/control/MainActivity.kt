@@ -425,6 +425,7 @@ class MainActivity : ComponentActivity() {
                     Text(stringResource(R.string.ui_pointer_gestures_description), color = AergisColors.Muted)
                 }
             }
+            item { Text(stringResource(R.string.gesture_tuning_help), style = MaterialTheme.typography.bodyMedium) }
             item { Text(stringResource(R.string.ui_mapping_selection_help), color = AergisColors.Muted, style = MaterialTheme.typography.bodyMedium) }
             RegisteredGesture.entries.forEach { gesture ->
                 item(key = gesture.name) { MappingRow(gesture) }

@@ -13,13 +13,15 @@ class RegisteredGestureTest {
         assertEquals(RegisteredGesture.THUMB_UP, RegisteredGesture.fromSignal("thumbs_up"))
     }
 
-    @Test fun switchingGesturesWithSameActionCannotCombineConfirmationTime() {
+    @Test fun switchingGesturesWithSameActionCannotBypassNeutralRelease() {
         val gate = GestureTransactionStateMachine()
         fun frame(time: Long, id: String) = gate.process(GestureTransactionStateMachine.Input(
             AirAction.BACK, .9f, time, true, "owner", id))
-        assertNull(frame(1000, "VICTORY"))
+        gate.process(GestureTransactionStateMachine.Input(AirAction.NONE, .9f, 800L, true, "owner"))
+        gate.process(GestureTransactionStateMachine.Input(AirAction.NONE, .9f, 900L, true, "owner"))
+        assertEquals(AirAction.BACK, frame(1000, "VICTORY"))
         assertNull(frame(1100, "SHAKA"))
-        assertEquals(AirAction.BACK, frame(1200, "SHAKA"))
+        assertNull(frame(1200, "SHAKA"))
         assertNull(frame(1400, "SHAKA"))
     }
 }
