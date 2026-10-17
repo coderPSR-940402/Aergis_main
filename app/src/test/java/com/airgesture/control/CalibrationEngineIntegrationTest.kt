@@ -149,9 +149,10 @@ class CalibrationEngineIntegrationTest {
     }
 
     @Test
-    fun gestureOnlyModeConfirmsOnceAndPreservesCooldownUntilNeutral() {
+    fun gestureOnlyModeConsumesOnceAndRequiresNeutralAcrossPause() {
         AirRuntime.pointerEnabled = false
         AirRuntime.gesturesEnabled = true
+        primeClassifier(start = 650L)
         repeat(6) { publish(hand(), 1000L + it * 33, gestureName = "Victory") }
         val field = GestureRecognitionEngine::class.java.getDeclaredField("gestureTransaction").apply { isAccessible = true }
         val transaction = field.get(engine) as GestureTransactionStateMachine
@@ -378,11 +379,7 @@ class CalibrationEngineIntegrationTest {
     @Test
     fun delayedClassifierEvidenceStillCannotConfirmCommands() {
         AirRuntime.pointerEnabled = false
-        AirRuntime.gesturesEnabled = true
-        repeat(8) { publish(hand(), 1000L + it * 200L, gestureName = "Victory", delayMs = 500L) }
-        val field = GestureRecognitionEngine::class.java.getDeclaredField("gestureTransaction").apply { isAccessible = true }
-        assertEquals(GestureTransactionStateMachine.State.NEUTRAL,
-            (field.get(engine) as GestureTransactionStateMachine).currentState())
+        assertClassifierAgeRejected(500L)
     }
 
     @Test fun unsynchronizedSensorEpochDoesNotCreateStaleRejections() {
@@ -424,7 +421,11 @@ class CalibrationEngineIntegrationTest {
             val pose = LandmarkGestureRecognizerTest.pose(RegisteredGesture.SHAKA).map {
                 NormalizedLandmark.create(it.x, it.y, it.z)
             }
-            repeat(8) { publish(pose, 1000L + it * 40L) }
+            val neutralPose = LandmarkGestureRecognizerTest.pose(null).map {
+                NormalizedLandmark.create(it.x, it.y, it.z)
+            }
+            primeClassifier(neutralPose)
+            repeat(8) { publish(pose, 1250L + it * 40L) }
             org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
             assertEquals("Shaka", AirRuntime.lastGesture)
             assertEquals("Owned landmark gesture must reach native dispatch once", 1,
@@ -441,9 +442,10 @@ class CalibrationEngineIntegrationTest {
         AirAccessibilityService::class.java.getDeclaredField("instance").apply { isAccessible = true }.set(null, service)
         try {
             AirRuntime.gesturesEnabled = true
+            primeClassifier()
             val ages = listOf(242L, 231L, 225L, 255L, 248L, 318L, 250L, 245L)
             ages.forEachIndexed { index, age ->
-                publish(hand(), 1000L + index * 134L, gestureName = "Victory", delayMs = age)
+                publish(hand(), 1250L + index * 134L, gestureName = "Victory", delayMs = age)
             }
             org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
             assertEquals(listOf(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK),
@@ -452,12 +454,94 @@ class CalibrationEngineIntegrationTest {
     }
 
     @Test fun commandAgeLimitStillRejectsBacklogWhileCursorCanTrack() {
-        AirRuntime.gesturesEnabled = true
-        repeat(8) { publish(hand(), 1000L + it * 134L, gestureName = "Victory", delayMs = 351L) }
+        assertClassifierAgeRejected(351L)
         assertTrue(AirRuntime.pointerTracking)
-        val field = GestureRecognitionEngine::class.java.getDeclaredField("gestureTransaction").apply { isAccessible = true }
-        assertEquals(GestureTransactionStateMachine.State.NEUTRAL,
-            (field.get(engine) as GestureTransactionStateMachine).currentState())
+    }
+
+    private fun assertClassifierAgeRejected(ageMs: Long) {
+        val controller = org.robolectric.Robolectric.buildService(AirAccessibilityService::class.java).create()
+        val service = controller.get()
+        AirAccessibilityService::class.java.getDeclaredField("instance").apply { isAccessible = true }.set(null, service)
+        try {
+            AirRuntime.gesturesEnabled = true
+            primeClassifier()
+            repeat(8) { publish(hand(), 1250L + it * 134L, gestureName = "Victory", delayMs = ageMs) }
+            org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+            assertTrue("Stale evidence must not dispatch even after valid neutral",
+                org.robolectric.Shadows.shadowOf(service).globalActionsPerformed.isEmpty())
+        } finally { controller.destroy() }
+    }
+
+    @Test fun weakMissingUnknownAndDisabledEvidenceCannotReplayNativeCommand() {
+        val context = RuntimeEnvironment.getApplication() as Context
+        val prefs = context.getSharedPreferences("aergis_mappings", Context.MODE_PRIVATE)
+        prefs.edit().putString("gesture_THUMB_DOWN", "NONE").commit()
+        val controller = org.robolectric.Robolectric.buildService(AirAccessibilityService::class.java).create()
+        val service = controller.get()
+        AirAccessibilityService::class.java.getDeclaredField("instance").apply { isAccessible = true }.set(null, service)
+        try {
+            AirRuntime.pointerEnabled = false
+            AirRuntime.gesturesEnabled = true
+            primeClassifier()
+            publish(hand(), 1250L, gestureName = "Victory")
+            org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+            val shadow = org.robolectric.Shadows.shadowOf(service)
+            assertEquals(1, shadow.globalActionsPerformed.size)
+            var t = 1300L
+            for (category in listOf("None", "Thumb_Down", "Unknown", "", null)) {
+                repeat(8) {
+                    publish(hand(), t, gestureName = category ?: "None",
+                        gestureScore = if (category == "None") .1f else .99f,
+                        includeGesture = category != null)
+                    t += 100L
+                }
+                repeat(3) { publish(hand(), t, gestureName = "Victory"); t += 100L }
+                org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+                assertEquals("$category is not valid release", 1, shadow.globalActionsPerformed.size)
+            }
+            publish(hand(), t); publish(hand(), t + 100L)
+            publish(hand(), t + 150L, gestureName = "Victory")
+            org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+            assertEquals("Actual confident neutral rearms", 2, shadow.globalActionsPerformed.size)
+        } finally {
+            prefs.edit().remove("gesture_THUMB_DOWN").commit()
+            controller.destroy()
+        }
+    }
+
+    @Test fun engineRestartAndBetweenFramePauseRequireNeutralBeforeNativeDispatch() {
+        val context = RuntimeEnvironment.getApplication() as Context
+        val controller = org.robolectric.Robolectric.buildService(AirAccessibilityService::class.java).create()
+        val service = controller.get()
+        AirAccessibilityService::class.java.getDeclaredField("instance").apply { isAccessible = true }.set(null, service)
+        try {
+            AirRuntime.pointerEnabled = false
+            AirRuntime.gesturesEnabled = true
+            repeat(5) { publish(hand(), 1000L + it * 100L, gestureName = "Victory") }
+            org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+            val shadow = org.robolectric.Shadows.shadowOf(service)
+            assertTrue("Startup pose is not a new occurrence", shadow.globalActionsPerformed.isEmpty())
+            publish(hand(), 1500L); publish(hand(), 1600L)
+            AirRuntime.controlMode = ControlMode.PAUSED
+            AirRuntime.controlMode = ControlMode.ARMED
+            repeat(4) { publish(hand(), 1650L + it * 100L, gestureName = "Victory") }
+            org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+            assertTrue("Pause/resume between frames invalidates ready state", shadow.globalActionsPerformed.isEmpty())
+            publish(hand(), 2000L); publish(hand(), 2100L)
+            publish(hand(), 2150L, gestureName = "Victory")
+            org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+            assertEquals(1, shadow.globalActionsPerformed.size)
+            engine.close()
+            engine = GestureRecognitionEngine(context)
+            repeat(5) { publish(hand(), 2200L + it * 100L, gestureName = "Victory") }
+            org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+            assertEquals("Recreated engine cannot replay held pose", 1, shadow.globalActionsPerformed.size)
+        } finally { controller.destroy() }
+    }
+
+    private fun primeClassifier(pose: List<NormalizedLandmark> = hand(), start: Long = 1000L) {
+        // First frame establishes geometry/ownership; then 100 ms of fresh neutral.
+        publish(pose, start); publish(pose, start + 100L); publish(pose, start + 200L)
     }
 
     private fun hand(): List<NormalizedLandmark> = MutableList(21) {
@@ -469,7 +553,7 @@ class CalibrationEngineIntegrationTest {
         this[12] = NormalizedLandmark.create(0.55f, 0.65f, 0f)
     }
 
-    private fun publish(landmarks: List<NormalizedLandmark>, timestamp: Long, rawHandedness: String = "Left", gestureName: String = "None", delayMs: Long = 0L, measuredAgeMs: Long? = null) {
+    private fun publish(landmarks: List<NormalizedLandmark>, timestamp: Long, rawHandedness: String = "Left", gestureName: String = "None", delayMs: Long = 0L, measuredAgeMs: Long? = null, gestureScore: Float = .99f, includeGesture: Boolean = true) {
         val hands = if (landmarks.isEmpty()) emptyList() else listOf(
             LandmarkProto.NormalizedLandmarkList.newBuilder().addAllLandmark(landmarks.map {
                 LandmarkProto.NormalizedLandmark.newBuilder().setX(it.x()).setY(it.y()).setZ(it.z()).build()
@@ -484,9 +568,11 @@ class CalibrationEngineIntegrationTest {
         val factory = GestureRecognizerResult::class.java.getDeclaredMethod(
             "create", List::class.java, List::class.java, List::class.java, List::class.java, java.lang.Long.TYPE
         ).apply { isAccessible = true }
-        val gestures = if (landmarks.isEmpty()) emptyList() else listOf(
+        val gestures = if (landmarks.isEmpty()) emptyList() else if (!includeGesture) listOf(
+            ClassificationProto.ClassificationList.newBuilder().build()
+        ) else listOf(
             ClassificationProto.ClassificationList.newBuilder().addClassification(
-                ClassificationProto.Classification.newBuilder().setScore(.99f).setLabel(gestureName).build()
+                ClassificationProto.Classification.newBuilder().setScore(gestureScore).setLabel(gestureName).build()
             ).build()
         )
         val result = factory.invoke(null, hands, emptyList<Any>(), handedness, gestures, timestamp) as GestureRecognizerResult

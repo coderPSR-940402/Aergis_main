@@ -284,8 +284,10 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             result.gestures(),
             handSelection?.index
         )
-        var gestureName = gesture?.categoryName()?.takeIf { it.isNotBlank() } ?: "None"
-        var gestureScore = gesture?.score() ?: 0f
+        val categoryName = gesture?.categoryName()?.takeIf { it.isNotBlank() }
+        var gestureName = categoryName ?: "None"
+        // Missing labels are not a confident neutral classification.
+        var gestureScore = if (categoryName != null) gesture?.score() ?: 0f else 0f
         val indexTip = selectedHand?.getOrNull(INDEX_TIP)
         val commandOwnerId = handSelection?.ownerId
         diagnosticTrace?.put("selectedHandIndex", pointerHandIndex ?: org.json.JSONObject.NULL)
@@ -504,23 +506,20 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             // Landmark poses use geometric evidence, not a classifier confidence score.
             if (registeredGesture?.isLandmarkPose == true) it.copy(confidencePercent = 65) else it
         }
-        val decision = if (AirRuntime.gesturesEnabled && !pinchInProgress && gestureName != "None") {
-            val classified = interpreter.interpret(GestureSignal(gestureName, gestureScore))
-            if (GestureActionPolicy.isClassifierActionEnabled(true, classified.action, pointerActive)) {
-                classified
-            } else GestureDecision(AirAction.NONE, 0f)
-        } else {
-            GestureDecision(AirAction.NONE, 0f)
-        }
+        // Keep recognition identity separate from action availability. A disabled,
+        // unknown or pointer-restricted pose is not neutral. Only an actual confident
+        // MediaPipe None category may supply release evidence (missing categories score 0).
+        val decision = interpreter.interpret(GestureSignal(gestureName, gestureScore))
         val confirmedAction = gestureTransaction.process(
             GestureTransactionStateMachine.Input(
                 action = decision.action,
-                confidence = decision.confidence,
+                confidence = gestureScore,
                 timestampMs = timestamp,
-                tracking = commandTracking && !pinchInProgress,
+                tracking = commandTracking && AirRuntime.gesturesEnabled && !pinchInProgress,
                 ownershipId = commandOwnerId,
-                gestureId = registeredGesture?.name,
-                tuning = gestureTuning
+                gestureId = registeredGesture?.name ?: gestureName.takeUnless { it == "None" },
+                tuning = gestureTuning,
+                actionEpoch = AirRuntime.actionEpoch
             )
         )
         if (confirmedAction != null &&
