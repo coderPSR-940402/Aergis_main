@@ -17,7 +17,7 @@ wording. Preserve current work; do not reset main to an older APK.
 | Development base / automatic CI marker | `d86a094e74740bfcb886f3b264dc1ae169d319a1`; main and `baseline-successful-apk` agree |
 | Latest main build | [Aergis CI #272](https://github.com/coderPSR-940402/Aergis_main/actions/runs/38844686053), success; [APK artifact](https://github.com/coderPSR-940402/Aergis_main/actions/runs/38844686053/artifacts/12022463110) |
 | Current development device status | No explicit acceptance located for d86a094; newer tested builds with reported defects are not accepted baselines |
-| Current work | Branch `fix/classifier-occurrence-rearm`; owner authorised commit, push and PR on 2026-10-17; no open PRs at initial inspection |
+| Current work | [Draft PR #63](https://github.com/coderPSR-940402/Aergis_main/pull/63), implementation commit `d24d0300dccd229a424b4aefe061cdfa59977296`; owner authorised commit, push and PR on 2026-10-17 |
 
 The historical acceptance is not release certification, and its exact installed APK
 checksum/signing identity was not supplied in the confirmation. The retained artifact
@@ -79,10 +79,12 @@ now invalidate classifier readiness through the existing action epoch.
 - Added/updated Robolectric engine-to-native-dispatch tests for real neutral versus
   weak/missing/unknown/blank/disabled categories, startup, restart, between-frame
   pause/resume, saved landmark mappings and command-age bounds. Added persistence
-  coverage for all 12 mappings and retained rollback settings. These await CI.
+  coverage for all 12 mappings and retained rollback settings. The Android unit-test
+  step passed in CI #273 below.
 - Local `./gradlew :app:testDebugUnitTest --tests '*GestureTransactionStateMachineTest'`
   could not start: distribution download from services.gradle.org failed with
-  `Network is unreachable`. No Android build, lint or Robolectric pass is claimed.
+  `Network is unreachable`. This local limitation remains; Android CI subsequently
+  passed as recorded below.
 - Resource XML/changed string references and `git diff --check` are checked locally.
 - Removing hold delay changes false-trigger risk. Classifier score thresholds and
   fixed geometric scores are not measured accuracy. Device testing remains required.
@@ -109,9 +111,34 @@ now invalidate classifier readiness through the existing action epoch.
 
 ### Delivery, rollback and next task
 
-Owner authorised committing this unit, pushing its feature branch and opening a PR
-on 2026-10-17. Submit for Android CI and repair attributable failures. No merge/release
-permission is assumed. Publication and CI links will be recorded after submission.
+Owner authorised committing this unit, publishing its feature branch and opening a
+PR on 2026-10-17. [Draft PR #63](https://github.com/coderPSR-940402/Aergis_main/pull/63)
+contains implementation commit
+[`d24d0300dccd229a424b4aefe061cdfa59977296`](https://github.com/coderPSR-940402/Aergis_main/commit/d24d0300dccd229a424b4aefe061cdfa59977296).
+The GitHub connector published the exact approved tree
+`849fe9a68b5ea89507893d2950f1a3d8305ddac2`; shell push lacked credentials.
+
+Post-submission evidence for that implementation (2026-10-17):
+
+- [Aergis CI #273](https://github.com/coderPSR-940402/Aergis_main/actions/runs/39020165829)
+  passed Android unit tests, lint, debug and minified release builds, package/version/
+  model checks, persistent preview signing verification, and checksums.
+- [CodeQL #262](https://github.com/coderPSR-940402/Aergis_main/actions/runs/39020165859)
+  passed. No attributable CI failures required repair.
+- Tested PR merge ref: `ba9637fb83fb459b3be911f39438c1d8c1f54b96` (artifact names use
+  the PR test-merge SHA, distinct from its source head d24d030).
+- [APK artifact](https://github.com/coderPSR-940402/Aergis_main/actions/runs/39020165829/artifacts/12096138993):
+  `Aergis-apks-ba9637fb83fb459b3be911f39438c1d8c1f54b96`.
+  Debug APK SHA-256: `f19348725d492343be5cb2341904de03ace75075d61aadc48abe4f98ff054871`.
+  [Test/lint reports](https://github.com/coderPSR-940402/Aergis_main/actions/runs/39020165829/artifacts/12096084120).
+- The automatic baseline-update job was skipped for the PR, as intended. Neither
+  the CI build reference nor the device-accepted rollback reference was advanced.
+- This evidence-record update changes documentation only. Its separate final-head
+  CI result/artifact links are maintained in [PR #63 checks](https://github.com/coderPSR-940402/Aergis_main/pull/63/checks)
+  and the PR description, avoiding self-referential evidence-only commit loops.
+
+Implemented and CI-passed; not device-verified or release-ready. No merge/release
+permission is assumed. The exact next external gate is the A54 procedure above.
 
 Development rollback: revert this unit on top of current main; no remote history
 reset. Legacy timing keys remain intact, so rollback restores their earlier values.
