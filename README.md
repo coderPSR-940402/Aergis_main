@@ -24,9 +24,9 @@ Aergis is an Android air-gesture control application. The repository is the acti
 
 The version values above describe the current project configuration. **They are not the definition of the development baseline.**
 
-## Authoritative baseline
+## Build reference and functional baseline
 
-The baseline is always the **newest successful APK-producing Aergis CI build on `main`**.
+`baseline-successful-apk` tracks the **newest successful APK-producing Aergis CI build on `main`**. It is a build reference. The functional baseline additionally requires explicit device confirmation tied to the exact APK, commit and CI run; see [the evidence ledger](docs/EVIDENCE_LEDGER.md). CI success alone does not establish usability or release readiness.
 
 GitHub reference:
 
@@ -43,14 +43,14 @@ That reference is advanced automatically only after the CI workflow has successf
 7. generated APK SHA-256 checksums; and
 8. completed the baseline-reference update.
 
-This means a failed or cancelled build cannot silently become the new functional reference.
+Failed or cancelled builds cannot advance this CI build reference.
 
 ### What this means for development
 
 - Always resolve `baseline-successful-apk` before making functional changes.
 - Compare new work against that commit.
-- Do not use an old APK, commit number, or historical “R-number” as the baseline.
-- A newer successful `main` build automatically becomes the new baseline.
+- Preserve the last device-verified APK as rollback evidence without resetting current development to it.
+- A newer successful `main` build advances the CI reference only; device confirmation advances the functional baseline.
 - Pull-request builds are validation builds; they do not replace the `main` baseline.
 
 ## Current application state
@@ -91,9 +91,9 @@ The APK artifact name is tied to the commit SHA, making the build traceable to i
 1. Resolve the current `baseline-successful-apk` reference.
 2. Make one controlled change.
 3. Run tests and relevant validation locally when practical.
-4. Push to `main` only when the change is ready for CI validation.
-5. Treat the new commit as the baseline only after the complete Aergis CI workflow succeeds.
-6. If CI fails, continue from the last successful baseline rather than treating the failed commit as a new reference.
+4. Prepare the complete diff and checks, then obtain owner approval before committing.
+5. Push the approved feature branch and inspect PR CI; do not merge or release without authorisation.
+6. Repair change-related CI failures. Keep current work intact and retain separate build and device rollback references.
 
 ## Repository rule
 
@@ -197,3 +197,23 @@ Run `python3 -m unittest discover -s tools -p 'test_*.py'` for the recording ana
 APK model/package checks and preview signing regression suite.
 
 Device-motion sensing is removed. Aergis does not register gyroscope or accelerometer listeners, collect device-motion readings, or pause pointer, pinch, gesture actions or calibration based on phone movement. Camera/display orientation mapping still keeps screen coordinates aligned.
+
+
+## Classifier occurrence migration (October 2026)
+
+The 12 registered gesture identities and saved assignments are preserved. A confident
+recognition dispatches its mapped command once without the former configurable hold
+or repeat-delay timer. A continuing pose stays consumed; a disabled, unknown,
+low-confidence, missing or blocked category is not release. Startup, recovery and
+runtime action-epoch changes require fresh, same-owner confident `None` evidence for
+100 ms before a command can fire. This is release validation, not hold-to-confirm.
+
+The Gestures screen and picker explain the change. Legacy hold/repeat preference
+values remain stored and survive saving other controls, so reverting this change
+restores their original semantics. Confidence and bounded output-action settings
+are retained. Existing pointer-mode policy restrictions and dispatch checks remain.
+
+This is a classifier-command repair, not completion of the entire interaction
+contract: the thumb-middle release-tap/native-hold path described above still needs
+its separate migration to recognition-triggered taps with incompatible continuous
+drag disabled. Do not release this intermediate build as directive-compliant.

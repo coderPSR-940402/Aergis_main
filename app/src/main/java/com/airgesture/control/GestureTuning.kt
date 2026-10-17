@@ -1,6 +1,6 @@
 package com.airgesture.control
 
-/** Saved per gesture; bounds keep accidental edits from creating instant/repeating commands. */
+/** Saved per gesture. Legacy hold/repeat values are retained for rollback, not activation. */
 data class GestureTuning(
     val holdMs: Long = 100L,
     val repeatDelayMs: Long = 700L,

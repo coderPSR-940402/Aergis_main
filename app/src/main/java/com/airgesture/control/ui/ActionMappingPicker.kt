@@ -45,8 +45,6 @@ internal fun ActionMappingPicker(
     onDismiss: () -> Unit
 ) {
     var draftName by rememberSaveable(source.name, current.name) { mutableStateOf(current.name) }
-    var hold by rememberSaveable(source.name) { mutableStateOf(tuning.holdMs.toFloat()) }
-    var delay by rememberSaveable(source.name) { mutableStateOf(tuning.repeatDelayMs.toFloat()) }
     var confidence by rememberSaveable(source.name) { mutableStateOf(tuning.confidencePercent.toFloat()) }
     var volume by rememberSaveable(source.name) { mutableStateOf(tuning.volumeSteps.toFloat()) }
     var scroll by rememberSaveable(source.name) { mutableStateOf(tuning.scrollPercent.toFloat()) }
@@ -85,8 +83,6 @@ internal fun ActionMappingPicker(
                 if (draft != AirAction.NONE) {
                     Text(stringResource(R.string.gesture_tuning_title), style = MaterialTheme.typography.titleMedium)
                     Text(stringResource(R.string.gesture_tuning_help))
-                    TuningSlider(stringResource(R.string.tuning_hold, hold.toInt()), hold, 100f..1500f, 13) { hold = it }
-                    TuningSlider(stringResource(R.string.tuning_repeat, delay.toInt()), delay, 300f..3000f, 26) { delay = it }
                     if (!source.isLandmarkPose) TuningSlider(stringResource(R.string.tuning_confidence, confidence.toInt()), confidence, 65f..95f, 5) { confidence = it }
                     if (draft == AirAction.VOLUME_UP || draft == AirAction.VOLUME_DOWN)
                         TuningSlider(stringResource(R.string.tuning_volume, volume.toInt()), volume, 1f..5f, 3) { volume = it }
@@ -98,15 +94,16 @@ internal fun ActionMappingPicker(
                         Text(stringResource(R.string.action_media_help))
                 }
                 TextButton(onClick = { draftName = source.defaultAction.name
-                    hold = 100f; delay = 700f; confidence = 65f; volume = 1f; scroll = 50f; longPress = 650f }, modifier = Modifier.heightIn(min = 48.dp)) {
+                    confidence = 65f; volume = 1f; scroll = 50f; longPress = 650f }, modifier = Modifier.heightIn(min = 48.dp)) {
                     Text(stringResource(R.string.ui_mapping_restore_default))
                 }
             }
         },
         confirmButton = {
             TextButton(enabled = Build.VERSION.SDK_INT >= draft.minimumSdk,
-                onClick = { onSave(draft, GestureTuning(hold.toLong(), delay.toLong(), confidence.toInt(),
-                    volume.toInt(), scroll.toInt(), longPress.toLong()).bounded()) }, modifier = Modifier.heightIn(min = 48.dp)) {
+                onClick = { onSave(draft, tuning.copy(confidencePercent = confidence.toInt(),
+                    volumeSteps = volume.toInt(), scrollPercent = scroll.toInt(),
+                    longPressMs = longPress.toLong()).bounded()) }, modifier = Modifier.heightIn(min = 48.dp)) {
                 Text(stringResource(R.string.ui_mapping_save))
             }
         },
