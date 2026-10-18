@@ -510,16 +510,20 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         // unknown or pointer-restricted pose is not neutral. Only an actual confident
         // MediaPipe None category may supply release evidence (missing categories score 0).
         val decision = interpreter.interpret(GestureSignal(gestureName, gestureScore))
+        val retainClassifierReadiness = actionsFresh && !mappingChanged && !ownerChanged && !filterChanged &&
+            CommandTrackingEligibility.canRetainReadiness(controlSafe, handSelection != null,
+                AirRuntime.pointerEnabled, indexTip != null, selectedPoseEvidence)
         val confirmedAction = gestureTransaction.process(
             GestureTransactionStateMachine.Input(
                 action = decision.action,
                 confidence = gestureScore,
                 timestampMs = timestamp,
-                tracking = commandTracking && AirRuntime.gesturesEnabled && !pinchInProgress,
+                tracking = (commandTracking || retainClassifierReadiness) && AirRuntime.gesturesEnabled && !pinchInProgress,
                 ownershipId = commandOwnerId,
                 gestureId = registeredGesture?.name ?: gestureName.takeUnless { it == "None" },
                 tuning = gestureTuning,
-                actionEpoch = AirRuntime.actionEpoch
+                actionEpoch = AirRuntime.actionEpoch,
+                evidenceValid = commandTracking
             )
         )
         if (confirmedAction != null &&

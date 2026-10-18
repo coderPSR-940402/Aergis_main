@@ -18,7 +18,9 @@ internal class GestureTransactionStateMachine(
         // null only for explicit classifier None evidence; never for a disabled pose.
         val gestureId: String? = null,
         val tuning: GestureTuning? = null,
-        val actionEpoch: Long = 0L
+        val actionEpoch: Long = 0L,
+        // False only for a fresh same-owner geometry transition, never tracking loss.
+        val evidenceValid: Boolean = true
     )
 
     init {
@@ -32,6 +34,7 @@ internal class GestureTransactionStateMachine(
     private var epoch: Long? = null
     private var neutralSince: Long? = null
     private var lastTimestampMs: Long? = null
+    private var lastValidEvidenceMs: Long? = null
 
     fun process(input: Input): AirAction? {
         if (input.timestampMs < 0L) return null
@@ -47,6 +50,14 @@ internal class GestureTransactionStateMachine(
             reset()
             return null
         }
+        // Bound the entire interruption, not just each frame gap. Rejected frames
+        // neither release a consumed occurrence nor destroy a recently ready one.
+        if (lastValidEvidenceMs?.let { input.timestampMs - it > maxFrameGapMs } == true) reset()
+        if (!input.evidenceValid) {
+            neutralSince = null
+            return null
+        }
+        lastValidEvidenceMs = input.timestampMs
         val threshold = input.tuning?.bounded()?.confidencePercent?.div(100f) ?: minimumConfidence
         if (!input.confidence.isFinite() || input.confidence !in threshold..1f) {
             // An uncertain category is not release; break any partial neutral interval.
@@ -74,6 +85,7 @@ internal class GestureTransactionStateMachine(
     fun reset() {
         state = State.COOLDOWN
         neutralSince = null
+        lastValidEvidenceMs = null
         // Retain the timestamp high-water mark: reset cannot make old samples fresh.
     }
 }
