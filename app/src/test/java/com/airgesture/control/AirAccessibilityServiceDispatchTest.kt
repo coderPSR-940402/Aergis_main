@@ -42,7 +42,8 @@ class AirAccessibilityServiceDispatchTest {
     fun setUp() {
         controller = Robolectric.buildService(AirAccessibilityService::class.java).create()
         service = controller.get()
-        service.onServiceConnected()
+        AirAccessibilityService::class.java.getDeclaredMethod("onServiceConnected")
+            .apply { isAccessible = true }.invoke(service)
         shadow = org.robolectric.Shadows.shadowOf(service)
         legacyTouch = HeldPointerTouch(legacyHandler,
             dispatch = { gesture, callback -> service.dispatchGesture(gesture, callback, legacyHandler) },

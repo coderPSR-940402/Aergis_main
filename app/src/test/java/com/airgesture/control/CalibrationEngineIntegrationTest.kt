@@ -277,7 +277,8 @@ class CalibrationEngineIntegrationTest {
     @Test fun trackedPinchDispatchesOneBoundedTapBeforeReleaseAndNeverDrags() {
         val controller = org.robolectric.Robolectric.buildService(AirAccessibilityService::class.java).create()
         val service = controller.get()
-        service.onServiceConnected()
+        AirAccessibilityService::class.java.getDeclaredMethod("onServiceConnected")
+            .apply { isAccessible = true }.invoke(service)
         AirRuntime.setForegroundContext(ForegroundContextState(safety = ForegroundSafety.SAFE))
         AirAccessibilityService::class.java.getDeclaredField("instance").apply { isAccessible = true }.set(null, service)
         try {
@@ -321,7 +322,8 @@ class CalibrationEngineIntegrationTest {
     @Test fun pinchWinsOverSameFrameClassifierAndPoseCannotReplayAfterRelease() {
         val controller = org.robolectric.Robolectric.buildService(AirAccessibilityService::class.java).create()
         val service = controller.get()
-        service.onServiceConnected()
+        AirAccessibilityService::class.java.getDeclaredMethod("onServiceConnected")
+            .apply { isAccessible = true }.invoke(service)
         AirRuntime.setForegroundContext(ForegroundContextState(safety = ForegroundSafety.SAFE))
         try {
             AirRuntime.gesturesEnabled = true
@@ -352,7 +354,8 @@ class CalibrationEngineIntegrationTest {
     @Test fun pauseResumeBetweenFramesCannotReplayClosedPinch() {
         val controller = org.robolectric.Robolectric.buildService(AirAccessibilityService::class.java).create()
         val service = controller.get()
-        service.onServiceConnected()
+        AirAccessibilityService::class.java.getDeclaredMethod("onServiceConnected")
+            .apply { isAccessible = true }.invoke(service)
         AirRuntime.setForegroundContext(ForegroundContextState(safety = ForegroundSafety.SAFE))
         try {
             AirRuntime.gesturesEnabled = true
@@ -377,7 +380,8 @@ class CalibrationEngineIntegrationTest {
     private fun assertSlowCameraPinchDispatchesOneTap(open: List<NormalizedLandmark>) {
         val controller = org.robolectric.Robolectric.buildService(AirAccessibilityService::class.java).create()
         val service = controller.get()
-        service.onServiceConnected()
+        AirAccessibilityService::class.java.getDeclaredMethod("onServiceConnected")
+            .apply { isAccessible = true }.invoke(service)
         AirRuntime.setForegroundContext(ForegroundContextState(safety = ForegroundSafety.SAFE))
         val instance = AirAccessibilityService::class.java.getDeclaredField("instance").apply { isAccessible = true }
         instance.set(null, service)
@@ -477,7 +481,8 @@ class CalibrationEngineIntegrationTest {
         val prefs = context.getSharedPreferences("aergis_mappings", Context.MODE_PRIVATE)
         val controller = org.robolectric.Robolectric.buildService(AirAccessibilityService::class.java).create()
         val service = controller.get()
-        service.onServiceConnected()
+        AirAccessibilityService::class.java.getDeclaredMethod("onServiceConnected")
+            .apply { isAccessible = true }.invoke(service)
         AirRuntime.setForegroundContext(ForegroundContextState(safety = ForegroundSafety.SAFE))
         AirAccessibilityService::class.java.getDeclaredField("instance").apply { isAccessible = true }.set(null, service)
         try {
@@ -505,7 +510,8 @@ class CalibrationEngineIntegrationTest {
     @Test fun recordedDeviceLatencyCanConfirmMappedCommandsExactlyOnce() {
         val controller = org.robolectric.Robolectric.buildService(AirAccessibilityService::class.java).create()
         val service = controller.get()
-        service.onServiceConnected()
+        AirAccessibilityService::class.java.getDeclaredMethod("onServiceConnected")
+            .apply { isAccessible = true }.invoke(service)
         AirRuntime.setForegroundContext(ForegroundContextState(safety = ForegroundSafety.SAFE))
         AirAccessibilityService::class.java.getDeclaredField("instance").apply { isAccessible = true }.set(null, service)
         try {
@@ -570,7 +576,8 @@ class CalibrationEngineIntegrationTest {
         val previous = prefs.getString("gesture_VICTORY", null)
         val controller = org.robolectric.Robolectric.buildService(AirAccessibilityService::class.java).create()
         val service = controller.get()
-        service.onServiceConnected()
+        AirAccessibilityService::class.java.getDeclaredMethod("onServiceConnected")
+            .apply { isAccessible = true }.invoke(service)
         AirRuntime.setForegroundContext(ForegroundContextState(safety = ForegroundSafety.SAFE))
         AirAccessibilityService::class.java.getDeclaredField("instance").apply { isAccessible = true }.set(null, service)
         try {
@@ -593,7 +600,8 @@ class CalibrationEngineIntegrationTest {
     private fun assertClassifierAgeRejected(ageMs: Long) {
         val controller = org.robolectric.Robolectric.buildService(AirAccessibilityService::class.java).create()
         val service = controller.get()
-        service.onServiceConnected()
+        AirAccessibilityService::class.java.getDeclaredMethod("onServiceConnected")
+            .apply { isAccessible = true }.invoke(service)
         AirRuntime.setForegroundContext(ForegroundContextState(safety = ForegroundSafety.SAFE))
         AirAccessibilityService::class.java.getDeclaredField("instance").apply { isAccessible = true }.set(null, service)
         try {
@@ -612,7 +620,8 @@ class CalibrationEngineIntegrationTest {
         prefs.edit().putString("gesture_THUMB_DOWN", "NONE").commit()
         val controller = org.robolectric.Robolectric.buildService(AirAccessibilityService::class.java).create()
         val service = controller.get()
-        service.onServiceConnected()
+        AirAccessibilityService::class.java.getDeclaredMethod("onServiceConnected")
+            .apply { isAccessible = true }.invoke(service)
         AirRuntime.setForegroundContext(ForegroundContextState(safety = ForegroundSafety.SAFE))
         AirAccessibilityService::class.java.getDeclaredField("instance").apply { isAccessible = true }.set(null, service)
         try {
@@ -649,7 +658,8 @@ class CalibrationEngineIntegrationTest {
         val context = RuntimeEnvironment.getApplication() as Context
         val controller = org.robolectric.Robolectric.buildService(AirAccessibilityService::class.java).create()
         val service = controller.get()
-        service.onServiceConnected()
+        AirAccessibilityService::class.java.getDeclaredMethod("onServiceConnected")
+            .apply { isAccessible = true }.invoke(service)
         AirRuntime.setForegroundContext(ForegroundContextState(safety = ForegroundSafety.SAFE))
         AirAccessibilityService::class.java.getDeclaredField("instance").apply { isAccessible = true }.set(null, service)
         try {

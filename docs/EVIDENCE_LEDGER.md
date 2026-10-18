@@ -21,6 +21,8 @@
 
 Publication inspection: PR #64 was merged externally as `0c9eec32598ea2838be5fb35f1a0321df89d59e9`; main and the automatic build marker now agree there. Its tree matches reviewed parent `264fca3`. Publish on this current main without discarding newer work. Final CI/commit/artifact evidence is recorded in the follow-up PR to avoid documentation-only CI loops.
 
+CI #278 caught protected `onServiceConnected` access in the new test setup during unit-test compilation. The fixture now invokes the callback reflectively, matching existing reflection-based engine fixtures; production visibility is unchanged. CI rerun required.
+
 ### Confirmed problem and acceptance
 
 The recording contains PRESSED/HOLDING/DRAGGING and native held-touch completions.
