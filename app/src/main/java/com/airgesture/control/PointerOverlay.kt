@@ -93,16 +93,15 @@ class PointerOverlay(private val context: Context) {
         if (!hasPosition) return
         val root = rootView ?: return
         val cursor = cursorView ?: return
-        if (!root.isAttachedToWindow) {
-            onPositionApplied?.invoke(null)
-            return
-        }
         // Accessibility dispatch uses display coordinates; an overlay window can start
         // below the status bar or beside a cutout. Keep its hotspot at the same point.
         root.getLocationOnScreen(origin)
         cursor.translationX = screenX - origin[0] - cursor.left - cursor.sizePx / 2f
         cursor.translationY = screenY - origin[1] - cursor.top - cursor.sizePx / 2f
-        onPositionApplied?.invoke(PointerCoordinateMapper.Point(screenX, screenY))
+        // Prepare geometry even before attachment, but grant target authority only
+        // when the overlay is attached. Relayout must retain its screen-space anchor.
+        onPositionApplied?.invoke(if (root.isAttachedToWindow)
+            PointerCoordinateMapper.Point(screenX, screenY) else null)
     }
 
     /** Opt-in recording evidence for clipping/inset failures; no screen pixels are captured. */

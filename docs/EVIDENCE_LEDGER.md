@@ -25,6 +25,8 @@ CI #278 caught protected `onServiceConnected` access in the new test setup durin
 
 CI #279 compiled and ran 382 tests, exposing delayed first-overlay attachment: the visible target remained unset until another camera update. Hotspot publication now follows actual attach/layout application, and detachment clears it. Two older low-cadence tests were migrated from release-triggered expectations to the explicitly approved contact-triggered contract; the same scenarios and noise protection remain. Rerun pending.
 
+CI #280 passed 381/382 tests. The remaining existing inset/relayout test showed pre-attachment positioning had been skipped. Preserve that geometry computation and gate only hotspot publication on attachment; no test expectation changed. The expanded host suite now passes 80 tests. Final Android rerun required.
+
 ### Confirmed problem and acceptance
 
 The recording contains PRESSED/HOLDING/DRAGGING and native held-touch completions.
