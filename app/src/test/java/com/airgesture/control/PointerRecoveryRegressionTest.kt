@@ -59,14 +59,14 @@ class PointerRecoveryRegressionTest {
         assertTrue(next.x > .5f)
     }
 
-    @Test fun singleContactBetweenSlowOpenSamplesProducesOneReleaseClick() {
+    @Test fun singleContactBetweenSlowOpenSamplesClicksBeforeRelease() {
         val click = ClickHysteresisStateMachine()
         assertFalse(click.processFrame(.8f, 1000L))
-        assertFalse(click.processFrame(.1f, 1200L))
-        assertTrue("A complete slow-cadence pinch must click", click.processFrame(.8f, 1400L))
+        assertTrue("A slow-cadence contact must click before release", click.processFrame(.1f, 1200L))
+        assertFalse("Release only rearms", click.processFrame(.8f, 1400L))
         assertFalse(click.processFrame(.8f, 1600L))
-        assertFalse(click.processFrame(.1f, 1800L))
-        assertTrue(click.processFrame(.8f, 2000L))
+        assertTrue(click.processFrame(.1f, 1800L))
+        assertFalse(click.processFrame(.8f, 2000L))
     }
 
     @Test fun oneHighRateContactGlitchStillCannotClick() {
@@ -79,8 +79,8 @@ class PointerRecoveryRegressionTest {
     @Test fun lowCadenceHeldPinchSurvives267msAndReleasesWithoutSecondClick() {
         val click = ClickHysteresisStateMachine()
         click.processFrame(.8f, 1000L)
-        click.processFrame(.1f, 1267L)
-        assertTrue(click.processFrame(.1f, 1534L))
+        assertTrue(click.processFrame(.1f, 1267L))
+        assertFalse("Continuing contact stays consumed", click.processFrame(.1f, 1534L))
         assertEquals(ClickHysteresisStateMachine.State.CLICKED, click.getCurrentState())
         assertFalse(click.processFrame(.8f, 1801L))
     }

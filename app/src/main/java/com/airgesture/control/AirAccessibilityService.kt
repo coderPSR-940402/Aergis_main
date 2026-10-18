@@ -91,8 +91,12 @@ class AirAccessibilityService : AccessibilityService() {
             position.x,
             position.y,
             pending.clicking
-        )
-        visibleHotspot = if (overlay.isVisible) VisibleHotspot(position, pending.epoch) else null
+        ) { applied ->
+            // Attachment can finish after the first update. Publish only once the
+            // overlay actually applies the position, including that delayed layout.
+            visibleHotspot = applied?.takeIf { pending.epoch == AirRuntime.actionEpoch }
+                ?.let { VisibleHotspot(it, pending.epoch) }
+        }
         if (TestingTools.state.value.status == RecordingStatus.RECORDING) {
             TestingTools.event("overlay_applied", org.json.JSONObject().put("visible", overlay.isVisible)
                 .put("x", pending.x).put("y", pending.y).put("pixelX", position.x).put("pixelY", position.y)

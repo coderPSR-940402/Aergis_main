@@ -23,6 +23,8 @@ Publication inspection: PR #64 was merged externally as `0c9eec32598ea2838be5fb3
 
 CI #278 caught protected `onServiceConnected` access in the new test setup during unit-test compilation. The fixture now invokes the callback reflectively, matching existing reflection-based engine fixtures; production visibility is unchanged. CI rerun required.
 
+CI #279 compiled and ran 382 tests, exposing delayed first-overlay attachment: the visible target remained unset until another camera update. Hotspot publication now follows actual attach/layout application, and detachment clears it. Two older low-cadence tests were migrated from release-triggered expectations to the explicitly approved contact-triggered contract; the same scenarios and noise protection remain. Rerun pending.
+
 ### Confirmed problem and acceptance
 
 The recording contains PRESSED/HOLDING/DRAGGING and native held-touch completions.

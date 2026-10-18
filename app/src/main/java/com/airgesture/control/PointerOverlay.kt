@@ -19,6 +19,7 @@ class PointerOverlay(private val context: Context) {
     private var screenX = 0f
     private var screenY = 0f
     private var hasPosition = false
+    private var onPositionApplied: ((PointerCoordinateMapper.Point?) -> Unit)? = null
 
     val isVisible: Boolean
         get() = rootView?.isAttachedToWindow == true
@@ -47,6 +48,10 @@ class PointerOverlay(private val context: Context) {
         rootView = root
         cursorView = cursor
         root.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> applyScreenPosition() }
+        root.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+            override fun onViewAttachedToWindow(view: View) = applyScreenPosition()
+            override fun onViewDetachedFromWindow(view: View) { onPositionApplied?.invoke(null) }
+        })
         try {
             windowManager.addView(root, params)
         } catch (e: Exception) {
@@ -68,10 +73,14 @@ class PointerOverlay(private val context: Context) {
             cursorView = null
             rootView = null
             hasPosition = false
+            onPositionApplied?.invoke(null)
+            onPositionApplied = null
         }
     }
 
-    fun updatePosition(x: Float, y: Float, isClicking: Boolean = false) {
+    fun updatePosition(x: Float, y: Float, isClicking: Boolean = false,
+        onApplied: ((PointerCoordinateMapper.Point?) -> Unit)? = null) {
+        onPositionApplied = onApplied
         val cursor = cursorView ?: return
         cursor.setClicking(isClicking)
         screenX = x
@@ -84,11 +93,16 @@ class PointerOverlay(private val context: Context) {
         if (!hasPosition) return
         val root = rootView ?: return
         val cursor = cursorView ?: return
+        if (!root.isAttachedToWindow) {
+            onPositionApplied?.invoke(null)
+            return
+        }
         // Accessibility dispatch uses display coordinates; an overlay window can start
         // below the status bar or beside a cutout. Keep its hotspot at the same point.
         root.getLocationOnScreen(origin)
         cursor.translationX = screenX - origin[0] - cursor.left - cursor.sizePx / 2f
         cursor.translationY = screenY - origin[1] - cursor.top - cursor.sizePx / 2f
+        onPositionApplied?.invoke(PointerCoordinateMapper.Point(screenX, screenY))
     }
 
     /** Opt-in recording evidence for clipping/inset failures; no screen pixels are captured. */
