@@ -25,11 +25,31 @@ class AirAccessibilityServiceDispatchTest {
     private lateinit var service: AirAccessibilityService
     private lateinit var shadow: ShadowAccessibilityService
 
+    private lateinit var legacyTouch: HeldPointerTouch
+    private val legacyHandler = android.os.Handler(Looper.getMainLooper())
+    private fun updateLegacyPointerTouch(x: Float, y: Float, pressed: Boolean) {
+        val metrics = DisplayMetrics()
+        @Suppress("DEPRECATION")
+        (service.getSystemService(Context.WINDOW_SERVICE) as WindowManager).defaultDisplay.getRealMetrics(metrics)
+        val point = PointerCoordinateMapper.Point(Math.round(x * (metrics.widthPixels - 1)).toFloat(),
+            Math.round(y * (metrics.heightPixels - 1)).toFloat())
+        val epoch = AirRuntime.actionEpoch
+        val at = android.os.SystemClock.uptimeMillis()
+        legacyHandler.post { legacyTouch.update(point, pressed, epoch, at) }
+    }
+
     @Before
     fun setUp() {
         controller = Robolectric.buildService(AirAccessibilityService::class.java).create()
         service = controller.get()
+        service.onServiceConnected()
         shadow = org.robolectric.Shadows.shadowOf(service)
+        legacyTouch = HeldPointerTouch(legacyHandler,
+            dispatch = { gesture, callback -> service.dispatchGesture(gesture, callback, legacyHandler) },
+            permitted = { epoch -> AirRuntime.pointerEnabled && ActionDispatchGate.evaluate(
+                AirAction.LONG_PRESS, epoch, AirRuntime.actionEpoch, AirRuntime.gesturesEnabled,
+                AirRuntime.controlMode, AirRuntime.state.value.foregroundContext.safety).allowed },
+            record = AirRuntime::recordActionDispatchOutcome)
         AirRuntime.resetActionDispatchTelemetry()
         AirRuntime.gesturesEnabled = true
         AirRuntime.pointerEnabled = true
@@ -43,10 +63,13 @@ class AirAccessibilityServiceDispatchTest {
             )
         )
         AirRuntime.setPointerState(0.5f, 0.5f, tracking = true)
+        service.updatePointer(.5f, .5f, true)
+        shadowOf(Looper.getMainLooper()).idle()
     }
 
     @After
     fun tearDown() {
+        legacyTouch.cancel()
         controller.destroy()
         AirRuntime.pointerEnabled = true
         AirRuntime.resetActionDispatchTelemetry()
@@ -182,6 +205,8 @@ class AirAccessibilityServiceDispatchTest {
         (service.getSystemService(Context.WINDOW_SERVICE) as WindowManager)
             .defaultDisplay.getRealMetrics(metrics)
         AirRuntime.setPointerState(1f, 1f, tracking = true)
+        service.updatePointer(1f, 1f, true)
+        shadowOf(Looper.getMainLooper()).idle()
 
         service.dispatch(AirAction.TAP)
         AirRuntime.setPointerState(0.2f, 0.2f, tracking = true)
@@ -201,6 +226,8 @@ class AirAccessibilityServiceDispatchTest {
         (service.getSystemService(Context.WINDOW_SERVICE) as WindowManager)
             .defaultDisplay.getRealMetrics(metrics)
         AirRuntime.setPointerState(1f, 1f, tracking = true)
+        service.updatePointer(1f, 1f, true)
+        shadowOf(Looper.getMainLooper()).idle()
         service.dispatch(AirAction.SCROLL_UP)
         shadowOf(Looper.getMainLooper()).idle()
 
@@ -215,15 +242,70 @@ class AirAccessibilityServiceDispatchTest {
         assertTrue(bounds.bottom > bounds.top)
     }
 
+    @Test fun trackingCancellationInvalidatesQueuedTouchBeforeNativeDispatch() {
+        service.dispatch(AirAction.TAP)
+        service.cancelPointerTouch()
+        shadowOf(Looper.getMainLooper()).idle()
+        assertTrue(shadow.gesturesDispatched.isEmpty())
+        assertEquals(1L, AirRuntime.state.value.actionDispatchTelemetry.policyDenied)
+    }
+
+    @Test fun doubleTapIsOneBoundedNativeRequestAtTheDisplayedHotspot() {
+        AirRuntime.setPointerState(.9f, .9f, tracking = true)
+        // The runtime estimate moved; the displayed .5/.5 hotspot has not.
+        service.dispatch(AirAction.DOUBLE_TAP)
+        shadowOf(Looper.getMainLooper()).idle()
+        val gesture = shadow.gesturesDispatched.single().description()
+        assertEquals(2, gesture.strokeCount)
+        assertTrue(gesture.getStroke(1).startTime > gesture.getStroke(0).duration)
+        val metrics = DisplayMetrics()
+        @Suppress("DEPRECATION")
+        (service.getSystemService(Context.WINDOW_SERVICE) as WindowManager).defaultDisplay.getRealMetrics(metrics)
+        for (i in 0..1) {
+            val stroke = gesture.getStroke(i)
+            assertFalse(stroke.willContinue())
+            val bounds = RectF()
+            stroke.path.computeBounds(bounds, true)
+            assertEquals(.5f * (metrics.widthPixels - 1), bounds.left, .01f)
+            assertEquals(.5f * (metrics.heightPixels - 1), bounds.top, .01f)
+        }
+    }
+
+    @Test fun hiddenHotspotCannotInjectCoordinateCommands() {
+        service.updatePointer(.5f, .5f, false)
+        shadowOf(Looper.getMainLooper()).idle()
+        service.dispatch(AirAction.TAP)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertTrue(shadow.gesturesDispatched.isEmpty())
+        assertEquals(1L, AirRuntime.state.value.actionDispatchTelemetry.policyDenied)
+    }
+
+    @Test fun pauseCancelsBoundedLongPressThroughPlatformAndDoesNotReplay() {
+        service.dispatch(AirAction.LONG_PRESS)
+        shadowOf(Looper.getMainLooper()).idle()
+        val first = shadow.gesturesDispatched.single()
+        AirRuntime.controlMode = ControlMode.PAUSED
+        shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(16))
+        assertEquals(2, shadow.gesturesDispatched.size)
+        val cancellation = shadow.gesturesDispatched.last()
+        cancellation.callback()!!.onCancelled(cancellation.description())
+        first.callback()!!.onCompleted(first.description())
+        assertEquals(1L, AirRuntime.state.value.actionDispatchTelemetry.cancelled)
+        assertEquals(0L, AirRuntime.state.value.actionDispatchTelemetry.completed)
+        AirRuntime.controlMode = ControlMode.ARMED
+        shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofSeconds(2))
+        assertEquals(2, shadow.gesturesDispatched.size)
+    }
+
     @Test fun disablingPointerRejectsAnInFlightFrameEvenWithTheNewEpoch() {
         AirRuntime.pointerEnabled = false
-        service.updatePointerTouch(.4f, .5f, true)
+        updateLegacyPointerTouch(.4f, .5f, true)
         shadowOf(Looper.getMainLooper()).idle()
         assertTrue("A late frame must not start a native touch after pointer disable", shadow.gesturesDispatched.isEmpty())
     }
 
     @Test fun pointerDisableCancelsHeldTouchAndLateCallbackCannotContinue() {
-        service.updatePointerTouch(.4f, .5f, true)
+        updateLegacyPointerTouch(.4f, .5f, true)
         shadowOf(Looper.getMainLooper()).idle()
         val first = shadow.gesturesDispatched.single()
         AirRuntime.pointerEnabled = false
@@ -234,13 +316,13 @@ class AirAccessibilityServiceDispatchTest {
     }
 
     @Test fun pinchPressKeepsOneTouchDownAndReleaseEndsItWithoutAnExtraTap() {
-        service.updatePointerTouch(0.4f, 0.5f, true)
+        updateLegacyPointerTouch(0.4f, 0.5f, true)
         shadowOf(Looper.getMainLooper()).idle()
         val first = shadow.gesturesDispatched.single()
         assertTrue(first.description().getStroke(0).willContinue())
         assertEquals(0L, AirRuntime.state.value.actionDispatchTelemetry.completed)
 
-        service.updatePointerTouch(0.4f, 0.5f, false)
+        updateLegacyPointerTouch(0.4f, 0.5f, false)
         shadowOf(Looper.getMainLooper()).idle()
         first.callback()!!.onCompleted(first.description())
         val ending = shadow.gesturesDispatched.last()
@@ -251,11 +333,11 @@ class AirAccessibilityServiceDispatchTest {
     }
 
     @Test fun newPinchCannotEraseReleaseWhilePlatformCallbackIsPending() {
-        service.updatePointerTouch(.4f, .5f, true)
+        updateLegacyPointerTouch(.4f, .5f, true)
         shadowOf(Looper.getMainLooper()).idle()
         val first = shadow.gesturesDispatched.single()
-        service.updatePointerTouch(.4f, .5f, false)
-        service.updatePointerTouch(.7f, .8f, true)
+        updateLegacyPointerTouch(.4f, .5f, false)
+        updateLegacyPointerTouch(.7f, .8f, true)
         shadowOf(Looper.getMainLooper()).idle()
         first.callback()!!.onCompleted(first.description())
         val ending = shadow.gesturesDispatched.last()
@@ -270,13 +352,13 @@ class AirAccessibilityServiceDispatchTest {
     }
 
     @Test fun queuedDragMovementReachesItsOwnReleaseTargetBeforeTheNextPress() {
-        service.updatePointerTouch(.2f, .2f, true)
+        updateLegacyPointerTouch(.2f, .2f, true)
         shadowOf(Looper.getMainLooper()).idle()
         val down = shadow.gesturesDispatched.single()
-        service.updatePointerTouch(.4f, .6f, true)
+        updateLegacyPointerTouch(.4f, .6f, true)
         // Aiming after finger-up is not part of the drag; a next pinch has its own target.
-        service.updatePointerTouch(.9f, .9f, false)
-        service.updatePointerTouch(.7f, .8f, true)
+        updateLegacyPointerTouch(.9f, .9f, false)
+        updateLegacyPointerTouch(.7f, .8f, true)
         shadowOf(Looper.getMainLooper()).idle()
         down.callback()!!.onCompleted(down.description())
         val release = shadow.gesturesDispatched.last()
@@ -299,11 +381,11 @@ class AirAccessibilityServiceDispatchTest {
     }
 
     @Test fun safetyChangeCancelsQueuedFinalMovementInsteadOfDropping() {
-        service.updatePointerTouch(.2f, .2f, true)
+        updateLegacyPointerTouch(.2f, .2f, true)
         shadowOf(Looper.getMainLooper()).idle()
         val down = shadow.gesturesDispatched.single()
-        service.updatePointerTouch(.4f, .6f, true)
-        service.updatePointerTouch(.9f, .9f, false)
+        updateLegacyPointerTouch(.4f, .6f, true)
+        updateLegacyPointerTouch(.9f, .9f, false)
         shadowOf(Looper.getMainLooper()).idle()
         AirRuntime.controlMode = ControlMode.PAUSED
         down.callback()!!.onCompleted(down.description())
@@ -316,15 +398,15 @@ class AirAccessibilityServiceDispatchTest {
     }
 
     @Test fun releaseDuringEndingDoesNotReplayAnotherTouch() {
-        service.updatePointerTouch(.4f, .5f, true)
+        updateLegacyPointerTouch(.4f, .5f, true)
         shadowOf(Looper.getMainLooper()).idle()
         val first = shadow.gesturesDispatched.single()
-        service.updatePointerTouch(.4f, .5f, false)
+        updateLegacyPointerTouch(.4f, .5f, false)
         shadowOf(Looper.getMainLooper()).idle()
         first.callback()!!.onCompleted(first.description())
         val ending = shadow.gesturesDispatched.last()
-        service.updatePointerTouch(.7f, .8f, true)
-        service.updatePointerTouch(.7f, .8f, false)
+        updateLegacyPointerTouch(.7f, .8f, true)
+        updateLegacyPointerTouch(.7f, .8f, false)
         shadowOf(Looper.getMainLooper()).idle()
         ending.callback()!!.onCompleted(ending.description())
         assertEquals("Do not replay old contacts after callback congestion", 2, shadow.gesturesDispatched.size)
@@ -332,11 +414,11 @@ class AirAccessibilityServiceDispatchTest {
     }
 
     @Test fun safetyChangeDropsNextPressWaitingForFingerUp() {
-        service.updatePointerTouch(.4f, .5f, true)
+        updateLegacyPointerTouch(.4f, .5f, true)
         shadowOf(Looper.getMainLooper()).idle()
         val first = shadow.gesturesDispatched.single()
-        service.updatePointerTouch(.4f, .5f, false)
-        service.updatePointerTouch(.7f, .8f, true)
+        updateLegacyPointerTouch(.4f, .5f, false)
+        updateLegacyPointerTouch(.7f, .8f, true)
         shadowOf(Looper.getMainLooper()).idle()
         first.callback()!!.onCompleted(first.description())
         val ending = shadow.gesturesDispatched.last()
@@ -346,18 +428,18 @@ class AirAccessibilityServiceDispatchTest {
     }
 
     @Test fun stationaryHoldSurvivesThenDragsPausesAndReleases() {
-        service.updatePointerTouch(.4f, .5f, true)
+        updateLegacyPointerTouch(.4f, .5f, true)
         shadowOf(Looper.getMainLooper()).idle()
         val down = shadow.gesturesDispatched.single()
         down.callback()!!.onCompleted(down.description())
         repeat(12) {
             shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(100))
-            service.updatePointerTouch(.4000001f, .5000001f, true)
+            updateLegacyPointerTouch(.4000001f, .5000001f, true)
             shadowOf(Looper.getMainLooper()).idle()
             assertEquals("Stationary/subpixel continuation would have no Android motion events", 1,
                 shadow.gesturesDispatched.size)
         }
-        service.updatePointerTouch(.4f, .7f, true)
+        updateLegacyPointerTouch(.4f, .7f, true)
         shadowOf(Looper.getMainLooper()).idle()
         assertEquals(2, shadow.gesturesDispatched.size)
         val drag = shadow.gesturesDispatched.last()
@@ -368,7 +450,7 @@ class AirAccessibilityServiceDispatchTest {
         drag.callback()!!.onCompleted(drag.description())
         assertEquals("Pausing a drag must retain finger-down without an empty continuation", 2,
             shadow.gesturesDispatched.size)
-        service.updatePointerTouch(.4f, .7f, false)
+        updateLegacyPointerTouch(.4f, .7f, false)
         shadowOf(Looper.getMainLooper()).idle()
         val release = shadow.gesturesDispatched.last()
         assertEquals(3, shadow.gesturesDispatched.size)
@@ -379,7 +461,7 @@ class AirAccessibilityServiceDispatchTest {
     }
 
     @Test fun completedDownStillHasWatchdogProtectionWhileWaitingForMovement() {
-        service.updatePointerTouch(.4f, .5f, true)
+        updateLegacyPointerTouch(.4f, .5f, true)
         shadowOf(Looper.getMainLooper()).idle()
         val down = shadow.gesturesDispatched.single()
         down.callback()!!.onCompleted(down.description())
@@ -392,17 +474,17 @@ class AirAccessibilityServiceDispatchTest {
     @Test fun lossOrSafetyChangeCancelsTouchAndLateCallbacksCannotRestartIt() {
         for (safetyChanged in listOf(false, true)) {
             AirRuntime.controlMode = ControlMode.ARMED
-            service.updatePointerTouch(0.4f, 0.5f, false)
+            updateLegacyPointerTouch(0.4f, 0.5f, false)
             shadowOf(Looper.getMainLooper()).idle()
             val oldCount = shadow.gesturesDispatched.size
-            service.updatePointerTouch(0.4f, 0.5f, true)
+            updateLegacyPointerTouch(0.4f, 0.5f, true)
             shadowOf(Looper.getMainLooper()).idle()
             val first = shadow.gesturesDispatched.last()
             if (safetyChanged) {
                 AirRuntime.controlMode = ControlMode.PAUSED
                 first.callback()!!.onCompleted(first.description())
             } else {
-                service.cancelPointerTouch()
+                legacyTouch.cancel()
                 shadowOf(Looper.getMainLooper()).idle()
             }
             val afterCancel = shadow.gesturesDispatched.size
@@ -414,7 +496,7 @@ class AirAccessibilityServiceDispatchTest {
     }
 
     @Test fun cameraStallCannotLeaveAnIndefinitelyHeldTouch() {
-        service.updatePointerTouch(0.4f, 0.5f, true)
+        updateLegacyPointerTouch(0.4f, 0.5f, true)
         shadowOf(Looper.getMainLooper()).idle()
         val first = shadow.gesturesDispatched.single()
         shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(300L))
@@ -427,16 +509,16 @@ class AirAccessibilityServiceDispatchTest {
 
     @Test fun rejectedPressCannotRetryUntilTheUserOpensTheirFingers() {
         shadow.setCanDispatchGestures(false)
-        service.updatePointerTouch(0.4f, 0.5f, true)
+        updateLegacyPointerTouch(0.4f, 0.5f, true)
         shadowOf(Looper.getMainLooper()).idle()
         assertEquals(1L, AirRuntime.state.value.actionDispatchTelemetry.platformRejected)
-        service.updatePointerTouch(0.4f, 0.5f, true)
+        updateLegacyPointerTouch(0.4f, 0.5f, true)
         shadowOf(Looper.getMainLooper()).idle()
         assertEquals(1L, AirRuntime.state.value.actionDispatchTelemetry.platformRejected)
-        service.updatePointerTouch(0.4f, 0.5f, false)
+        updateLegacyPointerTouch(0.4f, 0.5f, false)
         shadowOf(Looper.getMainLooper()).idle()
         shadow.setCanDispatchGestures(true)
-        service.updatePointerTouch(0.4f, 0.5f, true)
+        updateLegacyPointerTouch(0.4f, 0.5f, true)
         shadowOf(Looper.getMainLooper()).idle()
         assertEquals(1, shadow.gesturesDispatched.size)
     }

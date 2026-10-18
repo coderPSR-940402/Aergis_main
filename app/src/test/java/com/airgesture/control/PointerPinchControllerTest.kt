@@ -20,27 +20,27 @@ class PointerPinchControllerTest {
         assertEquals(PointerInteractionPhase.PRESSED, press.phase)
     }
 
-    @Test fun stationaryHoldDoesNotMoveCursorAndBecomesHoldingWithoutAnotherClick() {
+    @Test fun stationaryHoldNeverChangesTheCommandOrTarget() {
         val controller = PointerPinchController()
         controller.update(p(0.4f, 0.5f), false, false, 1L)
         controller.update(p(0.45f, 0.55f), true, true, 100L)
         assertEquals(p(0.4f, 0.5f), controller.update(p(0.46f, 0.56f), true, true, 300L).point)
         val held = controller.update(p(0.45f, 0.55f), true, true, 600L)
         assertEquals(p(0.4f, 0.5f), held.point)
-        assertEquals(PointerInteractionPhase.HOLDING, held.phase)
+        assertEquals(PointerInteractionPhase.PRESSED, held.phase)
     }
 
-    @Test fun deliberateMovementWhilePressedDragsFromTheHeldTargetWithoutClosureDrift() {
+    @Test fun movementWhilePressedCannotTurnTheClickIntoADrag() {
         val controller = PointerPinchController()
         controller.update(p(0.4f, 0.5f), false, false, 1L)
         controller.update(p(0.5f, 0.6f), true, true, 100L)
         val drag = controller.update(p(0.6f, 0.8f), true, true, 180L)
-        assertEquals(0.5f, drag.point.x, 0.0001f)
-        assertEquals(0.7f, drag.point.y, 0.0001f)
-        assertEquals(PointerInteractionPhase.DRAGGING, drag.phase)
+        assertEquals(0.4f, drag.point.x, 0.0001f)
+        assertEquals(0.5f, drag.point.y, 0.0001f)
+        assertEquals(PointerInteractionPhase.PRESSED, drag.phase)
         val edge = controller.update(p(1f, 1f), true, true, 250L).point
-        assertEquals(0.9f, edge.x, 0.0001f)
-        assertEquals(0.9f, edge.y, 0.0001f)
+        assertEquals(0.4f, edge.x, 0.0001f)
+        assertEquals(0.5f, edge.y, 0.0001f)
     }
 
     @Test fun releasingBlendsBackThenOrdinaryAimingIsUnchanged() {
@@ -72,23 +72,23 @@ class PointerPinchControllerTest {
         assertEquals(PointerInteractionPhase.PRESSED, controller.update(p(.405f, .5f), true, true, 166L).phase)
     }
 
-    @Test fun sustainedDragUsesEqualPhysicalDistanceOnBothScreenAxes() {
+    @Test fun movementOnEitherAxisRetainsTheClickAnchor() {
         for (delta in listOf(p(.04f, 0f), p(0f, .02f))) {
             val controller = PointerPinchController()
-            controller.update(p(.4f, .5f), false, false, 1L, .5f)
-            controller.update(p(.4f, .5f), true, true, 100L, .5f)
+            controller.update(p(.4f, .5f), false, false, 1L)
+            controller.update(p(.4f, .5f), true, true, 100L)
             val point = p(.4f + delta.x, .5f + delta.y)
-            assertEquals(PointerInteractionPhase.PRESSED, controller.update(point, true, true, 133L, .5f).phase)
-            assertEquals(PointerInteractionPhase.DRAGGING, controller.update(point, true, true, 200L, .5f).phase)
+            assertEquals(PointerInteractionPhase.PRESSED, controller.update(point, true, true, 133L).phase)
+            assertEquals(PointerInteractionPhase.PRESSED, controller.update(point, true, true, 200L).phase)
         }
     }
 
-    @Test fun releasingContactWhileFingersRemainCloseEndsThePreviousDrag() {
+    @Test fun nearContactCannotMoveTheAnchorOrCreateAHoldVariant() {
         val controller = PointerPinchController()
         controller.update(p(.4f, .5f), false, false, 1L)
         controller.update(p(.4f, .5f), true, true, 100L)
         val drag = controller.update(p(.6f, .5f), true, true, 200L)
-        assertEquals(PointerInteractionPhase.DRAGGING, drag.phase)
+        assertEquals(PointerInteractionPhase.PRESSED, drag.phase)
         val release = controller.update(p(.6f, .5f), true, false, 233L)
         assertEquals(drag.point, release.point)
         val nextPress = controller.update(p(.6f, .5f), true, true, 800L)

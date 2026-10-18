@@ -689,7 +689,7 @@ class MainActivity : ComponentActivity() {
                 Text(stringResource(R.string.ui_change_mapping, actionLabel(current)))
             }
             if (current != AirAction.NONE && !GestureActionPolicy.isClassifierActionEnabled(
-                    true, current, pointerEnabled)) {
+                    true, current, pointerEnabled, source)) {
                 Text(stringResource(R.string.ui_mapping_pointer_restriction),
                     color = AergisColors.Caution, style = MaterialTheme.typography.bodyMedium)
             }

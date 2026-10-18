@@ -30,18 +30,12 @@ class ClickHysteresisStateMachine(
         val coolingDown = lastClickAt?.let { timestampMs - it < refractoryPeriodMs } ?: false
 
         if (dNorm >= releaseThreshold) {
-            // At 4-6 fps a complete pinch can occupy one sample. Confirm that sequence on
-            // release; never synthesize a held press from it, and never accept a one-frame
-            // high-rate glitch. A held pinch has already clicked and cannot click twice.
-            val releaseClick = currentState == State.ENGAGING && !coolingDown &&
-                contactSampleIntervalMs >= 80L &&
-                contactSince?.let { timestampMs - it >= confirmationMs } == true
-            if (releaseClick) lastClickAt = timestampMs
+            // Release is evidence for the next occurrence, never an output command.
             observedOpen = true
             contactSince = null
             contactSampleIntervalMs = 0L
-            currentState = if (coolingDown || releaseClick) State.REFRACTORY else State.IDLE
-            return releaseClick
+            currentState = if (coolingDown) State.REFRACTORY else State.IDLE
+            return false
         }
         if (currentState == State.CLICKED) return false
         if (!observedOpen || coolingDown) return false
@@ -56,7 +50,10 @@ class ClickHysteresisStateMachine(
             contactSince = it
             contactSampleIntervalMs = previous?.let { prior -> timestampMs - prior } ?: 0L
         }
-        if (timestampMs - start < confirmationMs) return false
+        // At slow cadence a contact may occupy one frame: accept the already observed
+        // open-to-contact transition now. High-rate one-frame glitches still need
+        // short internal evidence; there is no user-facing hold command or release tap.
+        if (contactSampleIntervalMs < 80L && timestampMs - start < confirmationMs) return false
 
         currentState = State.CLICKED
         observedOpen = false

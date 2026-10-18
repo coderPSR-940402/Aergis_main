@@ -60,7 +60,7 @@ internal fun ActionMappingPicker(
                     AirAction.entries.forEach { action ->
                         val supported = Build.VERSION.SDK_INT >= action.minimumSdk
                         val restricted = action != AirAction.NONE && !GestureActionPolicy.isClassifierActionEnabled(
-                            gesturesEnabled = true, action = action, pointerControlActive = pointerEnabled
+                            gesturesEnabled = true, action = action, pointerControlActive = pointerEnabled, gesture = source
                         )
                         Row(
                             Modifier.fillMaxWidth().heightIn(min = 56.dp)

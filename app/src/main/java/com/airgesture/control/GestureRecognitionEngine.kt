@@ -33,6 +33,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
     private var lastCalibrationContext: Pair<ControlHandPreference, Boolean>? = null
     private val interpreter = GestureInterpreter(mappings)
     private val pinchPointer = PointerPinchController()
+    private var lastPointerActionEpoch: Long? = null
     private val poseEvidenceEvaluator = PoseGeometryEvidenceEvaluator()
     private var recognizer: GestureRecognizer? = null
     private var activeDelegate = "UNAVAILABLE"
@@ -371,6 +372,13 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 AirRuntime.pointerEnabled, indexTip != null,
                 if (selectedHand != null) poseEvidenceEvaluator.evaluatePointer(reusablePointsList, frameAspectRatio) else null)
         diagnosticTrace?.put("pointerTouchAllowed", pointerTouchTracking && AirRuntime.gesturesEnabled)
+        // A pause/resume or permission/owner change between frames must not preserve
+        // an open/contact history and replay it in the new authority epoch.
+        if (lastPointerActionEpoch != AirRuntime.actionEpoch) {
+            interpreter.resetActions()
+            resetPointerTouch()
+            lastPointerActionEpoch = AirRuntime.actionEpoch
+        }
         var pinchInProgress = false
         if (pointerActive && indexTip != null) {
             val touchAllowed = pointerTouchTracking && AirRuntime.gesturesEnabled
@@ -389,21 +397,17 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             AirRuntime.setRawPointerState(rawTip.x, rawTip.y, trusted)
             val stabilized = if (touchAllowed && processed.poseEvidence.accepted && trusted) {
                 val interaction = pinchPointer.update(candidate, processed.isPinchApproaching,
-                    processed.isPinchPressed, timestamp,
-                    context.resources.displayMetrics.let { it.widthPixels.toFloat() / it.heightPixels.coerceAtLeast(1) })
+                    processed.isPinchPressed, timestamp)
                 pinchInProgress = processed.isPinchApproaching || processed.isClickEngaged
                 AirRuntime.pointerInteraction = interaction.phase
-                AirAccessibilityService.instance?.updatePointerTouch(
-                    interaction.point.x, interaction.point.y, processed.isPinchPressed)
                 interaction.point
             } else if (touchAllowed && processed.poseEvidence.accepted && !trusted) {
-                // Hold a suspect position without starting/moving a native touch. Always
-                // allow finger-up at the held point; the native freshness watchdog still runs.
+                // Hold a suspect position without accepting a command. Separation may
+                // release the visual anchor, but it never dispatches an action.
                 pinchInProgress = true
                 val heldPoint = AirRuntime.pointerSnapshot().let { PointerCoordinateMapper.Point(it.x, it.y) }
                 if (!processed.isPinchPressed) {
                     pinchPointer.update(heldPoint, false, false, timestamp)
-                    AirAccessibilityService.instance?.updatePointerTouch(heldPoint.x, heldPoint.y, false)
                     AirRuntime.pointerInteraction = PointerInteractionPhase.AIMING
                 }
                 heldPoint
@@ -438,13 +442,13 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             }
             AirRuntime.pointerFeedback = if (trusted) PointerFeedback.TRACKING else PointerFeedback.COASTING
             AirRuntime.setPointerState(stabilized.x, stabilized.y, trusted)
-            // A complete low-cadence open-contact-open cycle did not start a held touch.
-            // Dispatch one tap at the pinch anchor before aiming is allowed to move again.
-            if (touchAllowed && trusted && processed.isClickEngaged && !processed.isPinchPressed) {
+            // Recognition initiates one bounded tap. Release only rearms. The same
+            // frame's pinch evidence excludes the classifier before its dispatch gate.
+            if (touchAllowed && trusted && processed.isClickEngaged) {
                 AirAccessibilityService.instance?.dispatch(AirAction.TAP)
             }
 
-            // Scrolling requires deliberate pinch-and-drag. Aiming alone is not a swipe.
+            // Pointer travel and held contact never dispatch scrolling or drag.
             AirAccessibilityService.instance?.updatePointer(
                 stabilized.x,
                 stabilized.y,
@@ -527,7 +531,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             )
         )
         if (confirmedAction != null &&
-            GestureActionPolicy.isClassifierActionEnabled(AirRuntime.gesturesEnabled, confirmedAction, pointerActive)
+            GestureActionPolicy.isClassifierActionEnabled(AirRuntime.gesturesEnabled, confirmedAction, pointerActive, registeredGesture)
         ) {
             AirAccessibilityService.instance?.dispatch(confirmedAction, gestureTuning ?: GestureTuning())
         }

@@ -1,5 +1,117 @@
 # Aergis Evidence Ledger and Decision Log
 
+## Current continuation — 2026-10-18: bounded pinch command
+
+### Delivery and baseline
+
+- Approved geometry correction: source `264fca3b96ea3af793eb0eb7b97fd4baddbe7269`,
+  [draft PR #64](https://github.com/coderPSR-940402/Aergis_main/pull/64).
+  [CI #276](https://github.com/coderPSR-940402/Aergis_main/actions/runs/39094476996) passed
+  tests, lint, debug/release builds and APK checks on PR merge
+  `846903f26834c80e3f4cc00c8dbb58ebd5bd554f`.
+  [APK artifact](https://github.com/coderPSR-940402/Aergis_main/actions/runs/39094476996/artifacts/12124456643),
+  debug SHA-256 `203ed94ffe266dd72a679b5b7072df9f3d5c7d43d78f73c49605feb36d89d0ad`.
+  [CodeQL #265](https://github.com/coderPSR-940402/Aergis_main/actions/runs/39094476997) passed.
+- Main/build marker at inspection: `77a1b6a0a097ce585596ae9bf4f87f0419f00aeb`,
+  externally merged PR #63; CI #275 passed. Device-accepted rollback remains CI #50 /
+  `known-good/commit-50`, identified below. No functional baseline promotion.
+- Follow-up branch `fix/bounded-pinch-command` starts at approved geometry commit
+  `264fca3`. Owner approved commit/push and CI repairs on 2026-10-18;
+  Android CI and device verification are pending. No new APK is claimed.
+
+Publication inspection: PR #64 was merged externally as `0c9eec32598ea2838be5fb35f1a0321df89d59e9`; main and the automatic build marker now agree there. Its tree matches reviewed parent `264fca3`. Publish on this current main without discarding newer work. Final CI/commit/artifact evidence is recorded in the follow-up PR to avoid documentation-only CI loops.
+
+### Confirmed problem and acceptance
+
+The recording contains PRESSED/HOLDING/DRAGGING and native held-touch completions.
+Current code confirms pinch duration/travel becomes long press/drag, and slow-cadence
+contact can emit only on release. These conflict with the latest explicit contract.
+Included: pinch recognition, anchor, recognizer arbitration, bounded native output,
+visible-hotspot targeting, cancellation and necessary picker/help integration.
+Acceptance: contact initiates one bounded tap before release; hold, travel, release,
+missing frames and pause/resume cannot create a second command. Competing recognizers
+resolve before dispatch. Coordinate output uses the applied visible hotspot.
+
+### Implementation and migration
+
+- At existing slow cadence (sample interval at least 80 ms), accept a valid observed
+  open-to-contact transition on contact. High-rate input retains 40 ms internal noise
+  evidence. Release only rearms; startup/reset requires opening. Existing thresholds,
+  refractory guard and 350 ms continuity limit remain.
+- Freeze the pre-contact anchor throughout contact; no hold/drag conversion. Preserve
+  the 80 ms release blend. Camera path requests one TAP; pinch evidence excludes the
+  classifier before its gate. Epoch change resets recognition between frames too.
+- Move the continuous-touch controller unchanged to a **test-only rollback fixture**.
+  Keep its historical regressions; no held-touch entry point ships in the APK.
+- Distinct assigned poses can request bounded touch actions with the pointer enabled.
+  Pointing Up coordinate mappings remain disabled to prevent aiming commands. All 12
+  identities, defaults, stored assignments and legacy timing values remain intact.
+  No preference remapping. Picker/help explain the eligibility and hold/drag migration.
+- Double tap is one native request with two finite strokes. Long press and scrolling
+  remain finite assigned outputs. Ordinary pointer travel never dispatches scrolling.
+- Snapshot the last applied visible hotspot; reject hidden/old-epoch targets. Publish
+  pointer updates as immutable epoch-tagged snapshots. Queue-time checks retain the
+  original epoch and reject commands invalidated by explicit tracking cancellation.
+- One outstanding native command; busy requests fail without backlog/retry. Duplicate
+  and late callbacks cannot duplicate completion. Permission/service exceptions fail.
+- Pause, Stop, tracking loss, pointer disable, rotation and interruption request native
+  cancellation. Check authority every 15 ms; request cancellation if completion is
+  missing after the bounded duration plus 250 ms. Rejected cancellation does not clear
+  the original command: remain blocked until its callback or explicit service recovery.
+  Cancellation callbacks are not removed by lifecycle handler cleanup.
+
+Cancellation continues an undispatched stroke, using Android's invalid-continuation
+path to cancel pending input without a new DOWN/UP; see
+[AOSP MotionEventInjector](https://android.googlesource.com/platform/frameworks/base/+/refs/heads/main/services/accessibility/java/com/android/server/accessibility/MotionEventInjector.java).
+This is the prior controller's platform technique. Local state clearing is not proof
+of cancellation. Actual ACTION_CANCEL behavior on Galaxy A54 remains a device gate.
+
+Affected: pinch recognition/arbitration, final pointer anchor, accessibility dispatch,
+queue invalidation and service lifecycle; small picker/help integration. CameraX,
+MediaPipe model/delegate, coordinate transforms, filters, calibration storage/profiles,
+dependencies and protected-screen policy are unchanged. No gyro path is introduced.
+Catalogue expansion, new gestures, performance changes and UI redesign remain separate.
+
+### Verification, risks and continuation
+
+- Before/after: 12 focused pinch/anchor tests against parent production sources had
+  **6 failures** (contact timing, hold/drag conversion and moving anchor). All 12 pass
+  with the correction. **73 host JVM tests passed**: 31 pinch/pointer/policy plus 42
+  classifier/tracking/identity/tuning tests, using Kotlin 2.2.0 and JUnit 4.13.2.
+- Added Android integration tests for same-frame competing recognizers, between-frame
+  pause/resume, bounded double tap, visible/runtime target mismatch, hidden target,
+  queued cancellation, permission exception, duplicate callbacks, cancellation rejection
+  and timeout. Existing engine tests now require injection before release/no drag.
+  Historical held-touch regressions remain against the test-only controller.
+- Local `./gradlew :app:testDebugUnitTest --no-daemon` cannot bootstrap: distribution
+  download fails `Network is unreachable`. Android tests/lint/build are **pending CI**.
+  Host checks are not Android-build or release authority.
+- Risks: slow-cadence single-contact false positives, newly eligible saved distinct
+  touch mappings, overlay timing and device-specific native cancellation. Recording
+  lacks intention labels: it cannot identify every intended miss or prove accuracy.
+
+Submit this approved follow-up and inspect CI; repair failures
+attributable to it. No merge/release/baseline promotion. Roll back only this unit to
+`264fca3`, preserving classifier repairs and saved data; that restores the incompatible
+held-touch behavior and is a diagnostic rollback, not directive-compliant release.
+
+Galaxy A54 acceptance after green CI:
+
+1. On a harmless target screen, make 100 ordinary thumb-middle contacts with separation.
+   Expect one click before release at the visible hotspot. Count misses/extras; 95/100
+   is the early repair gate, not release certification.
+2. Hold contact two seconds and move: no repeat, long press or drag. Release does nothing.
+   Hide/reintroduce pinched hand and Pause/Resume: no replay until separation/new contact.
+3. Assign distinct poses to double tap, long press and scroll: one finite output each.
+   Pointing Up must not click while aiming; ordinary travel must not scroll.
+4. During long press, use physical Pause/Stop and interrupt accessibility. Verify native
+   cancellation, no delayed release/click and no replay after recovery. Failure blocks
+   dependent release claims; preserve reachable physical Stop throughout testing.
+5. Check mappings/calibration and edge targets; record exact APK/source/run. Next ordered
+   unit is pointer geometry/edge/calibration evidence, then catalogue/App search once
+   the interaction prerequisite is supported. Device pending does not block independent
+   useful implementation, but must not be reported as acceptance.
+
 ## Current implementation record — 2026-10-17
 
 ### Baseline identity and authority
