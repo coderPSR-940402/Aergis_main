@@ -453,6 +453,68 @@ class CalibrationEngineIntegrationTest {
         } finally { controller.destroy() }
     }
 
+    @Test fun briefRatioRejectedTransitionPreservesOneNativeCommandWithoutRearmingIt() {
+        withMappedBackService { shadow ->
+            primeClassifier()
+            val transition = hand().toMutableList().apply {
+                this[8] = NormalizedLandmark.create(.5f, .85f, 0f)
+            }
+            // The recorded case had 133 ms to the ratio rejection, then 100 ms to
+            // valid Victory. Neither the rejected command nor rejected None may act.
+            publish(transition, 1333L, gestureName = "Victory", delayMs = 229L)
+            org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+            assertTrue(shadow.globalActionsPerformed.isEmpty())
+            publish(hand(), 1433L, gestureName = "Victory", delayMs = 231L)
+            org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+            assertEquals(listOf(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK),
+                shadow.globalActionsPerformed)
+            publish(transition, 1533L)
+            repeat(8) { publish(hand(), 1633L + it * 100L, gestureName = "Victory") }
+            org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+            assertEquals("Rejected None and persistent pose cannot replay", 1, shadow.globalActionsPerformed.size)
+            publish(hand(), 2433L); publish(hand(), 2533L)
+            publish(hand(), 2633L, gestureName = "Victory")
+            org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+            assertEquals("Only genuine neutral rearms", 2, shadow.globalActionsPerformed.size)
+        }
+    }
+
+    @Test fun prolongedRatioRejectionCannotKeepNativeCommandReadinessAlive() {
+        withMappedBackService { shadow ->
+            primeClassifier()
+            val transition = hand().toMutableList().apply {
+                this[8] = NormalizedLandmark.create(.5f, .85f, 0f)
+            }
+            for (t in 1300L..1600L step 100L) publish(transition, t)
+            repeat(8) { publish(hand(), 1700L + it * 100L, gestureName = "Victory") }
+            org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+            assertTrue("A long interruption must require fresh neutral", shadow.globalActionsPerformed.isEmpty())
+            publish(hand(), 2500L); publish(hand(), 2600L)
+            publish(hand(), 2700L, gestureName = "Victory")
+            org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+            assertEquals(1, shadow.globalActionsPerformed.size)
+        }
+    }
+
+    private fun withMappedBackService(block: (org.robolectric.shadows.ShadowAccessibilityService) -> Unit) {
+        val context = RuntimeEnvironment.getApplication() as Context
+        val prefs = context.getSharedPreferences("aergis_mappings", Context.MODE_PRIVATE)
+        val previous = prefs.getString("gesture_VICTORY", null)
+        val controller = org.robolectric.Robolectric.buildService(AirAccessibilityService::class.java).create()
+        val service = controller.get()
+        AirAccessibilityService::class.java.getDeclaredField("instance").apply { isAccessible = true }.set(null, service)
+        try {
+            ActionMappingStore(context).setMapping(RegisteredGesture.VICTORY, AirAction.BACK)
+            AirRuntime.gesturesEnabled = true
+            block(org.robolectric.Shadows.shadowOf(service))
+        } finally {
+            prefs.edit().apply {
+                if (previous == null) remove("gesture_VICTORY") else putString("gesture_VICTORY", previous)
+            }.commit()
+            controller.destroy()
+        }
+    }
+
     @Test fun commandAgeLimitStillRejectsBacklogWhileCursorCanTrack() {
         assertClassifierAgeRejected(351L)
         assertTrue(AirRuntime.pointerTracking)

@@ -152,6 +152,132 @@ calibration and action-catalogue work. Catalogue audit also finds volume multi-s
 settings and lock-without-disarm; App search/web/settings actions and truthful
 capability states remain incomplete. No new gestures or rotation actions are enabled.
 
+### A54 recording received 2026-10-17 — observed, acceptance still pending
+
+Reviewed the newly supplied `recording(7).zip` and `report(9).pdf`; the PDF is
+byte-identical to the report inside this ZIP. No historical recording was reused.
+Input SHA-256 values:
+
+- ZIP: `fe7b678a901667d89f519d040313a055d2c3b1eff839ad186bc4964bccd43b8a`
+- PDF: `80d5f5f715067ee0a8f6512b30eb644d333ce99b601eae76ea9a98ab85753e3b`
+
+Recording metadata identifies Samsung SM-A546E, Android 16, portrait, LEFT hand,
+PRECISION filter, starting 2026-10-17 11:50:58 +0200. Its embedded source is
+`e1246e0e777a2f14f14c42cd124e006a97db3657`, matching the tested PR merge SHA of
+[CI #274](https://github.com/coderPSR-940402/Aergis_main/actions/runs/39020609074)
+and its [APK artifact](https://github.com/coderPSR-940402/Aergis_main/actions/runs/39020609074/artifacts/12096257524).
+Source head is `89235774b124e171f78384165ffeffb201441925`. The installed APK's
+binary checksum is not included in the recording; this is embedded-source identity,
+not independent checksum verification. PR #63 remains open/draft and CI #274 success
+was rechecked. Do not interpret the metadata's `historicalSource` as the installed build.
+
+Read-only checks: parsed all JSONL records and summary, inspected sampled camera
+images, rendered PDF page 1, and compared action events with current engine/service
+source. Observations:
+
+- 2,356 frames over 226.680 seconds; 1,025 TRACKING, 1,261 NO_HAND, 44 COASTING,
+  26 VISION_REJECTED. All 26 vision rejections are labelled stale results.
+  410 camera JPEGs, no recorder drops, unreadable records or image failures.
+- Mean inference 92.4 ms, maximum 363 ms, maximum analyzed-frame gap 372 ms.
+  These recorded timings are not end-to-end display latency or a no-recorder benchmark.
+- 43.5% tracked is a whole-session frame proportion, not hand-detection accuracy.
+  Several sampled NO_HAND periods visibly have no hand in frame. Empty screen-coverage
+  cells do not establish a reach defect. All segments are UNLABELLED; no stationary
+  jitter comparison or click success percentage can be certified.
+- Nine named requests: Notifications, Home, Media play/pause, Quick settings,
+  Screenshot and Recents once each, plus three TAPs. Fourteen COMPLETED outcomes
+  and one SUBMITTED outcome; no recorded policy denial, platform rejection or
+  cancellation. Outcome counts must not be treated as successful intended clicks:
+  held native touches also emit outcomes without named request events.
+- The existing pinch path is exercised: 14 PRESSED, 2 HOLDING and 16 DRAGGING frame
+  states. At elapsed 213.832 s and 219.264 s, the final pinch sequence enters
+  DRAGGING. This supports the already identified need for the separate bounded-tap
+  migration; it does not establish whether those movements were intentional.
+- Every recorded frame is ARMED. The recording does not demonstrate Pause/Resume,
+  Stop/Start or service-restart acceptance. Sparse camera samples and unlabelled
+  intended commands cannot certify absence of false activations or command replay.
+
+No runtime change or functional-baseline promotion from this evidence review. The
+next implementation unit remains recognition-triggered thumb-middle tapping and
+recognizer arbitration, with explicit migration away from held input. Owner feedback
+needed for this run: which actions were intended, missed or extra, especially the
+TAPs at 99.093 s, 171.442 s and 172.288 s. This feedback refines regression cases;
+it does not block implementation of the already specified interaction contract.
+
+### Recorded classifier miss correction — prepared 2026-10-18
+
+Owner confirmed missed clicks/gestures in the new recording and instructed continued
+investigation. The current uncommitted unit is based on PR #63 head `8923577`, preserving
+all newer work. The remote CI build marker was rechecked at `d86a094`; no baseline
+or rollback reference was moved.
+
+**Confirmed defect:** the existing engine conflates a momentary classifier geometry
+rejection with tracking loss. Production-code replay of the recording, including
+`LandmarkGestureRecognizer`, shows valid neutral readiness at elapsed 69.000 s.
+At 70.729 s, one fresh, same-owner frame rejects `EXCESSIVE_INDEX_BONE`, resets the
+gate, and suppresses the following 53-frame Victory run. It is not missing neutral
+before that transition. Recorded camera timestamps for the reduced regression are
+23676555, 23676655, 23676788 and 23676888 ms. The last valid neutral to valid Victory
+gap is 233 ms. Replay uses a declared BACK assignment and default confidence because
+the device's saved assignments/tuning are absent; it establishes the gate defect,
+not the intended action or a total device miss count.
+
+**Correction and acceptance:** separate continuity from valid command evidence only
+for `EXCESSIVE_INDEX_BONE` (the evaluator already requires finite, in-bounds landmarks
+and a nonzero palm before returning that reason). Such a frame may preserve previously
+established readiness, but cannot dispatch, consume a command or contribute to neutral
+release. It breaks partial neutral evidence. Recovery must occur within the existing
+250 ms evidence-gap limit, measured from the last valid geometry, not refreshed by
+each rejected frame. Longer interruption, missing/out-of-frame/non-finite evidence,
+staleness, ownership or action-epoch change, unsafe control and competing pinch still
+invalidate readiness. Consumed commands remain consumed until genuine valid neutral.
+
+**Scope and regression risks:** three production files change classifier eligibility,
+transaction state and their engine integration. No CameraX, MediaPipe configuration,
+pointer tracking/filtering, calibration, native accessibility dispatch/cancellation,
+service lifecycle, UI, dependencies, gesture identities or saved assignments change.
+No persistence migration is needed. Risk: an incorrectly classified interruption could
+retain readiness; the narrow rejection reason and bounded total gap limit that risk.
+This unit does not repair the separate thumb-middle held-touch/release-click path.
+
+**Verification:**
+
+- Before correction, four of eight new focused tests fail, including the recorded
+  transition. Added input/API scaffolding alone did not change behavior.
+- After correction, 42 host Kotlin/JUnit tests pass across geometry interruption,
+  existing occurrence/replay gates, tracking eligibility, tuning and all 12 identities.
+  Coverage includes no action on rejected evidence, no rearming, broken partial neutral,
+  startup/consumed states, ownership/epoch/loss, long interruptions and 250/251 ms bounds.
+- Replayed recorded categories/landmarks through the production recognizer and gate:
+  at 70.729 s readiness now survives without dispatch; at 70.833 s Victory is accepted
+  once. The separate 81-second sequence remains blocked by freshness boundaries.
+  This is offline evidence, not a new physical-device test or installed-APK result.
+- Added two Robolectric engine-to-native-dispatch tests for the 133+100 ms transition,
+  one bounded command, no repeat, genuine neutral recovery and prolonged rejection.
+  These require CI; they have not been run locally.
+- Full `./gradlew :app:testDebugUnitTest --no-daemon` was attempted; Gradle distribution
+  retrieval failed with `Network is unreachable` before Android tests could start.
+  No Android build or CI success is claimed for this uncommitted correction.
+
+**Delivery and rollback:** owner approved commit/push and CI on 2026-10-18.
+Publication inspection found PR #63 already merged externally at `77a1b6a0a097ce585596ae9bf4f87f0419f00aeb`.
+Main and `baseline-successful-apk` now point there; [main CI #275](https://github.com/coderPSR-940402/Aergis_main/actions/runs/39076427486) passed.
+Its tree is identical to the reviewed base `8923577`, so the approved correction is
+published on `fix/classifier-geometry-continuity` as a follow-up PR without discarding
+newer work. This advances the CI reference only, not device acceptance.
+Final correction CI and artifact links will be recorded in the follow-up PR description
+after submission, avoiding evidence-only CI loops. Inspect CI before A54 testing. Revert
+only the correction commit if needed; preserve PR #63's exactly-once protections and
+all saved settings. No merge, release or functional-baseline promotion is authorised.
+
+**A54 acceptance after green CI:** keep existing settings; map Victory to Back on a
+harmless screen. Start with valid unclassified neutral, transition to Victory at normal
+speed, and expect one Back without holding. Keep the pose visible: no repeat. Repeat
+after neutral, then check occlusion and Pause/Resume: no replay until fresh neutral.
+Record misses/extras and the exact APK source. Broader click accuracy remains pending.
+Next separate implementation unit remains recognition-triggered thumb-middle bounded
+tapping and recognizer arbitration, with explicit migration away from held touch/drag.
+
 ## Historical Phase 0 evidence ledger
 
 | ID | Evidence | Classification | Confidence | Decision/use |
