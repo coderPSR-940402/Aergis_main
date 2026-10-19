@@ -1,6 +1,89 @@
 # Aergis Evidence Ledger and Decision Log
 
-## Current continuation — 2026-10-18: bounded pinch command
+## Current continuation — 2026-10-19: visible viewport authority
+
+### Current reality and recording evidence
+
+- Main and automatic build marker: `0c9eec32598ea2838be5fb35f1a0321df89d59e9`.
+  PR #64 merged externally. Preserve newer open [PR #65](https://github.com/coderPSR-940402/Aergis_main/pull/65)
+  at `88d7177b1c5ccfb62f83be1d1ed40bdd6eb5d090`; this change branches from that head.
+- [CI #281](https://github.com/coderPSR-940402/Aergis_main/actions/runs/39145223332)
+  passed Android tests, lint, debug/release builds and APK checks on merge
+  `55167770c14d2e48331fb39e51769aebbe5156ce`.
+  [APK artifact](https://github.com/coderPSR-940402/Aergis_main/actions/runs/39145223332/artifacts/12143566110),
+  debug SHA-256 `72f6a6e73c7129c4ce6ef4e4b6d761bead9ab806a16e091217fb4f42d70aac5a`.
+  [CodeQL #270](https://github.com/coderPSR-940402/Aergis_main/actions/runs/39145223325) passed.
+- `recording(8).zip` identifies that exact CI #281 merge on SM-A546E / Android 16,
+  recorded 2026-10-18 18:52:12 +0200. ZIP SHA-256:
+  `1e1d4b807eaf4e45c86c787d69be15ad8ec53d80ce6470ee3ce43ec0d3045655`.
+  Accompanying `report(10).pdf` SHA-256:
+  `5b5219a072926755eaf28d5d3becf28861e62b5f3f5ea5dda679ade0f1ae99a5`.
+- 1,549 frames over 209.576 seconds; three TAP requests and three Android COMPLETED
+  callbacks, at 6.978, 84.487 and 182.115 seconds. This is device execution evidence,
+  not acceptance, target activation proof or a click-accuracy denominator. The recording
+  has no labelled intended attempts, so all missed intended gestures cannot be counted.
+  Missing/stale frames must not be relabelled as deliberate release or failed commands.
+- All 758 overlay events marked visible report a 1080×2260 window at (0,80).
+  68 hotspots lie outside that window. The first native tap used (678.4373,0),
+  outside its drawable extent. Attachment-only authorization is the confirmed defect.
+- Functional rollback remains CI #50, `known-good/commit-50`, source
+  `f4e51949491adc9d5a68f3fa701aee147ad3ed72`,
+  [run](https://github.com/coderPSR-940402/Aergis_main/actions/runs/36311499379),
+  [artifact](https://github.com/coderPSR-940402/Aergis_main/actions/runs/36311499379/artifacts/10929107070).
+  Neither CI #281 nor this new unit advances that accepted baseline.
+
+### Complete unit and acceptance
+
+Request full-display overlay layout on API 30+ (`setFitInsetsTypes(0)`), with explicit
+cutout layout policy (API 28–29 short edges). Independently require the applied hotspot
+inside the actual attached window and outside physical cutout rectangles. Keep the
+coordinate unchanged; never clamp it onto another target. Revoke queued coordinate
+authority and invoke the existing bounded-input cancellation path on clipping/detachment.
+Recording now distinguishes window attachment from visible hotspot eligibility.
+
+Acceptance: recorded y=0 fails with the inset window, succeeds with an unobscured
+full-display window; all drawable edges retain their exact coordinates; cutouts and
+zero/invalid extents cannot authorize input; relayout restores only the original target;
+a queued tap cannot execute after that target becomes clipped. Protected-screen policy
+and non-touchable/non-focusable overlay flags remain in force.
+
+Affected: pointer overlay/window geometry and accessibility target eligibility/cancellation.
+CameraX, MediaPipe, landmark tracking, filters, calibration profiles, gesture recognition,
+12 gesture IDs, assignments and action catalogue are unchanged. No migration needed.
+Risks: OEM inset/cutout layout and actual Android cancellation require device verification;
+older API paths retain fail-closed containment if full edge coverage is unavailable.
+Rotation actions remain gated. Revert this unit to return to `88d7177`; do not reset main
+or discard PR #65. No merge/release authorization is implied.
+
+### Verification and next gate
+
+- Local host suites: **84 tests passed** (42 classifier/tracking/identity; 42
+  pinch/policy/recovery/viewport). Includes the recorded top-edge regression, portrait
+  corners, landscape inset axis, invalid numbers and zero-sized windows.
+- Production containment replay of all 758 recorded visible events rejects the exact
+  68 clipped positions and retains 690. This verifies rejection logic, not physical
+  full-screen layout on the phone.
+- Added Android tests for full-screen parameters, retained coordinates through relayout,
+  physical cutout exclusion/recovery and clipped queued-command invalidation. Android
+  tests/build/lint await CI; no local Android success is claimed.
+- Owner authorized continuation after the explicit commit/push and attributable-CI-repair
+  request on 2026-10-19. Publication and Android CI are the next gates; no merge or release
+  authorization. Final commit/run/artifact evidence will be recorded in the delivery PR.
+- Galaxy A54 gate after CI: in an allowed test screen, move the yellow hotspot to all
+  four edges and tap labelled targets (avoid the physical camera hole); target and
+  injected point must agree. Repeat after pause/resume and inset changes. A clipped or
+  detached target must produce no new touch; interrupt a bounded long press and verify
+  actual cancellation/no later replay. Check Settings/SystemUI remain protected and
+  physical Stop remains reachable. Use labelled trials for the 95/100 early click gate;
+  passing it does not certify release or promote the baseline automatically.
+- Next task after this geometry gate: reconcile labelled intended clicks with recognition,
+  dispatch and target response; investigate remaining losses only from that evidence.
+
+API reference: [WindowManager.LayoutParams.setFitInsetsTypes](https://developer.android.com/reference/android/view/WindowManager.LayoutParams#setFitInsetsTypes(int))
+documents that the default avoids all system bars; zero opts out of fitting those insets.
+
+
+## Previous continuation — 2026-10-18: bounded pinch command
 
 ### Delivery and baseline
 

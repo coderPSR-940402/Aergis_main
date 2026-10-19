@@ -92,13 +92,19 @@ class AirAccessibilityService : AccessibilityService() {
             position.y,
             pending.clicking
         ) { applied ->
+            if (applied == null) {
+                // Clipping/detachment invalidates queued and ongoing coordinate input.
+                pointerCommandGeneration.incrementAndGet()
+                boundedInput.cancel()
+            }
             // Attachment can finish after the first update. Publish only once the
             // overlay actually applies the position, including that delayed layout.
             visibleHotspot = applied?.takeIf { pending.epoch == AirRuntime.actionEpoch }
                 ?.let { VisibleHotspot(it, pending.epoch) }
         }
         if (TestingTools.state.value.status == RecordingStatus.RECORDING) {
-            TestingTools.event("overlay_applied", org.json.JSONObject().put("visible", overlay.isVisible)
+            TestingTools.event("overlay_applied", org.json.JSONObject().put("visible", overlay.isHotspotVisible)
+                .put("windowAttached", overlay.isVisible)
                 .put("x", pending.x).put("y", pending.y).put("pixelX", position.x).put("pixelY", position.y)
                 .put("viewport", overlay.diagnosticBounds()).put("clicking", pending.clicking))
         }

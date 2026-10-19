@@ -42,6 +42,63 @@ class PointerCursorAppearanceTest {
         } finally { overlay.hide() }
     }
 
+    @Test fun clippedHotspotRevokesAuthorityAndRelayoutRestoresExactTarget() {
+        val overlay = PointerOverlay(RuntimeEnvironment.getApplication())
+        overlay.show()
+        try {
+            org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+            val root = PointerOverlay::class.java.getDeclaredField("rootView").apply { isAccessible = true }
+                .get(overlay) as android.widget.FrameLayout
+            root.layout(0, 80, 1080, 2340)
+            val origin = IntArray(2)
+            root.getLocationOnScreen(origin)
+            val x = origin[0] + 678f
+            val y = origin[1] - 1f
+            var applied: PointerCoordinateMapper.Point? = PointerCoordinateMapper.Point(-1f, -1f)
+            overlay.updatePosition(x, y) { applied = it }
+            assertNull("Attached window must not authorize a clipped hotspot", applied)
+            assertFalse(overlay.isHotspotVisible)
+            root.layout(0, 0, 1080, 2340)
+            assertEquals(PointerCoordinateMapper.Point(x, y), applied)
+            assertTrue(overlay.isHotspotVisible)
+            overlay.hide()
+            assertNull(applied)
+        } finally { overlay.hide() }
+    }
+
+    @Test fun fullscreenWindowDoesNotFitSystemBarsAndStaysNonInteractive() {
+        val overlay = PointerOverlay(RuntimeEnvironment.getApplication())
+        val params = PointerOverlay::class.java.getDeclaredField("params").apply { isAccessible = true }
+            .get(overlay) as android.view.WindowManager.LayoutParams
+        assertEquals(0, params.fitInsetsTypes)
+        assertEquals(android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS,
+            params.layoutInDisplayCutoutMode)
+        assertTrue(params.flags and android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE != 0)
+        assertTrue(params.flags and android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE != 0)
+    }
+
+    @Test fun physicalCutoutDoesNotAuthorizeAnInvisibleHotspot() {
+        val overlay = PointerOverlay(RuntimeEnvironment.getApplication())
+        overlay.show()
+        try {
+            org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+            val root = PointerOverlay::class.java.getDeclaredField("rootView").apply { isAccessible = true }
+                .get(overlay) as android.widget.FrameLayout
+            root.layout(0, 0, 1080, 2340)
+            val origin = IntArray(2)
+            root.getLocationOnScreen(origin)
+            var applied: PointerCoordinateMapper.Point? = null
+            overlay.updatePosition(origin[0] + 540f, origin[1] + 20f) { applied = it }
+            assertNotNull(applied)
+            val cutout = android.view.DisplayCutout(android.graphics.Rect(0, 80, 0, 0),
+                listOf(android.graphics.Rect(510, 0, 570, 80)))
+            root.dispatchApplyWindowInsets(android.view.WindowInsets.Builder().setDisplayCutout(cutout).build())
+            assertNull(applied)
+            root.dispatchApplyWindowInsets(android.view.WindowInsets.Builder().build())
+            assertEquals(PointerCoordinateMapper.Point(origin[0] + 540f, origin[1] + 20f), applied)
+        } finally { overlay.hide() }
+    }
+
     @Test fun densityScaledCursorKeepsCenterHotspotAndChangesRingOnPress() {
         val context = RuntimeEnvironment.getApplication()
         val cursor = PointerOverlay.CursorView(context)

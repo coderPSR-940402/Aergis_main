@@ -5,6 +5,8 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.PixelFormat
+import android.graphics.Rect
+import android.os.Build
 import android.util.Log
 import android.view.Gravity
 import android.view.View
@@ -19,7 +21,11 @@ class PointerOverlay(private val context: Context) {
     private var screenX = 0f
     private var screenY = 0f
     private var hasPosition = false
+    private var cutoutBounds: List<Rect> = emptyList()
     private var onPositionApplied: ((PointerCoordinateMapper.Point?) -> Unit)? = null
+
+    var isHotspotVisible: Boolean = false
+        private set
 
     val isVisible: Boolean
         get() = rootView?.isAttachedToWindow == true
@@ -34,6 +40,14 @@ class PointerOverlay(private val context: Context) {
         PixelFormat.TRANSLUCENT
     ).apply {
         gravity = Gravity.TOP or Gravity.START
+        // Full display coordinates must share the overlay's actual drawable extent.
+        // Default fit-insets excludes system bars even with FLAG_LAYOUT_IN_SCREEN.
+        if (Build.VERSION.SDK_INT >= 30) {
+            setFitInsetsTypes(0)
+            layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+        } else if (Build.VERSION.SDK_INT >= 28) {
+            layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
     }
 
     fun show() {
@@ -48,9 +62,15 @@ class PointerOverlay(private val context: Context) {
         rootView = root
         cursorView = cursor
         root.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> applyScreenPosition() }
+        root.setOnApplyWindowInsetsListener { _, insets ->
+            cutoutBounds = if (Build.VERSION.SDK_INT >= 28)
+                insets.displayCutout?.boundingRects?.map { Rect(it) } ?: emptyList() else emptyList()
+            applyScreenPosition()
+            insets
+        }
         root.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
             override fun onViewAttachedToWindow(view: View) = applyScreenPosition()
-            override fun onViewDetachedFromWindow(view: View) { onPositionApplied?.invoke(null) }
+            override fun onViewDetachedFromWindow(view: View) { publishHotspot(null) }
         })
         try {
             windowManager.addView(root, params)
@@ -73,7 +93,8 @@ class PointerOverlay(private val context: Context) {
             cursorView = null
             rootView = null
             hasPosition = false
-            onPositionApplied?.invoke(null)
+            cutoutBounds = emptyList()
+            publishHotspot(null)
             onPositionApplied = null
         }
     }
@@ -100,8 +121,18 @@ class PointerOverlay(private val context: Context) {
         cursor.translationY = screenY - origin[1] - cursor.top - cursor.sizePx / 2f
         // Prepare geometry even before attachment, but grant target authority only
         // when the overlay is attached. Relayout must retain its screen-space anchor.
-        onPositionApplied?.invoke(if (root.isAttachedToWindow)
+        val insideWindow = PointerViewport.contains(screenX, screenY,
+            origin[0], origin[1], root.width, root.height)
+        val underCutout = cutoutBounds.any {
+            it.contains((screenX - origin[0]).toInt(), (screenY - origin[1]).toInt())
+        }
+        publishHotspot(if (root.isAttachedToWindow && insideWindow && !underCutout)
             PointerCoordinateMapper.Point(screenX, screenY) else null)
+    }
+
+    private fun publishHotspot(point: PointerCoordinateMapper.Point?) {
+        isHotspotVisible = point != null
+        onPositionApplied?.invoke(point)
     }
 
     /** Opt-in recording evidence for clipping/inset failures; no screen pixels are captured. */

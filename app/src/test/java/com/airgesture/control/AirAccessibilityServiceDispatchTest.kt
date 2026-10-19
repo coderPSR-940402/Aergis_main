@@ -251,6 +251,21 @@ class AirAccessibilityServiceDispatchTest {
         assertEquals(1L, AirRuntime.state.value.actionDispatchTelemetry.policyDenied)
     }
 
+    @Test fun clippingAfterQueueingInvalidatesTouchBeforeNativeDispatch() {
+        val overlay = AirAccessibilityService::class.java.getDeclaredField("pointerOverlay")
+            .apply { isAccessible = true }.get(service) as PointerOverlay
+        val root = PointerOverlay::class.java.getDeclaredField("rootView")
+            .apply { isAccessible = true }.get(overlay) as android.widget.FrameLayout
+        assertTrue(overlay.isHotspotVisible)
+        service.dispatch(AirAction.TAP)
+        // A relayout can clip the retained target before the queued command executes.
+        root.layout(0, 0, 1, 1)
+        assertFalse(overlay.isHotspotVisible)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertTrue(shadow.gesturesDispatched.isEmpty())
+        assertEquals(1L, AirRuntime.state.value.actionDispatchTelemetry.policyDenied)
+    }
+
     @Test fun doubleTapIsOneBoundedNativeRequestAtTheDisplayedHotspot() {
         AirRuntime.setPointerState(.9f, .9f, tracking = true)
         // The runtime estimate moved; the displayed .5/.5 hotspot has not.
