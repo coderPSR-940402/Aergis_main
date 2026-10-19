@@ -1,5 +1,206 @@
 # Aergis Evidence Ledger and Decision Log
 
+## Current continuation — 2026-10-19: visible viewport authority
+
+### Current reality and recording evidence
+
+- Main and automatic build marker: `0c9eec32598ea2838be5fb35f1a0321df89d59e9`.
+  PR #64 merged externally. Preserve newer open [PR #65](https://github.com/coderPSR-940402/Aergis_main/pull/65)
+  at `88d7177b1c5ccfb62f83be1d1ed40bdd6eb5d090`; this change branches from that head.
+- [CI #281](https://github.com/coderPSR-940402/Aergis_main/actions/runs/39145223332)
+  passed Android tests, lint, debug/release builds and APK checks on merge
+  `55167770c14d2e48331fb39e51769aebbe5156ce`.
+  [APK artifact](https://github.com/coderPSR-940402/Aergis_main/actions/runs/39145223332/artifacts/12143566110),
+  debug SHA-256 `72f6a6e73c7129c4ce6ef4e4b6d761bead9ab806a16e091217fb4f42d70aac5a`.
+  [CodeQL #270](https://github.com/coderPSR-940402/Aergis_main/actions/runs/39145223325) passed.
+- `recording(8).zip` identifies that exact CI #281 merge on SM-A546E / Android 16,
+  recorded 2026-10-18 18:52:12 +0200. ZIP SHA-256:
+  `1e1d4b807eaf4e45c86c787d69be15ad8ec53d80ce6470ee3ce43ec0d3045655`.
+  Accompanying `report(10).pdf` SHA-256:
+  `5b5219a072926755eaf28d5d3becf28861e62b5f3f5ea5dda679ade0f1ae99a5`.
+- 1,549 frames over 209.576 seconds; three TAP requests and three Android COMPLETED
+  callbacks, at 6.978, 84.487 and 182.115 seconds. This is device execution evidence,
+  not acceptance, target activation proof or a click-accuracy denominator. The recording
+  has no labelled intended attempts, so all missed intended gestures cannot be counted.
+  Missing/stale frames must not be relabelled as deliberate release or failed commands.
+- All 758 overlay events marked visible report a 1080×2260 window at (0,80).
+  68 hotspots lie outside that window. The first native tap used (678.4373,0),
+  outside its drawable extent. Attachment-only authorization is the confirmed defect.
+- Functional rollback remains CI #50, `known-good/commit-50`, source
+  `f4e51949491adc9d5a68f3fa701aee147ad3ed72`,
+  [run](https://github.com/coderPSR-940402/Aergis_main/actions/runs/36311499379),
+  [artifact](https://github.com/coderPSR-940402/Aergis_main/actions/runs/36311499379/artifacts/10929107070).
+  Neither CI #281 nor this new unit advances that accepted baseline.
+
+### Complete unit and acceptance
+
+Request full-display overlay layout on API 30+ (`setFitInsetsTypes(0)`), with explicit
+cutout layout policy (API 28–29 short edges). Independently require the applied hotspot
+inside the actual attached window and outside physical cutout rectangles. Keep the
+coordinate unchanged; never clamp it onto another target. Revoke queued coordinate
+authority and invoke the existing bounded-input cancellation path on clipping/detachment.
+Recording now distinguishes window attachment from visible hotspot eligibility.
+
+Acceptance: recorded y=0 fails with the inset window, succeeds with an unobscured
+full-display window; all drawable edges retain their exact coordinates; cutouts and
+zero/invalid extents cannot authorize input; relayout restores only the original target;
+a queued tap cannot execute after that target becomes clipped. Protected-screen policy
+and non-touchable/non-focusable overlay flags remain in force.
+
+Affected: pointer overlay/window geometry and accessibility target eligibility/cancellation.
+CameraX, MediaPipe, landmark tracking, filters, calibration profiles, gesture recognition,
+12 gesture IDs, assignments and action catalogue are unchanged. No migration needed.
+Risks: OEM inset/cutout layout and actual Android cancellation require device verification;
+older API paths retain fail-closed containment if full edge coverage is unavailable.
+Rotation actions remain gated. Revert this unit to return to `88d7177`; do not reset main
+or discard PR #65. No merge/release authorization is implied.
+
+### Verification and next gate
+
+- Local host suites: **84 tests passed** (42 classifier/tracking/identity; 42
+  pinch/policy/recovery/viewport). Includes the recorded top-edge regression, portrait
+  corners, landscape inset axis, invalid numbers and zero-sized windows.
+- Production containment replay of all 758 recorded visible events rejects the exact
+  68 clipped positions and retains 690. This verifies rejection logic, not physical
+  full-screen layout on the phone.
+- Added Android tests for full-screen parameters, retained coordinates through relayout,
+  physical cutout exclusion/recovery and clipped queued-command invalidation. Android
+  tests/build/lint await CI; no local Android success is claimed.
+- Owner authorized continuation after the explicit commit/push and attributable-CI-repair
+  request on 2026-10-19. Publication and Android CI are the next gates; no merge or release
+  authorization. Final commit/run/artifact evidence will be recorded in the delivery PR.
+- Galaxy A54 gate after CI: in an allowed test screen, move the yellow hotspot to all
+  four edges and tap labelled targets (avoid the physical camera hole); target and
+  injected point must agree. Repeat after pause/resume and inset changes. A clipped or
+  detached target must produce no new touch; interrupt a bounded long press and verify
+  actual cancellation/no later replay. Check Settings/SystemUI remain protected and
+  physical Stop remains reachable. Use labelled trials for the 95/100 early click gate;
+  passing it does not certify release or promote the baseline automatically.
+- Next task after this geometry gate: reconcile labelled intended clicks with recognition,
+  dispatch and target response; investigate remaining losses only from that evidence.
+
+API reference: [WindowManager.LayoutParams.setFitInsetsTypes](https://developer.android.com/reference/android/view/WindowManager.LayoutParams#setFitInsetsTypes(int))
+documents that the default avoids all system bars; zero opts out of fitting those insets.
+
+
+## Previous continuation — 2026-10-18: bounded pinch command
+
+### Delivery and baseline
+
+- Approved geometry correction: source `264fca3b96ea3af793eb0eb7b97fd4baddbe7269`,
+  [draft PR #64](https://github.com/coderPSR-940402/Aergis_main/pull/64).
+  [CI #276](https://github.com/coderPSR-940402/Aergis_main/actions/runs/39094476996) passed
+  tests, lint, debug/release builds and APK checks on PR merge
+  `846903f26834c80e3f4cc00c8dbb58ebd5bd554f`.
+  [APK artifact](https://github.com/coderPSR-940402/Aergis_main/actions/runs/39094476996/artifacts/12124456643),
+  debug SHA-256 `203ed94ffe266dd72a679b5b7072df9f3d5c7d43d78f73c49605feb36d89d0ad`.
+  [CodeQL #265](https://github.com/coderPSR-940402/Aergis_main/actions/runs/39094476997) passed.
+- Main/build marker at inspection: `77a1b6a0a097ce585596ae9bf4f87f0419f00aeb`,
+  externally merged PR #63; CI #275 passed. Device-accepted rollback remains CI #50 /
+  `known-good/commit-50`, identified below. No functional baseline promotion.
+- Follow-up branch `fix/bounded-pinch-command` starts at approved geometry commit
+  `264fca3`. Owner approved commit/push and CI repairs on 2026-10-18;
+  Android CI and device verification are pending. No new APK is claimed.
+
+Publication inspection: PR #64 was merged externally as `0c9eec32598ea2838be5fb35f1a0321df89d59e9`; main and the automatic build marker now agree there. Its tree matches reviewed parent `264fca3`. Publish on this current main without discarding newer work. Final CI/commit/artifact evidence is recorded in the follow-up PR to avoid documentation-only CI loops.
+
+CI #278 caught protected `onServiceConnected` access in the new test setup during unit-test compilation. The fixture now invokes the callback reflectively, matching existing reflection-based engine fixtures; production visibility is unchanged. CI rerun required.
+
+CI #279 compiled and ran 382 tests, exposing delayed first-overlay attachment: the visible target remained unset until another camera update. Hotspot publication now follows actual attach/layout application, and detachment clears it. Two older low-cadence tests were migrated from release-triggered expectations to the explicitly approved contact-triggered contract; the same scenarios and noise protection remain. Rerun pending.
+
+CI #280 passed 381/382 tests. The remaining existing inset/relayout test showed pre-attachment positioning had been skipped. Preserve that geometry computation and gate only hotspot publication on attachment; no test expectation changed. The expanded host suite now passes 80 tests. Final Android rerun required.
+
+### Confirmed problem and acceptance
+
+The recording contains PRESSED/HOLDING/DRAGGING and native held-touch completions.
+Current code confirms pinch duration/travel becomes long press/drag, and slow-cadence
+contact can emit only on release. These conflict with the latest explicit contract.
+Included: pinch recognition, anchor, recognizer arbitration, bounded native output,
+visible-hotspot targeting, cancellation and necessary picker/help integration.
+Acceptance: contact initiates one bounded tap before release; hold, travel, release,
+missing frames and pause/resume cannot create a second command. Competing recognizers
+resolve before dispatch. Coordinate output uses the applied visible hotspot.
+
+### Implementation and migration
+
+- At existing slow cadence (sample interval at least 80 ms), accept a valid observed
+  open-to-contact transition on contact. High-rate input retains 40 ms internal noise
+  evidence. Release only rearms; startup/reset requires opening. Existing thresholds,
+  refractory guard and 350 ms continuity limit remain.
+- Freeze the pre-contact anchor throughout contact; no hold/drag conversion. Preserve
+  the 80 ms release blend. Camera path requests one TAP; pinch evidence excludes the
+  classifier before its gate. Epoch change resets recognition between frames too.
+- Move the continuous-touch controller unchanged to a **test-only rollback fixture**.
+  Keep its historical regressions; no held-touch entry point ships in the APK.
+- Distinct assigned poses can request bounded touch actions with the pointer enabled.
+  Pointing Up coordinate mappings remain disabled to prevent aiming commands. All 12
+  identities, defaults, stored assignments and legacy timing values remain intact.
+  No preference remapping. Picker/help explain the eligibility and hold/drag migration.
+- Double tap is one native request with two finite strokes. Long press and scrolling
+  remain finite assigned outputs. Ordinary pointer travel never dispatches scrolling.
+- Snapshot the last applied visible hotspot; reject hidden/old-epoch targets. Publish
+  pointer updates as immutable epoch-tagged snapshots. Queue-time checks retain the
+  original epoch and reject commands invalidated by explicit tracking cancellation.
+- One outstanding native command; busy requests fail without backlog/retry. Duplicate
+  and late callbacks cannot duplicate completion. Permission/service exceptions fail.
+- Pause, Stop, tracking loss, pointer disable, rotation and interruption request native
+  cancellation. Check authority every 15 ms; request cancellation if completion is
+  missing after the bounded duration plus 250 ms. Rejected cancellation does not clear
+  the original command: remain blocked until its callback or explicit service recovery.
+  Cancellation callbacks are not removed by lifecycle handler cleanup.
+
+Cancellation continues an undispatched stroke, using Android's invalid-continuation
+path to cancel pending input without a new DOWN/UP; see
+[AOSP MotionEventInjector](https://android.googlesource.com/platform/frameworks/base/+/refs/heads/main/services/accessibility/java/com/android/server/accessibility/MotionEventInjector.java).
+This is the prior controller's platform technique. Local state clearing is not proof
+of cancellation. Actual ACTION_CANCEL behavior on Galaxy A54 remains a device gate.
+
+Affected: pinch recognition/arbitration, final pointer anchor, accessibility dispatch,
+queue invalidation and service lifecycle; small picker/help integration. CameraX,
+MediaPipe model/delegate, coordinate transforms, filters, calibration storage/profiles,
+dependencies and protected-screen policy are unchanged. No gyro path is introduced.
+Catalogue expansion, new gestures, performance changes and UI redesign remain separate.
+
+### Verification, risks and continuation
+
+- Before/after: 12 focused pinch/anchor tests against parent production sources had
+  **6 failures** (contact timing, hold/drag conversion and moving anchor). All 12 pass
+  with the correction. **73 host JVM tests passed**: 31 pinch/pointer/policy plus 42
+  classifier/tracking/identity/tuning tests, using Kotlin 2.2.0 and JUnit 4.13.2.
+- Added Android integration tests for same-frame competing recognizers, between-frame
+  pause/resume, bounded double tap, visible/runtime target mismatch, hidden target,
+  queued cancellation, permission exception, duplicate callbacks, cancellation rejection
+  and timeout. Existing engine tests now require injection before release/no drag.
+  Historical held-touch regressions remain against the test-only controller.
+- Local `./gradlew :app:testDebugUnitTest --no-daemon` cannot bootstrap: distribution
+  download fails `Network is unreachable`. Android tests/lint/build are **pending CI**.
+  Host checks are not Android-build or release authority.
+- Risks: slow-cadence single-contact false positives, newly eligible saved distinct
+  touch mappings, overlay timing and device-specific native cancellation. Recording
+  lacks intention labels: it cannot identify every intended miss or prove accuracy.
+
+Submit this approved follow-up and inspect CI; repair failures
+attributable to it. No merge/release/baseline promotion. Roll back only this unit to
+`264fca3`, preserving classifier repairs and saved data; that restores the incompatible
+held-touch behavior and is a diagnostic rollback, not directive-compliant release.
+
+Galaxy A54 acceptance after green CI:
+
+1. On a harmless target screen, make 100 ordinary thumb-middle contacts with separation.
+   Expect one click before release at the visible hotspot. Count misses/extras; 95/100
+   is the early repair gate, not release certification.
+2. Hold contact two seconds and move: no repeat, long press or drag. Release does nothing.
+   Hide/reintroduce pinched hand and Pause/Resume: no replay until separation/new contact.
+3. Assign distinct poses to double tap, long press and scroll: one finite output each.
+   Pointing Up must not click while aiming; ordinary travel must not scroll.
+4. During long press, use physical Pause/Stop and interrupt accessibility. Verify native
+   cancellation, no delayed release/click and no replay after recovery. Failure blocks
+   dependent release claims; preserve reachable physical Stop throughout testing.
+5. Check mappings/calibration and edge targets; record exact APK/source/run. Next ordered
+   unit is pointer geometry/edge/calibration evidence, then catalogue/App search once
+   the interaction prerequisite is supported. Device pending does not block independent
+   useful implementation, but must not be reported as acceptance.
+
 ## Current implementation record — 2026-10-17
 
 ### Baseline identity and authority

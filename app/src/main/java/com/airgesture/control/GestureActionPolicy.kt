@@ -18,11 +18,14 @@ object GestureActionPolicy {
     }
 
     fun isClassifierActionEnabled(gesturesEnabled: Boolean, action: AirAction,
-        pointerControlActive: Boolean = false): Boolean {
+        pointerControlActive: Boolean = false, gesture: RegisteredGesture? = null): Boolean {
         if (!gesturesEnabled || action == AirAction.NONE) return false
         // Pointer aiming commonly resembles Pointing_Up. Its legacy double-tap
         // mapping must not compete with a deliberate pinch touch session.
-        if (!pointerControlActive) return true
-        return !action.usesPointerTouch
+        if (!action.usesPointerTouch) return true
+        // Unidentified legacy callers retain their conservative policy. Production
+        // callers supply the stable identity; coordinate commands need a visible pointer.
+        if (gesture == null) return !pointerControlActive
+        return pointerControlActive && gesture != RegisteredGesture.POINTING_UP
     }
 }

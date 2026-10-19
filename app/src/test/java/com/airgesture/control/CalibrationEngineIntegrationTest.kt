@@ -274,9 +274,12 @@ class CalibrationEngineIntegrationTest {
         })
     }
 
-    @Test fun trackedPinchCanHoldThenDragAndReleaseOneNativeTouch() {
+    @Test fun trackedPinchDispatchesOneBoundedTapBeforeReleaseAndNeverDrags() {
         val controller = org.robolectric.Robolectric.buildService(AirAccessibilityService::class.java).create()
         val service = controller.get()
+        AirAccessibilityService::class.java.getDeclaredMethod("onServiceConnected")
+            .apply { isAccessible = true }.invoke(service)
+        AirRuntime.setForegroundContext(ForegroundContextState(safety = ForegroundSafety.SAFE))
         AirAccessibilityService::class.java.getDeclaredField("instance").apply { isAccessible = true }.set(null, service)
         try {
             AirRuntime.gesturesEnabled = true
@@ -298,15 +301,16 @@ class CalibrationEngineIntegrationTest {
             val closed = open.toMutableList().apply { this[4] = NormalizedLandmark.create(.56f, .65f, 0f) }
             repeat(4) { frame(open) }
             repeat(8) { frame(closed) }
-            assertEquals(PointerInteractionPhase.HOLDING, AirRuntime.pointerInteraction)
+            assertEquals(PointerInteractionPhase.PRESSED, AirRuntime.pointerInteraction)
             assertEquals("Hold must not dispatch empty continuations", 1, shadow.gesturesDispatched.size)
             val moved = closed.toMutableList().apply { this[8] = NormalizedLandmark.create(.5f, .85f, 0f) }
             repeat(12) { frame(moved) }
-            assertEquals(PointerInteractionPhase.DRAGGING, AirRuntime.pointerInteraction)
-            assertTrue(shadow.gesturesDispatched.drop(1).any {
+            assertEquals(PointerInteractionPhase.PRESSED, AirRuntime.pointerInteraction)
+            assertEquals("Travel cannot create another output", 1, shadow.gesturesDispatched.size)
+            assertTrue(shadow.gesturesDispatched.all {
                 val bounds = android.graphics.RectF()
                 it.description().getStroke(0).path.computeBounds(bounds, true)
-                bounds.height() > 0f
+                bounds.height() == 0f && bounds.width() == 0f
             })
             frame(moved.toMutableList().apply { this[4] = open[4] })
             assertFalse(shadow.gesturesDispatched.last().description().getStroke(0).willContinue())
@@ -315,9 +319,70 @@ class CalibrationEngineIntegrationTest {
         } finally { controller.destroy() }
     }
 
+    @Test fun pinchWinsOverSameFrameClassifierAndPoseCannotReplayAfterRelease() {
+        val controller = org.robolectric.Robolectric.buildService(AirAccessibilityService::class.java).create()
+        val service = controller.get()
+        AirAccessibilityService::class.java.getDeclaredMethod("onServiceConnected")
+            .apply { isAccessible = true }.invoke(service)
+        AirRuntime.setForegroundContext(ForegroundContextState(safety = ForegroundSafety.SAFE))
+        try {
+            AirRuntime.gesturesEnabled = true
+            val shadow = org.robolectric.Shadows.shadowOf(service)
+            val looper = org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper())
+            val open = hand()
+            val closed = open.toMutableList().apply { this[4] = NormalizedLandmark.create(.56f, .65f, 0f) }
+            repeat(3) { publish(open, 1000L + it * 100L) }
+            looper.idle()
+            publish(closed, 1334L, gestureName = "Victory")
+            looper.idle()
+            assertEquals(1, shadow.gesturesDispatched.size)
+            assertTrue("Competing Back must not dispatch", shadow.globalActionsPerformed.isEmpty())
+            val tap = shadow.gesturesDispatched.single()
+            tap.callback()!!.onCompleted(tap.description())
+            repeat(6) { publish(closed, 1468L + it * 134L, gestureName = "Victory"); looper.idle() }
+            repeat(4) { publish(open, 2300L + it * 134L, gestureName = "Victory"); looper.idle() }
+            assertEquals(1, shadow.gesturesDispatched.size)
+            assertTrue(shadow.globalActionsPerformed.isEmpty())
+            repeat(3) { publish(open, 2900L + it * 100L) }
+            publish(open, 3234L, gestureName = "Victory")
+            looper.idle()
+            assertEquals(listOf(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK),
+                shadow.globalActionsPerformed)
+        } finally { controller.destroy() }
+    }
+
+    @Test fun pauseResumeBetweenFramesCannotReplayClosedPinch() {
+        val controller = org.robolectric.Robolectric.buildService(AirAccessibilityService::class.java).create()
+        val service = controller.get()
+        AirAccessibilityService::class.java.getDeclaredMethod("onServiceConnected")
+            .apply { isAccessible = true }.invoke(service)
+        AirRuntime.setForegroundContext(ForegroundContextState(safety = ForegroundSafety.SAFE))
+        try {
+            AirRuntime.gesturesEnabled = true
+            val looper = org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper())
+            val shadow = org.robolectric.Shadows.shadowOf(service)
+            val open = hand()
+            val closed = open.toMutableList().apply { this[4] = NormalizedLandmark.create(.56f, .65f, 0f) }
+            repeat(3) { publish(open, 1000L + it * 100L) }
+            looper.idle()
+            AirRuntime.controlMode = ControlMode.PAUSED
+            AirRuntime.controlMode = ControlMode.ARMED
+            repeat(4) { publish(closed, 1334L + it * 134L); looper.idle() }
+            assertTrue(shadow.gesturesDispatched.isEmpty())
+            publish(open, 1900L)
+            looper.idle()
+            publish(closed, 2034L)
+            looper.idle()
+            assertEquals(1, shadow.gesturesDispatched.size)
+        } finally { controller.destroy() }
+    }
+
     private fun assertSlowCameraPinchDispatchesOneTap(open: List<NormalizedLandmark>) {
         val controller = org.robolectric.Robolectric.buildService(AirAccessibilityService::class.java).create()
         val service = controller.get()
+        AirAccessibilityService::class.java.getDeclaredMethod("onServiceConnected")
+            .apply { isAccessible = true }.invoke(service)
+        AirRuntime.setForegroundContext(ForegroundContextState(safety = ForegroundSafety.SAFE))
         val instance = AirAccessibilityService::class.java.getDeclaredField("instance").apply { isAccessible = true }
         instance.set(null, service)
         try {
@@ -327,9 +392,12 @@ class CalibrationEngineIntegrationTest {
             val closed = open.toMutableList().apply { this[4] = NormalizedLandmark.create(.56f, .65f, 0f) }
             publish(open, 1000L, delayMs = 500L)
             publish(open, 1200L, delayMs = 500L)
+            org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
             publish(closed, 1400L, delayMs = 500L)
-            assertEquals(PointerInteractionPhase.PINCHING, AirRuntime.pointerInteraction)
+            assertEquals(PointerInteractionPhase.PRESSED, AirRuntime.pointerInteraction)
             val anchor = AirRuntime.pointerSnapshot()
+            org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+            assertEquals("Recognition must inject before release", 1, shadow.gesturesDispatched.size)
             publish(open, 1600L, delayMs = 500L)
             org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
             assertEquals("The full camera-to-accessibility path must request a tap", 1, shadow.gesturesDispatched.size)
@@ -353,7 +421,7 @@ class CalibrationEngineIntegrationTest {
         publish(open, 1000L, delayMs = 500L)
         publish(open, 1200L, delayMs = 500L)
         publish(closed, 1400L, delayMs = 500L)
-        assertEquals(PointerInteractionPhase.PINCHING, AirRuntime.pointerInteraction)
+        assertEquals(PointerInteractionPhase.PRESSED, AirRuntime.pointerInteraction)
         publish(closed, 1600L, delayMs = 601L)
         assertEquals(PointerInteractionPhase.IDLE, AirRuntime.pointerInteraction)
         publish(closed, 1800L, delayMs = 500L)
@@ -413,9 +481,12 @@ class CalibrationEngineIntegrationTest {
         val prefs = context.getSharedPreferences("aergis_mappings", Context.MODE_PRIVATE)
         val controller = org.robolectric.Robolectric.buildService(AirAccessibilityService::class.java).create()
         val service = controller.get()
+        AirAccessibilityService::class.java.getDeclaredMethod("onServiceConnected")
+            .apply { isAccessible = true }.invoke(service)
+        AirRuntime.setForegroundContext(ForegroundContextState(safety = ForegroundSafety.SAFE))
         AirAccessibilityService::class.java.getDeclaredField("instance").apply { isAccessible = true }.set(null, service)
         try {
-            ActionMappingStore(context).setMapping(RegisteredGesture.SHAKA, AirAction.TAP)
+            ActionMappingStore(context).setMapping(RegisteredGesture.SHAKA, AirAction.BACK)
             AirRuntime.pointerEnabled = false
             AirRuntime.gesturesEnabled = true
             val pose = LandmarkGestureRecognizerTest.pose(RegisteredGesture.SHAKA).map {
@@ -429,7 +500,7 @@ class CalibrationEngineIntegrationTest {
             org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
             assertEquals("Shaka", AirRuntime.lastGesture)
             assertEquals("Owned landmark gesture must reach native dispatch once", 1,
-                org.robolectric.Shadows.shadowOf(service).gesturesDispatched.size)
+                org.robolectric.Shadows.shadowOf(service).globalActionsPerformed.size)
         } finally {
             prefs.edit().remove("gesture_SHAKA").commit()
             controller.destroy()
@@ -439,6 +510,9 @@ class CalibrationEngineIntegrationTest {
     @Test fun recordedDeviceLatencyCanConfirmMappedCommandsExactlyOnce() {
         val controller = org.robolectric.Robolectric.buildService(AirAccessibilityService::class.java).create()
         val service = controller.get()
+        AirAccessibilityService::class.java.getDeclaredMethod("onServiceConnected")
+            .apply { isAccessible = true }.invoke(service)
+        AirRuntime.setForegroundContext(ForegroundContextState(safety = ForegroundSafety.SAFE))
         AirAccessibilityService::class.java.getDeclaredField("instance").apply { isAccessible = true }.set(null, service)
         try {
             AirRuntime.gesturesEnabled = true
@@ -502,6 +576,9 @@ class CalibrationEngineIntegrationTest {
         val previous = prefs.getString("gesture_VICTORY", null)
         val controller = org.robolectric.Robolectric.buildService(AirAccessibilityService::class.java).create()
         val service = controller.get()
+        AirAccessibilityService::class.java.getDeclaredMethod("onServiceConnected")
+            .apply { isAccessible = true }.invoke(service)
+        AirRuntime.setForegroundContext(ForegroundContextState(safety = ForegroundSafety.SAFE))
         AirAccessibilityService::class.java.getDeclaredField("instance").apply { isAccessible = true }.set(null, service)
         try {
             ActionMappingStore(context).setMapping(RegisteredGesture.VICTORY, AirAction.BACK)
@@ -523,6 +600,9 @@ class CalibrationEngineIntegrationTest {
     private fun assertClassifierAgeRejected(ageMs: Long) {
         val controller = org.robolectric.Robolectric.buildService(AirAccessibilityService::class.java).create()
         val service = controller.get()
+        AirAccessibilityService::class.java.getDeclaredMethod("onServiceConnected")
+            .apply { isAccessible = true }.invoke(service)
+        AirRuntime.setForegroundContext(ForegroundContextState(safety = ForegroundSafety.SAFE))
         AirAccessibilityService::class.java.getDeclaredField("instance").apply { isAccessible = true }.set(null, service)
         try {
             AirRuntime.gesturesEnabled = true
@@ -540,6 +620,9 @@ class CalibrationEngineIntegrationTest {
         prefs.edit().putString("gesture_THUMB_DOWN", "NONE").commit()
         val controller = org.robolectric.Robolectric.buildService(AirAccessibilityService::class.java).create()
         val service = controller.get()
+        AirAccessibilityService::class.java.getDeclaredMethod("onServiceConnected")
+            .apply { isAccessible = true }.invoke(service)
+        AirRuntime.setForegroundContext(ForegroundContextState(safety = ForegroundSafety.SAFE))
         AirAccessibilityService::class.java.getDeclaredField("instance").apply { isAccessible = true }.set(null, service)
         try {
             AirRuntime.pointerEnabled = false
@@ -575,6 +658,9 @@ class CalibrationEngineIntegrationTest {
         val context = RuntimeEnvironment.getApplication() as Context
         val controller = org.robolectric.Robolectric.buildService(AirAccessibilityService::class.java).create()
         val service = controller.get()
+        AirAccessibilityService::class.java.getDeclaredMethod("onServiceConnected")
+            .apply { isAccessible = true }.invoke(service)
+        AirRuntime.setForegroundContext(ForegroundContextState(safety = ForegroundSafety.SAFE))
         AirAccessibilityService::class.java.getDeclaredField("instance").apply { isAccessible = true }.set(null, service)
         try {
             AirRuntime.pointerEnabled = false

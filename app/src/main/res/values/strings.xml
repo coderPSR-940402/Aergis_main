@@ -238,7 +238,7 @@
     <string name="action_disabled">Disabled</string>
     <string name="ui_mapping_picker_title">Action for %1$s</string>
     <string name="ui_mapping_picker_help">Choose what this gesture does. Changes apply only when you save.</string>
-    <string name="ui_mapping_pointer_restriction">Available when pointer control is off. Pinch handles touch actions while the pointer is on.</string>
+    <string name="ui_mapping_pointer_restriction">Disabled: touch actions require the visible pointer and a gesture other than Pointing Up. This assignment is preserved.</string>
     <string name="ui_mapping_restore_default">Use default action</string>
     <string name="ui_mapping_save">Save</string>
     <string name="ui_mapping_cancel">Cancel</string>
@@ -287,7 +287,7 @@
     <string name="action_unavailable">Unavailable on this Android version</string>
     <string name="action_media_help">Controls the current media player. Open a player first; support depends on that app.</string>
     <string name="gesture_tuning_title">Tune this gesture</string>
-    <string name="gesture_tuning_help">Mapped hand poses now act once, without holding. Relax your hand before each command and after Start or Resume. Saved assignments are unchanged. Previous hold and repeat-delay settings no longer apply.</string>
+    <string name="gesture_tuning_help">Mapped hand poses now act once, without holding. Relax your hand before each command and after Start or Resume. Saved assignments are unchanged. Previous hold and repeat-delay settings no longer apply. Thumb-to-middle contact clicks once; release only rearms. Holding or moving a pinch no longer long-presses or drags. Assign double-tap, long-press or scrolling to a distinct pose with the pointer enabled. Pointing Up touch assignments remain disabled to prevent clicks while aiming.</string>
     <string name="tuning_confidence">Recognition confidence: %1$d%%</string>
     <string name="tuning_volume">Volume steps: %1$d</string>
     <string name="tuning_scroll">Scroll distance: %1$d%% of screen</string>
