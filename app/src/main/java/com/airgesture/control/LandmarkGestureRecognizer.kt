@@ -29,8 +29,9 @@ internal object LandmarkGestureRecognizer {
         val down = fingers.map(::folded)
         val thumbOut = straight(1, 2, 4) < -.75f && distance(4, 5) > scale * .65f
         val thumbIn = distance(4, 9) < scale * .55f
-        // Contact belongs to pointer click, never a competing custom pose.
-        if (distance(4, 12) < scale * .25f) return null
+        // A tucked thumb can project near a folded middle tip. Do not confuse that
+        // projection with contact here: the pointer's contact channel wins arbitration
+        // before any mapped command, while pointer-disabled poses remain recognizable.
         fun matches(vararg extended: Boolean) = extended.indices.all { if (extended[it]) up[it] else down[it] }
         val pose = when {
             thumbOut && matches(true, false, false, false) -> RegisteredGesture.L_SHAPE

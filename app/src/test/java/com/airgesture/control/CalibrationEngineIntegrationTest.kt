@@ -345,6 +345,7 @@ class CalibrationEngineIntegrationTest {
             assertTrue(shadow.globalActionsPerformed.isEmpty())
             repeat(3) { publish(open, 2900L + it * 100L) }
             publish(open, 3234L, gestureName = "Victory")
+            publish(open, 3368L, gestureName = "Victory")
             looper.idle()
             assertEquals(listOf(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK),
                 shadow.globalActionsPerformed)

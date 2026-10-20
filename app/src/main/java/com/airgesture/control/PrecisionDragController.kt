@@ -89,6 +89,7 @@ internal class PrecisionDragController(
             if (to != endpoint) lineTo(to.x, to.y)
         }
         val duration = if (ending && to == endpoint) 1L else CHUNK_MS
+        val starting = stroke == null
         val next = stroke?.continueStroke(path, 0L, duration, !ending)
             ?: GestureDescription.StrokeDescription(path, 0L, CHUNK_MS, true)
         stroke = next
@@ -118,6 +119,7 @@ internal class PrecisionDragController(
                 record(ActionDispatchOutcome.CANCELLED)
             }
         })
+        if (accepted && starting) record(ActionDispatchOutcome.SUBMITTED)
         if (!accepted) {
             dispatchInFlight = false
             blockedUntilOpen = true

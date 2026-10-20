@@ -30,6 +30,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
     }
     private val fingertipPatch = FingertipPatchTracker()
     private var patchEpoch = -1L
+    private var reacquireFrom: PointerCoordinateMapper.Point? = null
     private var currentPixels: RgbaFrameData? = null
     private val pointerVisibility = PointerVisibilityGrace()
     private var lastAppliedCalibration: PointerCalibrationProfile? = null
@@ -269,7 +270,10 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         }
         AirRuntime.handedness = handednessList.firstOrNull() ?: "Unknown"
 
-        if (patchEpoch != AirRuntime.actionEpoch) fingertipPatch.reset()
+        if (patchEpoch != AirRuntime.actionEpoch) {
+            fingertipPatch.reset()
+            reacquireFrom = null
+        }
         val controlSafe = AirRuntime.controlMode == ControlMode.ARMED &&
             AirRuntime.state.value.foregroundContext.safety == ForegroundSafety.SAFE
         val pointerActive = PointerTrackingPolicy.isActive(
@@ -334,6 +338,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         val mappingChanged = frameCalibration != lastAppliedCalibration || calibrationContext != lastCalibrationContext
         if (mappingChanged) {
             fingertipPatch.reset()
+            reacquireFrom = null
             resetPointerTouch()
             gestureTransaction.reset()
             directMotion.reset()
@@ -352,6 +357,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         val filterChanged = filterMode != lastFilterMode
         if (ownerChanged || filterChanged) {
             fingertipPatch.reset()
+            reacquireFrom = null
             resetPointerTouch()
             interpreter.reset()
             lineageComparison.reset()
@@ -403,7 +409,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         var pinchInProgress = motionWasActive
         if (pointerActive && indexTip != null) {
             val dragging = AirAccessibilityService.instance?.precisionDragActive == true
-            val touchAllowed = pointerTouchTracking && AirRuntime.gesturesEnabled && !motionWasActive && !dragging
+            val touchAllowed = pointerTouchTracking && AirRuntime.gesturesEnabled && !motionWasActive && !dragging && reacquireFrom == null
             val processed = interpreter.processFrame(reusablePointsList, timestamp, actionsAllowed = touchAllowed, aspectRatio = frameAspectRatio) ?: run {
                 handlePointerGap(observedAtMs, pointerActive, landmarks.size <= 1,
                     "NON_FINITE_OR_MISSING_TIP", PointerFeedback.INVALID_TIP)
@@ -414,7 +420,17 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             val mappedTip = pointerMapper.map(rawTip.x, rawTip.y, frameCalibration)
             val currentPoint = pointerMapper.map(processed.smoothedX, processed.smoothedY, frameCalibration)
             val comparison = lineageComparison.update(mappedTip, currentPoint, timestamp)
-            val candidate = comparison.selected(filterMode)
+            val targetCandidate = comparison.selected(filterMode)
+            val fromFallback = reacquireFrom
+            val candidate = if (fromFallback != null) {
+                val dx = targetCandidate.x - fromFallback.x
+                val dy = targetCandidate.y - fromFallback.y
+                val distance = kotlin.math.hypot(dx, dy)
+                val fraction = if (distance <= .04f) 1f else .04f / distance
+                PointerCoordinateMapper.Point(fromFallback.x + dx * fraction, fromFallback.y + dy * fraction).also {
+                    reacquireFrom = if (fraction == 1f) null else it
+                }
+            } else targetCandidate
             val trusted = filterMode != PointerFilterMode.PRECISION || comparison.precisionTrusted
             AirRuntime.setRawPointerState(rawTip.x, rawTip.y, trusted)
             val stabilized = if (dragging && pointerTouchTracking && trusted) {
@@ -574,6 +590,9 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         ) {
             if (confirmedAction == AirAction.ARM_MOTION && commandOwnerId != null) {
                 directMotion.arm(commandOwnerId, AirRuntime.actionEpoch, timestamp)
+                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                    android.widget.Toast.makeText(context, R.string.motion_armed_help, android.widget.Toast.LENGTH_SHORT).show()
+                }
                 resetPointerTouch()
                 interpreter.resetActions()
             } else AirAccessibilityService.instance?.dispatch(confirmedAction, gestureTuning ?: GestureTuning())
@@ -621,6 +640,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         val fallback = if (reason == "RAW_LANDMARK_DROPOUT" && pointerActive && coastAllowed &&
             pixels != null && patchEpoch == AirRuntime.actionEpoch)
             fingertipPatch.track(pixels.width, pixels.height) { x, y -> luminance(pixels, x, y) } else null
+        if (fallback == null) fingertipPatch.reset()
         resetPointerTouch()
         AirRuntime.invalidatePendingActions()
         patchEpoch = AirRuntime.actionEpoch
@@ -632,6 +652,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             val upright = CameraCoordinateTransform.toUpright(fallback.x, fallback.y, 0f, pixels.rotationDegrees)
             val mapped = pointerMapper.map(upright.x, upright.y, pointerMapper.snapshot())
             AirRuntime.setRawPointerState(upright.x, upright.y, false)
+            reacquireFrom = mapped
             AirRuntime.setPointerState(mapped.x, mapped.y, false)
             AirRuntime.pointerFeedback = PointerFeedback.COASTING
             AirAccessibilityService.instance?.updatePointer(mapped.x, mapped.y, true, false)
@@ -669,6 +690,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
 
     private fun resetTrackingState() {
         fingertipPatch.reset()
+        reacquireFrom = null
         resetPointerTouch()
         if (AirRuntime.pointerTracking) AirRuntime.invalidatePendingActions()
         pointerVisibility.reset()

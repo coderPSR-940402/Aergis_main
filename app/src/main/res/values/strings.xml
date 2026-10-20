@@ -308,4 +308,8 @@
     <string name="mapping_four_index_folded">Four / Index Folded (experimental)</string>
     <string name="app_search_help">App search: scroll gestures select an app. Swipe right launches; swipe left closes. Assign Arm one motion command to use deliberate hand movement.</string>
     <string name="action_pointer_drag">Precision drag: start / release</string>
+    <string name="action_focus_next">Focus next control</string>
+    <string name="action_focus_previous">Focus previous control</string>
+    <string name="action_activate_focused">Activate focused control</string>
+    <string name="motion_armed_help">Motion armed: hold still briefly, then move once. Expires in 3 seconds.</string>
 </resources>

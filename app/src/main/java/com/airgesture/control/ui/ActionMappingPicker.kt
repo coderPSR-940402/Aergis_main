@@ -151,5 +151,8 @@ internal fun actionLabel(action: AirAction): String = stringResource(when (actio
     AirAction.SWIPE_RIGHT -> R.string.action_swipe_right
     AirAction.ARM_MOTION -> R.string.action_arm_motion
     AirAction.POINTER_DRAG -> R.string.action_pointer_drag
+    AirAction.FOCUS_NEXT -> R.string.action_focus_next
+    AirAction.FOCUS_PREVIOUS -> R.string.action_focus_previous
+    AirAction.ACTIVATE_FOCUSED -> R.string.action_activate_focused
     AirAction.NONE -> R.string.action_disabled
 })

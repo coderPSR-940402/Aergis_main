@@ -5,7 +5,7 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class LandmarkGestureRecognizerTest {
-    @Test fun allFivePosesSurviveScaleMirrorAndInPlaneRotation() {
+    @Test fun allElevenCustomPosesSurviveScaleMirrorAndInPlaneRotation() {
         for (gesture in RegisteredGesture.entries.filter { it.isLandmarkPose }) {
             for (scale in listOf(.5f, 1f)) for (mirror in listOf(-1f, 1f)) for (turn in 0..3) {
                 val points = pose(gesture).map {
@@ -16,6 +16,20 @@ class LandmarkGestureRecognizerTest {
                 }
                 assertEquals("$gesture scale=$scale mirror=$mirror turn=$turn", gesture.signalName,
                     LandmarkGestureRecognizer.recognize(points, 1f)?.name)
+            }
+        }
+    }
+
+    @Test fun modestYawAndPitchPreserveDistinctCandidatePoses() {
+        val angle = Math.toRadians(20.0)
+        for (gesture in RegisteredGesture.entries.filter { it.isLandmarkPose }) {
+            for (yaw in listOf(false, true)) for (sign in listOf(-1f, 1f)) {
+                val points = pose(gesture).map {
+                    val x=it.x-.5f; val y=it.y-.5f
+                    if(yaw) Point3D(.5f+x*kotlin.math.cos(angle).toFloat(),it.y,sign*x*kotlin.math.sin(angle).toFloat())
+                    else Point3D(it.x,.5f+y*kotlin.math.cos(angle).toFloat(),sign*y*kotlin.math.sin(angle).toFloat())
+                }
+                assertEquals("$gesture yaw=$yaw sign=$sign",gesture.signalName,LandmarkGestureRecognizer.recognize(points,1f)?.name)
             }
         }
     }
