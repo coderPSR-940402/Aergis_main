@@ -20,7 +20,8 @@ internal class GestureTransactionStateMachine(
         val tuning: GestureTuning? = null,
         val actionEpoch: Long = 0L,
         // False only for a fresh same-owner geometry transition, never tracking loss.
-        val evidenceValid: Boolean = true
+        val evidenceValid: Boolean = true,
+        val confirmationReady: Boolean = true
     )
 
     init {
@@ -72,7 +73,7 @@ internal class GestureTransactionStateMachine(
         }
 
         neutralSince = null
-        if (state != State.NEUTRAL) return null
+        if (state != State.NEUTRAL || !input.confirmationReady) return null
         // Consume even an unavailable/disabled assignment. Changing eligibility while
         // this pose persists must not turn it into a new occurrence or an automatic retry.
         state = State.COOLDOWN

@@ -6,8 +6,7 @@ import org.junit.Test
 
 class LandmarkGestureRecognizerTest {
     @Test fun allFivePosesSurviveScaleMirrorAndInPlaneRotation() {
-        for (gesture in listOf(RegisteredGesture.OK, RegisteredGesture.THREE_FINGERS,
-            RegisteredGesture.FOUR_FINGERS, RegisteredGesture.SHAKA, RegisteredGesture.PINKY_ONLY)) {
+        for (gesture in RegisteredGesture.entries.filter { it.isLandmarkPose }) {
             for (scale in listOf(.5f, 1f)) for (mirror in listOf(-1f, 1f)) for (turn in 0..3) {
                 val points = pose(gesture).map {
                     var x = (it.x - .5f) * scale * mirror
@@ -44,7 +43,11 @@ class LandmarkGestureRecognizerTest {
             val p = MutableList(21) { Point3D(.5f, .75f) }
             p[0] = Point3D(.5f, .85f)
             val up = when (gesture) {
-                RegisteredGesture.OK -> listOf(false, true, true, true)
+                RegisteredGesture.OK, RegisteredGesture.THREE_OUTER_FINGERS, RegisteredGesture.FOUR_INDEX_FOLDED -> listOf(false, true, true, true)
+                RegisteredGesture.L_SHAPE -> listOf(true, false, false, false)
+                RegisteredGesture.THUMB_INDEX_MIDDLE -> listOf(true, true, false, false)
+                RegisteredGesture.HORNS -> listOf(true, false, false, true)
+                RegisteredGesture.FOUR_LITTLE_FOLDED -> listOf(true, true, true, false)
                 RegisteredGesture.THREE_FINGERS -> listOf(true, true, true, false)
                 RegisteredGesture.FOUR_FINGERS -> listOf(true, true, true, true)
                 RegisteredGesture.SHAKA, RegisteredGesture.PINKY_ONLY -> listOf(false, false, false, true)
@@ -59,7 +62,8 @@ class LandmarkGestureRecognizerTest {
             }
             p[1] = Point3D(.3f, .75f); p[2] = Point3D(.23f, .65f); p[3] = Point3D(.2f, .58f)
             p[4] = when (gesture) {
-                RegisteredGesture.SHAKA -> Point3D(.08f, .46f)
+                RegisteredGesture.SHAKA, RegisteredGesture.L_SHAPE, RegisteredGesture.THUMB_INDEX_MIDDLE,
+                RegisteredGesture.FOUR_LITTLE_FOLDED, RegisteredGesture.FOUR_INDEX_FOLDED -> Point3D(.08f, .46f)
                 RegisteredGesture.OK -> p[8]
                 else -> Point3D(.46f, .62f)
             }

@@ -49,12 +49,15 @@ class PoseGeometryEvidenceEvaluator(
         if (landmarks.size < minimumLandmarkCount) {
             return rejected(landmarks.size, finiteCount, PoseGeometryRejectionReason.INSUFFICIENT_LANDMARKS)
         }
-        if (finiteCount != landmarks.size) {
+        if (!pointerOnly && finiteCount != landmarks.size) {
             return rejected(landmarks.size, finiteCount, PoseGeometryRejectionReason.NON_FINITE_LANDMARK)
         }
         val visiblePoints = if (pointerOnly) listOf(KinematicValidator.THUMB_TIP,
             KinematicValidator.INDEX_MCP, KinematicValidator.INDEX_TIP,
             KinematicValidator.MIDDLE_TIP, KinematicValidator.PINKY_MCP).map(landmarks::get) else landmarks
+        if (visiblePoints.any { !it.x.isFinite() || !it.y.isFinite() || !it.z.isFinite() }) {
+            return rejected(landmarks.size, finiteCount, PoseGeometryRejectionReason.NON_FINITE_LANDMARK)
+        }
         if (visiblePoints.any { point -> point.x !in 0f..1f || point.y !in 0f..1f }) {
             return rejected(landmarks.size, finiteCount, PoseGeometryRejectionReason.OUT_OF_RANGE_LANDMARK)
         }

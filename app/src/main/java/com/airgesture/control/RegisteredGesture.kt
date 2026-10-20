@@ -13,7 +13,13 @@ enum class RegisteredGesture(val signalName: String, val defaultAction: AirActio
     THREE_FINGERS("Three_Fingers", AirAction.NONE),
     FOUR_FINGERS("Four_Fingers", AirAction.NONE),
     SHAKA("Shaka", AirAction.NONE),
-    PINKY_ONLY("Pinky_Only", AirAction.NONE);
+    PINKY_ONLY("Pinky_Only", AirAction.NONE),
+    L_SHAPE("L_Shape", AirAction.NONE),
+    THUMB_INDEX_MIDDLE("Thumb_Index_Middle", AirAction.NONE),
+    HORNS("Horns", AirAction.NONE),
+    FOUR_LITTLE_FOLDED("Four_Little_Folded", AirAction.NONE),
+    THREE_OUTER_FINGERS("Three_Outer_Fingers", AirAction.NONE),
+    FOUR_INDEX_FOLDED("Four_Index_Folded", AirAction.NONE);
 
     val isLandmarkPose: Boolean get() = ordinal >= OK.ordinal
 

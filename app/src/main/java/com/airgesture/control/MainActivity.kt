@@ -674,6 +674,12 @@ class MainActivity : ComponentActivity() {
             RegisteredGesture.FOUR_FINGERS -> R.string.mapping_four
             RegisteredGesture.SHAKA -> R.string.mapping_shaka
             RegisteredGesture.PINKY_ONLY -> R.string.mapping_pinky
+            RegisteredGesture.L_SHAPE -> R.string.mapping_l_shape
+            RegisteredGesture.THUMB_INDEX_MIDDLE -> R.string.mapping_thumb_index_middle
+            RegisteredGesture.HORNS -> R.string.mapping_horns
+            RegisteredGesture.FOUR_LITTLE_FOLDED -> R.string.mapping_four_little_folded
+            RegisteredGesture.THREE_OUTER_FINGERS -> R.string.mapping_three_outer_fingers
+            RegisteredGesture.FOUR_INDEX_FOLDED -> R.string.mapping_four_index_folded
         })
         AergisPanel {
             Text(gestureName, style = MaterialTheme.typography.titleMedium)

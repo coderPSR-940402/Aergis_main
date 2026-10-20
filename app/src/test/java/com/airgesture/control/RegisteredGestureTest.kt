@@ -4,9 +4,9 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class RegisteredGestureTest {
-    @Test fun twelveStableIndependentGestureIdsCoverEveryRegisteredSignal() {
-        assertEquals(12, RegisteredGesture.entries.size)
-        assertEquals(12, RegisteredGesture.entries.map { it.signalName }.toSet().size)
+    @Test fun eighteenStableIndependentGestureIdsCoverEveryRegisteredSignal() {
+        assertEquals(18, RegisteredGesture.entries.size)
+        assertEquals(18, RegisteredGesture.entries.map { it.signalName }.toSet().size)
         RegisteredGesture.entries.forEach { assertEquals(it, RegisteredGesture.fromSignal(it.signalName)) }
         assertNull(RegisteredGesture.fromSignal("None"))
         assertNull(RegisteredGesture.fromSignal("unknown"))

@@ -142,5 +142,14 @@ internal fun actionLabel(action: AirAction): String = stringResource(when (actio
     AirAction.MEDIA_PREVIOUS -> R.string.action_media_previous
     AirAction.SCREENSHOT -> R.string.action_screenshot
     AirAction.LOCK_SCREEN -> R.string.action_lock_screen
+    AirAction.APP_SEARCH -> R.string.action_app_search
+    AirAction.WEB_SEARCH -> R.string.action_web_search
+    AirAction.WIFI_CONTROLS -> R.string.action_wifi_controls
+    AirAction.BLUETOOTH_SETTINGS -> R.string.action_bluetooth_settings
+    AirAction.ROTATION_TOGGLE -> R.string.action_rotation_toggle
+    AirAction.SWIPE_LEFT -> R.string.action_swipe_left
+    AirAction.SWIPE_RIGHT -> R.string.action_swipe_right
+    AirAction.ARM_MOTION -> R.string.action_arm_motion
+    AirAction.POINTER_DRAG -> R.string.action_pointer_drag
     AirAction.NONE -> R.string.action_disabled
 })

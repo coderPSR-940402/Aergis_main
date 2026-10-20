@@ -189,7 +189,7 @@
     <string name="ui_tracking_title">Precision in motion.</string>
     <string name="ui_tracking_screen_description">Tune your reach. See what tracking sees.</string>
     <string name="ui_gestures_title">Make movement useful.</string>
-    <string name="ui_gestures_screen_description">12 gestures, each with its own device action. New gestures start disabled until assigned.</string>
+    <string name="ui_gestures_screen_description">18 gestures, each with its own device action. New gestures start disabled until assigned.</string>
     <string name="ui_implemented">Available</string>
     <string name="ui_pointer_gestures">Pointer interaction</string>
     <string name="ui_pointer_gestures_description">Fingertip movement, tap and vertical scroll are supported by the current pointer engine. Start with actions disarmed to practice.</string>
@@ -287,9 +287,25 @@
     <string name="action_unavailable">Unavailable on this Android version</string>
     <string name="action_media_help">Controls the current media player. Open a player first; support depends on that app.</string>
     <string name="gesture_tuning_title">Tune this gesture</string>
-    <string name="gesture_tuning_help">Mapped hand poses now act once, without holding. Relax your hand before each command and after Start or Resume. Saved assignments are unchanged. Previous hold and repeat-delay settings no longer apply. Thumb-to-middle contact clicks once; release only rearms. Holding or moving a pinch no longer long-presses or drags. Assign double-tap, long-press or scrolling to a distinct pose with the pointer enabled. Pointing Up touch assignments remain disabled to prevent clicks while aiming.</string>
+    <string name="gesture_tuning_help">Hold a mapped pose briefly to confirm one command, then relax to rearm. Six experimental poses default to Disabled. Scroll and swipe actions work without the pointer. Assign Arm one motion command, hold the hand still briefly, then move up/down/left/right once. Thumb-to-middle contact clicks once; release rearms. For precision dragging, assign Precision drag to a distinct pose: invoke to press, aim to move, relax and invoke again to release. Pinch clicks are suppressed during dragging. Pointing Up touch mappings remain disabled while aiming.</string>
     <string name="tuning_confidence">Recognition confidence: %1$d%%</string>
     <string name="tuning_volume">Volume steps: %1$d</string>
     <string name="tuning_scroll">Scroll distance: %1$d%% of screen</string>
     <string name="tuning_long_press">Touch hold duration: %1$d ms</string>
+    <string name="action_app_search">App search / launch</string>
+    <string name="action_web_search">Web search</string>
+    <string name="action_wifi_controls">Wi-Fi controls</string>
+    <string name="action_bluetooth_settings">Bluetooth settings</string>
+    <string name="action_rotation_toggle">Portrait / landscape toggle</string>
+    <string name="action_swipe_left">Swipe left</string>
+    <string name="action_swipe_right">Swipe right</string>
+    <string name="action_arm_motion">Arm one motion command</string>
+    <string name="mapping_l_shape">L Shape (experimental)</string>
+    <string name="mapping_thumb_index_middle">Thumb + Index + Middle (experimental)</string>
+    <string name="mapping_horns">Horns (experimental)</string>
+    <string name="mapping_four_little_folded">Four / Little Folded (experimental)</string>
+    <string name="mapping_three_outer_fingers">Three Outer Fingers (experimental)</string>
+    <string name="mapping_four_index_folded">Four / Index Folded (experimental)</string>
+    <string name="app_search_help">App search: scroll gestures select an app. Swipe right launches; swipe left closes. Assign Arm one motion command to use deliberate hand movement.</string>
+    <string name="action_pointer_drag">Precision drag: start / release</string>
 </resources>

@@ -20,8 +20,17 @@ class AirAccessibilityService : AccessibilityService() {
     private val mainHandler = Handler(Looper.getMainLooper())
     private val boundedInput = BoundedGestureDispatcher(mainHandler,
         dispatch = { gesture, callback -> dispatchGesture(gesture, callback, mainHandler) },
-        permitted = { epoch -> AirRuntime.pointerEnabled && isActionAllowed(AirAction.TAP, epoch) },
+        permitted = { epoch -> (!coordinateInput || AirRuntime.pointerEnabled) && isActionAllowed(AirAction.TAP, epoch) },
         record = AirRuntime::recordActionDispatchOutcome)
+    @Volatile var precisionDragActive = false
+        private set
+    private val precisionDrag = PrecisionDragController(mainHandler,
+        dispatch = { gesture, callback -> dispatchGesture(gesture, callback, mainHandler) },
+        permitted = { epoch -> AirRuntime.pointerEnabled && isActionAllowed(AirAction.POINTER_DRAG, epoch) },
+        record = { outcome ->
+            if (outcome != ActionDispatchOutcome.SUBMITTED) precisionDragActive = false
+            AirRuntime.recordActionDispatchOutcome(outcome)
+        })
     private val updateScheduled = AtomicBoolean(false)
     private val pendingVersion = AtomicLong(0L)
     private val pointerCommandGeneration = AtomicLong(0L)
@@ -51,9 +60,14 @@ class AirAccessibilityService : AccessibilityService() {
         schedulePointerUpdate()
     }
 
+    private var coordinateInput = false
     fun cancelPointerTouch() {
         pointerCommandGeneration.incrementAndGet()
-        mainHandler.post { boundedInput.cancel() }
+        mainHandler.post {
+            if (coordinateInput) boundedInput.cancel()
+            precisionDragActive = false
+            precisionDrag.cancel()
+        }
     }
 
     private fun schedulePointerUpdate() {
@@ -76,8 +90,9 @@ class AirAccessibilityService : AccessibilityService() {
         val pending = pendingPointer
         if (!pending.visible || pending.epoch != AirRuntime.actionEpoch ||
             !AirRuntime.pointerEnabled || AirRuntime.controlMode != ControlMode.ARMED) {
-            boundedInput.cancel()
             visibleHotspot = null
+            precisionDragActive = false
+            precisionDrag.cancel()
             overlay.hide()
             if (TestingTools.state.value.status == RecordingStatus.RECORDING) {
                 TestingTools.event("overlay_applied", org.json.JSONObject().put("visible", false))
@@ -96,11 +111,15 @@ class AirAccessibilityService : AccessibilityService() {
                 // Clipping/detachment invalidates queued and ongoing coordinate input.
                 pointerCommandGeneration.incrementAndGet()
                 boundedInput.cancel()
+                precisionDragActive = false
+                precisionDrag.cancel()
             }
             // Attachment can finish after the first update. Publish only once the
             // overlay actually applies the position, including that delayed layout.
             visibleHotspot = applied?.takeIf { pending.epoch == AirRuntime.actionEpoch }
                 ?.let { VisibleHotspot(it, pending.epoch) }
+            if (precisionDragActive && applied != null && pending.epoch == AirRuntime.actionEpoch)
+                precisionDrag.update(applied, true, pending.epoch, SystemClock.uptimeMillis())
         }
         if (TestingTools.state.value.status == RecordingStatus.RECORDING) {
             TestingTools.event("overlay_applied", org.json.JSONObject().put("visible", overlay.isHotspotVisible)
@@ -132,13 +151,12 @@ class AirAccessibilityService : AccessibilityService() {
         // Gesture recognition runs off the main thread. Snapshot the target now;
         // otherwise a queued click can land wherever the cursor moved later.
         val display = screenSize()
-        val pointer = AirRuntime.pointerSnapshot()
         val target = if (action.usesPointerTouch) {
             requestedHotspot?.takeIf { it.epoch == dispatchEpoch }?.point ?: run {
                 AirRuntime.recordActionDispatchOutcome(ActionDispatchOutcome.POLICY_DENIED)
                 return
             }
-        } else display.map(pointer.x, pointer.y)
+        } else display.map(.5f, .5f)
         val targetX = target.x
         val targetY = target.y
         mainHandler.post {
@@ -151,8 +169,29 @@ class AirAccessibilityService : AccessibilityService() {
                 AirRuntime.recordActionDispatchOutcome(ActionDispatchOutcome.POLICY_DENIED)
                 return@post
             }
+            if (precisionDrag.isBusy && action != AirAction.POINTER_DRAG) {
+                AirRuntime.recordActionDispatchOutcome(ActionDispatchOutcome.PLATFORM_REJECTED)
+                return@post
+            }
+            if (AppSearchActivity.active.get()?.control(action) == true) return@post
+            val nativeTouch = action.usesPointerTouch || action in setOf(AirAction.SCROLL_UP, AirAction.SCROLL_DOWN, AirAction.SWIPE_LEFT, AirAction.SWIPE_RIGHT)
+            if (nativeTouch && boundedInput.isBusy) {
+                AirRuntime.recordActionDispatchOutcome(ActionDispatchOutcome.PLATFORM_REJECTED)
+                return@post
+            }
+            if (nativeTouch) coordinateInput = action.usesPointerTouch
             when (action) {
-                AirAction.NONE -> Unit
+                AirAction.NONE, AirAction.ARM_MOTION -> Unit
+                AirAction.POINTER_DRAG -> {
+                    if (!precisionDrag.isBusy)
+                        precisionDrag.update(target, false, dispatchEpoch, SystemClock.uptimeMillis())
+                    precisionDragActive = !precisionDragActive
+                    precisionDrag.update(target, precisionDragActive, dispatchEpoch, SystemClock.uptimeMillis())
+                }
+                AirAction.APP_SEARCH, AirAction.WEB_SEARCH, AirAction.WIFI_CONTROLS,
+                AirAction.BLUETOOTH_SETTINGS, AirAction.ROTATION_TOGGLE -> PlatformActions(this).execute(action)
+                AirAction.SWIPE_LEFT -> performHorizontalSwipe(true, dispatchEpoch)
+                AirAction.SWIPE_RIGHT -> performHorizontalSwipe(false, dispatchEpoch)
                 AirAction.TAP -> performClickAt(targetX, targetY, dispatchEpoch)
                 AirAction.DOUBLE_TAP -> performDoubleTapAt(targetX, targetY, dispatchEpoch)
                 AirAction.BACK -> recordGlobalAction(GLOBAL_ACTION_BACK)
@@ -234,6 +273,16 @@ class AirAccessibilityService : AccessibilityService() {
         dispatchGestureWithOutcome(gesture, epoch)
     }
 
+    private fun performHorizontalSwipe(left: Boolean, epoch: Long) {
+        val display = screenSize()
+        val path = Path().apply {
+            moveTo(display.maxX * if (left) .8f else .2f, display.maxY * .5f)
+            lineTo(display.maxX * if (left) .2f else .8f, display.maxY * .5f)
+        }
+        dispatchGestureWithOutcome(GestureDescription.Builder()
+            .addStroke(GestureDescription.StrokeDescription(path, 0L, SCROLL_DURATION_MS)).build(), epoch)
+    }
+
     private fun adjustMediaVolume(direction: Int, steps: Int) {
         val result = runCatching {
             val audio = getSystemService(AUDIO_SERVICE) as AudioManager
@@ -295,6 +344,8 @@ class AirAccessibilityService : AccessibilityService() {
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
         super.onConfigurationChanged(newConfig)
         boundedInput.cancel()
+        precisionDragActive = false
+        precisionDrag.cancel()
         visibleHotspot = null
         AirRuntime.invalidatePendingActions()
         AirRuntime.pointerInteraction = PointerInteractionPhase.IDLE
@@ -304,6 +355,8 @@ class AirAccessibilityService : AccessibilityService() {
     override fun onInterrupt() {
         mainHandler.removeCallbacksAndMessages(null)
         boundedInput.cancel()
+        precisionDragActive = false
+        precisionDrag.cancel()
         visibleHotspot = null
         AirRuntime.pointerInteraction = PointerInteractionPhase.IDLE
         TestingTools.setMirror(false)
@@ -316,6 +369,8 @@ class AirAccessibilityService : AccessibilityService() {
     override fun onDestroy() {
         mainHandler.removeCallbacksAndMessages(null)
         boundedInput.cancel()
+        precisionDragActive = false
+        precisionDrag.cancel()
         visibleHotspot = null
         AirRuntime.pointerInteraction = PointerInteractionPhase.IDLE
         trackingMirror?.close()
