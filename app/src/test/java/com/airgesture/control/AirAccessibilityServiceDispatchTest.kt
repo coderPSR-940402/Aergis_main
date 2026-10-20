@@ -264,6 +264,7 @@ class AirAccessibilityServiceDispatchTest {
         service.dispatch(AirAction.POINTER_DRAG)
         shadowOf(Looper.getMainLooper()).idle()
         val down = shadow.gesturesDispatched.single()
+        assertTrue(service.nativeTouchInFlight)
         assertTrue(down.description().getStroke(0).willContinue())
         down.callback()!!.onCompleted(down.description())
         service.dispatch(AirAction.TAP)
@@ -276,6 +277,7 @@ class AirAccessibilityServiceDispatchTest {
         assertFalse(up.description().getStroke(0).willContinue())
         up.callback()!!.onCompleted(up.description())
         assertFalse(service.precisionDragActive)
+        assertFalse(service.nativeTouchInFlight)
     }
 
     @Test fun trackingCancellationInvalidatesQueuedTouchBeforeNativeDispatch() {

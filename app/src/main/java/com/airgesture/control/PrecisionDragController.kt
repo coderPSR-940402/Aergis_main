@@ -15,7 +15,7 @@ internal class PrecisionDragController(
 ) {
     val isBusy: Boolean get() = stroke != null
     private var cancelling = false
-    private var stroke: GestureDescription.StrokeDescription? = null
+    @Volatile private var stroke: GestureDescription.StrokeDescription? = null
     private var endpoint = PointerCoordinateMapper.Point(0f, 0f)
     private var target = endpoint
     private var pressed = false

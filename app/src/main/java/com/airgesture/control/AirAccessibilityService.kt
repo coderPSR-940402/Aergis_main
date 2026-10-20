@@ -31,6 +31,7 @@ class AirAccessibilityService : AccessibilityService() {
             if (outcome != ActionDispatchOutcome.SUBMITTED) precisionDragActive = false
             AirRuntime.recordActionDispatchOutcome(outcome)
         })
+    val nativeTouchInFlight: Boolean get() = boundedInput.isBusy || precisionDrag.isBusy
     private val updateScheduled = AtomicBoolean(false)
     private val pendingVersion = AtomicLong(0L)
     private val pointerCommandGeneration = AtomicLong(0L)

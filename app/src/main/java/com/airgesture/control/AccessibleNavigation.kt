@@ -6,7 +6,13 @@ import android.view.accessibility.AccessibilityNodeInfo
 /** Native keyboard focus for exposed controls. Never guesses a coordinate or clicks a parent. */
 internal object AccessibleNavigation {
     fun perform(root: AccessibilityNodeInfo?, action: AirAction): Boolean {
-        root ?: return false
+        if (root == null || action !in setOf(AirAction.FOCUS_NEXT, AirAction.FOCUS_PREVIOUS, AirAction.ACTIVATE_FOCUSED)) return false
+        // Nodes can become stale between retrieval and use, including during window changes.
+        return try { performOnNode(root, action) } catch (_: IllegalStateException) { false }
+            catch (_: SecurityException) { false }
+    }
+
+    private fun performOnNode(root: AccessibilityNodeInfo, action: AirAction): Boolean {
         val focused = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
         if (action == AirAction.ACTIVATE_FOCUSED) {
             return focused != null && focused.isVisibleToUser && focused.isEnabled &&

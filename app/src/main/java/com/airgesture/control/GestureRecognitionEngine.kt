@@ -589,6 +589,10 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             GestureActionPolicy.isClassifierActionEnabled(AirRuntime.gesturesEnabled, confirmedAction, pointerActive, registeredGesture)
         ) {
             if (confirmedAction == AirAction.ARM_MOTION && commandOwnerId != null) {
+                if (AirAccessibilityService.instance?.nativeTouchInFlight == true) {
+                    AirRuntime.recordActionDispatchOutcome(ActionDispatchOutcome.PLATFORM_REJECTED)
+                    return
+                }
                 directMotion.arm(commandOwnerId, AirRuntime.actionEpoch, timestamp)
                 android.os.Handler(android.os.Looper.getMainLooper()).post {
                     android.widget.Toast.makeText(context, R.string.motion_armed_help, android.widget.Toast.LENGTH_SHORT).show()
