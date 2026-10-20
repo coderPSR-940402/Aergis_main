@@ -185,7 +185,7 @@ class AirAccessibilityService : AccessibilityService() {
                 AirAction.NONE, AirAction.ARM_MOTION -> Unit
                 AirAction.FOCUS_NEXT, AirAction.FOCUS_PREVIOUS, AirAction.ACTIVATE_FOCUSED -> {
                     val accepted = runCatching { AccessibleNavigation.perform(rootInActiveWindow, action) }.getOrDefault(false)
-                    AirRuntime.recordActionDispatchOutcome(if (accepted) ActionDispatchOutcome.COMPLETED else ActionDispatchOutcome.PLATFORM_REJECTED)
+                    AirRuntime.recordActionDispatchOutcome(if (accepted) ActionDispatchOutcome.SUBMITTED else ActionDispatchOutcome.PLATFORM_REJECTED)
                 }
                 AirAction.POINTER_DRAG -> {
                     if (!precisionDrag.isBusy)

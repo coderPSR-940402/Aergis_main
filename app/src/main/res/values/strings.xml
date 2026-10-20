@@ -42,7 +42,7 @@
     <string name="diagnostics_pose_reason">Pose evidence reason: %1$s</string>
     <string name="diagnostics_accepted">accepted</string>
     <string name="diagnostics_rejected">rejected</string>
-    <string name="diagnostics_dispatch_counts">Dispatch outcomes: %1$d completed • %2$d cancelled • %3$d rejected • %4$d policy-denied</string>
+    <string name="diagnostics_dispatch_counts">Dispatch outcomes: %1$d completed • %2$d cancelled • %3$d rejected • %4$d policy-denied • %5$d submitted • %6$d unavailable • %7$d failed</string>
     <string name="diagnostics_privacy_note">Diagnostics retain aggregate counters and named reasons only; raw camera frames and landmarks are not stored.</string>
     <string name="pointer_mode">Pointer mode</string>
     <string name="pointer_mode_description">Enable pointer tracking</string>

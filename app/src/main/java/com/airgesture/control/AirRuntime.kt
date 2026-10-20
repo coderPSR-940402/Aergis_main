@@ -35,13 +35,17 @@ enum class ActionDispatchOutcome {
     PLATFORM_REJECTED,
     SUBMITTED,
     COMPLETED,
-    CANCELLED
+    CANCELLED,
+    PLATFORM_UNAVAILABLE,
+    EXECUTION_FAILED
 }
 
 data class ActionDispatchTelemetry(
     val totalOutcomes: Long = 0L,
     val policyDenied: Long = 0L,
     val platformRejected: Long = 0L,
+    val platformUnavailable: Long = 0L,
+    val executionFailed: Long = 0L,
     val completed: Long = 0L,
     val submitted: Long = 0L,
     val cancelled: Long = 0L,
@@ -291,6 +295,10 @@ object AirRuntime {
                     telemetry.copy(policyDenied = telemetry.policyDenied.safeIncrement())
                 ActionDispatchOutcome.PLATFORM_REJECTED ->
                     telemetry.copy(platformRejected = telemetry.platformRejected.safeIncrement())
+                ActionDispatchOutcome.PLATFORM_UNAVAILABLE ->
+                    telemetry.copy(platformUnavailable = telemetry.platformUnavailable.safeIncrement())
+                ActionDispatchOutcome.EXECUTION_FAILED ->
+                    telemetry.copy(executionFailed = telemetry.executionFailed.safeIncrement())
                 ActionDispatchOutcome.SUBMITTED ->
                     telemetry.copy(submitted = telemetry.submitted.safeIncrement())
                 ActionDispatchOutcome.COMPLETED ->

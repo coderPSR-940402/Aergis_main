@@ -55,7 +55,7 @@ class AppSearchActivity : Activity() {
             AirAction.SCROLL_UP -> selected = (selected - 1).coerceAtLeast(0)
             AirAction.SCROLL_DOWN -> selected = (selected + 1).coerceAtMost((shown.size - 1).coerceAtLeast(0))
             AirAction.SWIPE_RIGHT -> { launchSelected(); return true }
-            AirAction.SWIPE_LEFT -> { finish(); return true }
+            AirAction.SWIPE_LEFT -> { finish(); AirRuntime.recordActionDispatchOutcome(ActionDispatchOutcome.COMPLETED); return true }
             else -> return false
         }
         if (shown.isNotEmpty()) { list.setItemChecked(selected, true); list.smoothScrollToPosition(selected) }
@@ -63,13 +63,23 @@ class AppSearchActivity : Activity() {
         return true
     }
     private fun launchSelected() {
-        val app = shown.getOrNull(selected) ?: return
-        val launched = runCatching {
+        val app = shown.getOrNull(selected) ?: run {
+            AirRuntime.recordActionDispatchOutcome(ActionDispatchOutcome.PLATFORM_UNAVAILABLE)
+            return
+        }
+        val outcome = try {
             startActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
                 .setClassName(app.packageName, app.className).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        }.isSuccess
-        AirRuntime.recordActionDispatchOutcome(if (launched) ActionDispatchOutcome.SUBMITTED else ActionDispatchOutcome.PLATFORM_REJECTED)
-        if (launched) finish()
+            ActionDispatchOutcome.SUBMITTED
+        } catch (_: android.content.ActivityNotFoundException) {
+            ActionDispatchOutcome.PLATFORM_UNAVAILABLE
+        } catch (_: SecurityException) {
+            ActionDispatchOutcome.PLATFORM_REJECTED
+        } catch (_: RuntimeException) {
+            ActionDispatchOutcome.EXECUTION_FAILED
+        }
+        AirRuntime.recordActionDispatchOutcome(outcome)
+        if (outcome == ActionDispatchOutcome.SUBMITTED) finish()
     }
     override fun onResume() { super.onResume(); active = WeakReference(this) }
     override fun onPause() { if (active.get() === this) active.clear(); super.onPause() }

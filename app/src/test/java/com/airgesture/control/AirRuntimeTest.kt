@@ -100,18 +100,18 @@ class AirRuntimeTest {
     fun actionDispatchTelemetryCountsEachPlatformOutcome() {
         AirRuntime.resetActionDispatchTelemetry()
 
-        AirRuntime.recordActionDispatchOutcome(ActionDispatchOutcome.POLICY_DENIED)
-        AirRuntime.recordActionDispatchOutcome(ActionDispatchOutcome.PLATFORM_REJECTED)
-        AirRuntime.recordActionDispatchOutcome(ActionDispatchOutcome.COMPLETED)
-        AirRuntime.recordActionDispatchOutcome(ActionDispatchOutcome.CANCELLED)
+        ActionDispatchOutcome.entries.forEach(AirRuntime::recordActionDispatchOutcome)
 
         val telemetry = AirRuntime.state.value.actionDispatchTelemetry
-        assertEquals(4L, telemetry.totalOutcomes)
+        assertEquals(ActionDispatchOutcome.entries.size.toLong(), telemetry.totalOutcomes)
         assertEquals(1L, telemetry.policyDenied)
         assertEquals(1L, telemetry.platformRejected)
         assertEquals(1L, telemetry.completed)
         assertEquals(1L, telemetry.cancelled)
-        assertEquals(ActionDispatchOutcome.CANCELLED, telemetry.lastOutcome)
+        assertEquals(1L, telemetry.submitted)
+        assertEquals(1L, telemetry.platformUnavailable)
+        assertEquals(1L, telemetry.executionFailed)
+        assertEquals(ActionDispatchOutcome.entries.last(), telemetry.lastOutcome)
 
         AirRuntime.resetActionDispatchTelemetry()
     }

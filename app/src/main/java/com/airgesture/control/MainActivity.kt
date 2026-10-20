@@ -649,7 +649,10 @@ class MainActivity : ComponentActivity() {
                         dispatch.completed,
                         dispatch.cancelled,
                         dispatch.platformRejected,
-                        dispatch.policyDenied
+                        dispatch.policyDenied,
+                        dispatch.submitted,
+                        dispatch.platformUnavailable,
+                        dispatch.executionFailed
                     )
                 )
                 Text(stringResource(R.string.diagnostics_privacy_note))

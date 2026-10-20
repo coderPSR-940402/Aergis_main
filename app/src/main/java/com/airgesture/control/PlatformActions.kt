@@ -11,8 +11,8 @@ import android.view.WindowManager
 /** Public Android capabilities only; submission is not proof of visible completion. */
 internal class PlatformActions(private val context: Context) {
     fun execute(action: AirAction) {
-        val outcome = runCatching {
-            when (action) {
+        val outcome = try {
+            val submitted = when (action) {
                 AirAction.APP_SEARCH -> launch(Intent(context, AppSearchActivity::class.java))
                 AirAction.WEB_SEARCH -> launch(Intent(Intent.ACTION_WEB_SEARCH))
                 AirAction.WIFI_CONTROLS -> launch(Intent(Settings.ACTION_WIFI_SETTINGS))
@@ -20,8 +20,15 @@ internal class PlatformActions(private val context: Context) {
                 AirAction.ROTATION_TOGGLE -> rotate()
                 else -> false
             }
-        }.getOrDefault(false)
-        AirRuntime.recordActionDispatchOutcome(if (outcome) ActionDispatchOutcome.SUBMITTED else ActionDispatchOutcome.PLATFORM_REJECTED)
+            if (submitted) ActionDispatchOutcome.SUBMITTED else ActionDispatchOutcome.PLATFORM_REJECTED
+        } catch (_: android.content.ActivityNotFoundException) {
+            ActionDispatchOutcome.PLATFORM_UNAVAILABLE
+        } catch (_: SecurityException) {
+            ActionDispatchOutcome.PLATFORM_REJECTED
+        } catch (_: RuntimeException) {
+            ActionDispatchOutcome.EXECUTION_FAILED
+        }
+        AirRuntime.recordActionDispatchOutcome(outcome)
     }
     private fun launch(intent: Intent): Boolean {
         context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
