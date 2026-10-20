@@ -345,6 +345,7 @@ class CalibrationEngineIntegrationTest {
             assertTrue(shadow.globalActionsPerformed.isEmpty())
             repeat(3) { publish(open, 2900L + it * 100L) }
             publish(open, 3234L, gestureName = "Victory")
+            publish(open, 3368L, gestureName = "Victory")
             looper.idle()
             assertEquals(listOf(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK),
                 shadow.globalActionsPerformed)
@@ -540,14 +541,18 @@ class CalibrationEngineIntegrationTest {
             assertTrue(shadow.globalActionsPerformed.isEmpty())
             publish(hand(), 1433L, gestureName = "Victory", delayMs = 231L)
             org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+            assertTrue("A single transition frame must not fire", shadow.globalActionsPerformed.isEmpty())
+            publish(hand(), 1533L, gestureName = "Victory", delayMs = 231L)
+            org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
             assertEquals(listOf(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK),
                 shadow.globalActionsPerformed)
-            publish(transition, 1533L)
+            publish(transition, 1583L)
             repeat(8) { publish(hand(), 1633L + it * 100L, gestureName = "Victory") }
             org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
             assertEquals("Rejected None and persistent pose cannot replay", 1, shadow.globalActionsPerformed.size)
             publish(hand(), 2433L); publish(hand(), 2533L)
             publish(hand(), 2633L, gestureName = "Victory")
+            publish(hand(), 2733L, gestureName = "Victory")
             org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
             assertEquals("Only genuine neutral rearms", 2, shadow.globalActionsPerformed.size)
         }
@@ -565,6 +570,7 @@ class CalibrationEngineIntegrationTest {
             assertTrue("A long interruption must require fresh neutral", shadow.globalActionsPerformed.isEmpty())
             publish(hand(), 2500L); publish(hand(), 2600L)
             publish(hand(), 2700L, gestureName = "Victory")
+            publish(hand(), 2800L, gestureName = "Victory")
             org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
             assertEquals(1, shadow.globalActionsPerformed.size)
         }
@@ -629,10 +635,11 @@ class CalibrationEngineIntegrationTest {
             AirRuntime.gesturesEnabled = true
             primeClassifier()
             publish(hand(), 1250L, gestureName = "Victory")
+            publish(hand(), 1350L, gestureName = "Victory")
             org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
             val shadow = org.robolectric.Shadows.shadowOf(service)
             assertEquals(1, shadow.globalActionsPerformed.size)
-            var t = 1300L
+            var t = 1400L
             for (category in listOf("None", "Thumb_Down", "Unknown", "", null)) {
                 repeat(8) {
                     publish(hand(), t, gestureName = category ?: "None",
@@ -646,6 +653,7 @@ class CalibrationEngineIntegrationTest {
             }
             publish(hand(), t); publish(hand(), t + 100L)
             publish(hand(), t + 150L, gestureName = "Victory")
+            publish(hand(), t + 250L, gestureName = "Victory")
             org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
             assertEquals("Actual confident neutral rearms", 2, shadow.globalActionsPerformed.size)
         } finally {
@@ -677,11 +685,12 @@ class CalibrationEngineIntegrationTest {
             assertTrue("Pause/resume between frames invalidates ready state", shadow.globalActionsPerformed.isEmpty())
             publish(hand(), 2000L); publish(hand(), 2100L)
             publish(hand(), 2150L, gestureName = "Victory")
+            publish(hand(), 2250L, gestureName = "Victory")
             org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
             assertEquals(1, shadow.globalActionsPerformed.size)
             engine.close()
             engine = GestureRecognitionEngine(context)
-            repeat(5) { publish(hand(), 2200L + it * 100L, gestureName = "Victory") }
+            repeat(5) { publish(hand(), 2300L + it * 100L, gestureName = "Victory") }
             org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
             assertEquals("Recreated engine cannot replay held pose", 1, shadow.globalActionsPerformed.size)
         } finally { controller.destroy() }

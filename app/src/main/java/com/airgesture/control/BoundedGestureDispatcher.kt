@@ -14,7 +14,8 @@ internal class BoundedGestureDispatcher(
     private val record: (ActionDispatchOutcome) -> Unit
 ) {
     private var generation = 0L
-    private var active: Long? = null
+    @Volatile private var active: Long? = null
+    val isBusy: Boolean get() = active != null
     private var epoch = 0L
     private var deadline = 0L
     private var cancelling = false

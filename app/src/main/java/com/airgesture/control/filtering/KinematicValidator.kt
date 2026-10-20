@@ -23,7 +23,11 @@ class KinematicValidator {
         val thumbTip = landmarks[THUMB_TIP]
         val middleTip = landmarks[MIDDLE_TIP]
 
-        val palmWidth = indexMcp.distance2DTo(pinkyMcp, aspectRatio).coerceAtLeast(MIN_PALM_WIDTH_PX)
+        val projectedWidth = indexMcp.distance2DTo(pinkyMcp, aspectRatio)
+        // MediaPipe z uses image-width units. Bound noisy depth rather than widening contact thresholds.
+        val depth = kotlin.math.abs(indexMcp.z - pinkyMcp.z) * aspectRatio
+        val palmWidth = kotlin.math.hypot(projectedWidth, depth.coerceAtMost(projectedWidth * 2f))
+            .coerceAtLeast(MIN_PALM_WIDTH_PX)
         val fingertipDistance = thumbTip.distance2DTo(middleTip, aspectRatio)
 
         return fingertipDistance / palmWidth

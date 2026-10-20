@@ -236,11 +236,48 @@ class AirAccessibilityServiceDispatchTest {
         // Bounds inspect the actual dispatched path, including both scroll endpoints.
         val bounds = RectF()
         shadow.gesturesDispatched.single().description().getStroke(0).path.computeBounds(bounds, true)
-        assertEquals((metrics.widthPixels - 1).toFloat(), bounds.left, 0.01f)
+        assertEquals((metrics.widthPixels - 1) * .5f, bounds.left, 0.01f)
         assertEquals(bounds.left, bounds.right, 0.01f)
         assertTrue(bounds.top in 0f..(metrics.heightPixels - 1).toFloat())
         assertTrue(bounds.bottom in 0f..(metrics.heightPixels - 1).toFloat())
         assertTrue(bounds.bottom > bounds.top)
+    }
+
+    @Test fun allFourNavigationStrokesWorkWithPointerDisabledAndRemainCancellable() {
+        AirRuntime.pointerEnabled = false
+        service.updatePointer(0f,0f,false)
+        shadowOf(Looper.getMainLooper()).idle()
+        for (action in listOf(AirAction.SCROLL_UP, AirAction.SCROLL_DOWN, AirAction.SWIPE_LEFT, AirAction.SWIPE_RIGHT)) {
+            val before = shadow.gesturesDispatched.size
+            service.dispatch(action)
+            shadowOf(Looper.getMainLooper()).idle()
+            assertEquals(before + 1, shadow.gesturesDispatched.size)
+            service.cancelPointerTouch() // Hiding a disabled pointer must not cancel navigation.
+            shadowOf(Looper.getMainLooper()).idle()
+            assertEquals(before + 1, shadow.gesturesDispatched.size)
+            val call = shadow.gesturesDispatched.last()
+            call.callback()!!.onCompleted(call.description())
+        }
+    }
+
+    @Test fun explicitPrecisionDragDoesNotAlsoTapAndReleaseIsBounded() {
+        service.dispatch(AirAction.POINTER_DRAG)
+        shadowOf(Looper.getMainLooper()).idle()
+        val down = shadow.gesturesDispatched.single()
+        assertTrue(service.nativeTouchInFlight)
+        assertTrue(down.description().getStroke(0).willContinue())
+        down.callback()!!.onCompleted(down.description())
+        service.dispatch(AirAction.TAP)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(1, shadow.gesturesDispatched.size)
+        service.dispatch(AirAction.POINTER_DRAG)
+        shadowOf(Looper.getMainLooper()).idle()
+        val up = shadow.gesturesDispatched.last()
+        assertEquals(2, shadow.gesturesDispatched.size)
+        assertFalse(up.description().getStroke(0).willContinue())
+        up.callback()!!.onCompleted(up.description())
+        assertFalse(service.precisionDragActive)
+        assertFalse(service.nativeTouchInFlight)
     }
 
     @Test fun trackingCancellationInvalidatesQueuedTouchBeforeNativeDispatch() {

@@ -63,6 +63,7 @@ internal object DiagnosticFrameData {
             .put("vision", JSONObject().put("accepted", vision.acceptedResults).put("rejected", vision.rejectedResults)
                 .put("lastRejection", vision.lastRejectionReason ?: JSONObject.NULL))
             .put("actions", JSONObject().put("completed", actions.completed).put("cancelled", actions.cancelled)
-                .put("policyDenied", actions.policyDenied).put("platformRejected", actions.platformRejected))
+                .put("policyDenied", actions.policyDenied).put("platformRejected", actions.platformRejected)
+                .put("platformUnavailable", actions.platformUnavailable).put("executionFailed", actions.executionFailed))
     }
 }

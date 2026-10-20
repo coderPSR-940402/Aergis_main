@@ -29,7 +29,17 @@ internal object LandmarkGestureRecognizer {
         val down = fingers.map(::folded)
         val thumbOut = straight(1, 2, 4) < -.75f && distance(4, 5) > scale * .65f
         val thumbIn = distance(4, 9) < scale * .55f
+        // A tucked thumb can project near a folded middle tip. Do not confuse that
+        // projection with contact here: the pointer's contact channel wins arbitration
+        // before any mapped command, while pointer-disabled poses remain recognizable.
+        fun matches(vararg extended: Boolean) = extended.indices.all { if (extended[it]) up[it] else down[it] }
         val pose = when {
+            thumbOut && matches(true, false, false, false) -> RegisteredGesture.L_SHAPE
+            thumbOut && matches(true, true, false, false) -> RegisteredGesture.THUMB_INDEX_MIDDLE
+            thumbIn && matches(true, false, false, true) -> RegisteredGesture.HORNS
+            thumbOut && matches(true, true, true, false) -> RegisteredGesture.FOUR_LITTLE_FOLDED
+            thumbIn && matches(false, true, true, true) && distance(4, 8) > scale * .3f -> RegisteredGesture.THREE_OUTER_FINGERS
+            thumbOut && matches(false, true, true, true) -> RegisteredGesture.FOUR_INDEX_FOLDED
             distance(4, 8) < scale * .18f && down[0] && up.drop(1).all { it } -> RegisteredGesture.OK
             up == listOf(true, true, true, false) && down[3] && thumbIn -> RegisteredGesture.THREE_FINGERS
             up.all { it } && thumbIn -> RegisteredGesture.FOUR_FINGERS
