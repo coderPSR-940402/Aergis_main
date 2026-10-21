@@ -152,6 +152,19 @@ class GestureTransactionStateMachineTest {
             assertNull(gate.process(input(AirAction.HOME, t).copy(gestureId = "THUMB_DOWN")))
     }
 
+    @Test fun pinchSuppressionConsumesOccurrenceWithoutDispatchOrDelayedReplay() {
+        for (action in listOf(AirAction.BACK, AirAction.NONE)) {
+            val gate = GestureTransactionStateMachine()
+            assertNull(gate.process(input(action, 0L).copy(
+                tracking = false, occurrenceSuppressed = true)))
+            for (t in 50L..300L step 50L)
+                assertNull("Suppressed pose cannot fire on release", gate.process(input(AirAction.BACK, t)))
+            gate.process(input(AirAction.NONE, 350L))
+            gate.process(input(AirAction.NONE, 450L))
+            assertEquals(AirAction.BACK, gate.process(input(AirAction.BACK, 500L)))
+        }
+    }
+
     private fun ready() = GestureTransactionStateMachine().also {
         it.process(input(AirAction.NONE, 0L)); it.process(input(AirAction.NONE, 100L))
     }

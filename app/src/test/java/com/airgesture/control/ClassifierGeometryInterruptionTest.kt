@@ -36,42 +36,45 @@ class ClassifierGeometryInterruptionTest {
         assertEquals(AirAction.BACK, sample(gate, 550L, AirAction.BACK))
     }
 
-    @Test fun continuousRejectedFramesCannotKeepReadyStateAliveIndefinitely() {
+    @Test fun continuousRejectedFramesCannotDispatchOrConsumeFirstOccurrence() {
         val gate = ready()
         for (t in 150L..450L step 50L) assertNull(sample(gate, t, rejected = true))
-        assertNull(sample(gate, 500L, AirAction.BACK))
+        assertEquals(AirAction.BACK, sample(gate, 500L, AirAction.BACK))
+        assertNull(sample(gate, 525L, AirAction.BACK))
         sample(gate, 550L); sample(gate, 650L)
         assertEquals(AirAction.BACK, sample(gate, 700L, AirAction.BACK))
     }
 
-    @Test fun recoveryMustBeWithinTheEvidenceGapLimitNotJustTheFrameGapLimit() {
+    @Test fun firstOccurrenceRemainsEligibleAfterEvidenceGap() {
         for (delay in listOf(250L, 251L)) {
             val gate = ready()
             sample(gate, 250L, rejected = true)
             val result = sample(gate, 100L + delay, AirAction.BACK)
-            assertEquals("total evidence gap $delay", if (delay == 250L) AirAction.BACK else null, result)
+            assertEquals("total evidence gap $delay", AirAction.BACK, result)
         }
     }
 
-    @Test fun startupAndConsumedOccurrencesStayBlockedAcrossGeometryRejection() {
+    @Test fun geometryRejectionCannotConsumeFirstOccurrenceOrRearmConsumedOne() {
         for (consumed in listOf(false, true)) {
             val gate = if (consumed) ready() else GestureTransactionStateMachine()
             if (consumed) assertEquals(AirAction.BACK, sample(gate, 150L, AirAction.BACK))
             sample(gate, 200L, rejected = true)
-            assertNull(sample(gate, 250L, AirAction.BACK))
+            assertEquals(if (consumed) null else AirAction.BACK, sample(gate, 250L, AirAction.BACK))
+            assertNull(sample(gate, 300L, AirAction.BACK))
         }
     }
 
-    @Test fun ownerEpochAndTrackingLossStillInvalidateReadiness() {
+    @Test fun ownerEpochAndTrackingLossCannotReplayConsumedOccurrence() {
         for (boundary in listOf("owner", "epoch", "tracking")) {
             val gate = ready()
-            val frame = input(150L, rejected = true)
+            assertEquals(AirAction.BACK, sample(gate, 150L, AirAction.BACK))
+            val frame = input(200L, rejected = true)
             gate.process(when (boundary) {
                 "owner" -> frame.copy(ownershipId = "new")
                 "epoch" -> frame.copy(actionEpoch = 1L)
                 else -> frame.copy(tracking = false)
             })
-            assertNull(sample(gate, 200L, AirAction.BACK))
+            assertNull(sample(gate, 250L, AirAction.BACK))
         }
     }
 

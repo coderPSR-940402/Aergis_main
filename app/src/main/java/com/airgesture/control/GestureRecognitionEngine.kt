@@ -582,7 +582,8 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 tuning = gestureTuning,
                 actionEpoch = AirRuntime.actionEpoch,
                 evidenceValid = commandTracking,
-                confirmationReady = confirmedPose
+                confirmationReady = confirmedPose,
+                occurrenceSuppressed = pinchInProgress
             )
         )
         if (confirmedAction != null &&

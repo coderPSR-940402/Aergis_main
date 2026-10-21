@@ -21,7 +21,9 @@ internal class GestureTransactionStateMachine(
         val actionEpoch: Long = 0L,
         // False only for a fresh same-owner geometry transition, never tracking loss.
         val evidenceValid: Boolean = true,
-        val confirmationReady: Boolean = true
+        val confirmationReady: Boolean = true,
+        // Pinch owns this occurrence; it must not become a delayed static command.
+        val occurrenceSuppressed: Boolean = false
     )
 
     init {
@@ -48,6 +50,11 @@ internal class GestureTransactionStateMachine(
         if (epoch != input.actionEpoch || owner != input.ownershipId) reset()
         epoch = input.actionEpoch
         owner = input.ownershipId
+        if (input.occurrenceSuppressed) {
+            state = State.COOLDOWN
+            reset()
+            return null
+        }
         if (!input.tracking || input.ownershipId.isNullOrBlank()) {
             reset()
             return null
