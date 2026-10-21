@@ -1,14 +1,29 @@
 package com.airgesture.control
 
 /**
- * Compatibility gate for the gesture-first pipeline.
+ * Short temporal confirmation gate for classifier/landmark command poses.
  *
- * Occurrence safety already lives in [GestureTransactionStateMachine]: confidence,
- * ownership, action epoch, freshness, neutral rearm and exactly-once consumption.
- * Legacy holdMs values are retained for rollback/persistence only and must never delay
- * a recognized mapped gesture.
+ * This gate exists only to reject transition poses and one-frame classifier spikes.
+ * It deliberately does not reintroduce legacy gesture hold delays; long holdMs values
+ * remain persistence/rollback data and do not define confirmation latency.
  */
 internal class StaticPoseConfirmation {
+    private data class Candidate(
+        val id: String,
+        val owner: String,
+        val epoch: Long,
+        val firstTimestamp: Long,
+        val lastTimestamp: Long,
+        val frameCount: Int
+    )
+
+    companion object {
+        private const val MIN_CONSECUTIVE_FRAMES = 3
+        private const val MIN_TWO_FRAME_WINDOW_MS = 80L
+    }
+
+    private var candidate: Candidate? = null
+
     @Suppress("UNUSED_PARAMETER")
     fun accept(
         id: String?,
@@ -17,7 +32,44 @@ internal class StaticPoseConfirmation {
         timestamp: Long,
         valid: Boolean,
         holdMs: Long
-    ): Boolean = valid && !owner.isNullOrBlank() && timestamp >= 0L
+    ): Boolean {
+        val poseId = id?.takeIf { it.isNotBlank() }
+        val ownerId = owner?.takeIf { it.isNotBlank() }
+        if (!valid || poseId == null || ownerId == null || timestamp < 0L) {
+            reset()
+            return false
+        }
 
-    fun reset() = Unit
+        val current = candidate
+        val sameCandidate = current != null &&
+            current.id == poseId &&
+            current.owner == ownerId &&
+            current.epoch == epoch
+
+        if (!sameCandidate || current == null || timestamp < current.lastTimestamp) {
+            candidate = Candidate(
+                id = poseId,
+                owner = ownerId,
+                epoch = epoch,
+                firstTimestamp = timestamp,
+                lastTimestamp = timestamp,
+                frameCount = 1
+            )
+            return false
+        }
+
+        val updated = current.copy(
+            lastTimestamp = timestamp,
+            frameCount = current.frameCount + 1
+        )
+        candidate = updated
+
+        val elapsed = timestamp - updated.firstTimestamp
+        return updated.frameCount >= MIN_CONSECUTIVE_FRAMES ||
+            (updated.frameCount >= 2 && elapsed >= MIN_TWO_FRAME_WINDOW_MS)
+    }
+
+    fun reset() {
+        candidate = null
+    }
 }
