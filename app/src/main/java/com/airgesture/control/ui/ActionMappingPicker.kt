@@ -57,7 +57,7 @@ internal fun ActionMappingPicker(
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(stringResource(R.string.ui_mapping_picker_help))
                 Column(Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState()).selectableGroup()) {
-                    AirAction.entries.forEach { action ->
+                    AirAction.entries.filter { it.isUserMappable }.forEach { action ->
                         val supported = Build.VERSION.SDK_INT >= action.minimumSdk
                         val restricted = action != AirAction.NONE && !GestureActionPolicy.isClassifierActionEnabled(
                             gesturesEnabled = true, action = action, pointerControlActive = pointerEnabled, gesture = source

@@ -13,6 +13,7 @@ enum class AirAction {
         else -> 26
     }
     val usesPointerTouch: Boolean get() = this in setOf(TAP, DOUBLE_TAP, LONG_PRESS, POINTER_DRAG)
+    val isUserMappable: Boolean get() = this !in setOf(FOCUS_NEXT, FOCUS_PREVIOUS, ACTIVATE_FOCUSED)
 }
 
 data class ActionResult(val action: AirAction, val accepted: Boolean, val message: String = "")

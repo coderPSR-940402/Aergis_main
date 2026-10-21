@@ -29,8 +29,9 @@ internal class GestureTransactionStateMachine(
         require(neutralReleaseMs > 0L && maxFrameGapMs > 0L)
     }
 
-    // Starting/recreating an engine with a pose already visible must not execute it.
-    private var state = State.COOLDOWN
+    // A fresh transaction is ready for its first deliberate valid occurrence.
+    // Once an occurrence is consumed, only explicit neutral evidence rearms it.
+    private var state = State.NEUTRAL
     private var owner: String? = null
     private var epoch: Long? = null
     private var neutralSince: Long? = null
@@ -82,11 +83,12 @@ internal class GestureTransactionStateMachine(
 
     fun currentState(): State = state
 
-    /** Invalidation always requires fresh neutral, including when no command had fired. */
+    /** Invalidation clears partial evidence but never changes occurrence consumption. */
     fun reset() {
-        state = State.COOLDOWN
         neutralSince = null
         lastValidEvidenceMs = null
+        // Preserve state: a fresh unconsumed transaction stays ready, while a consumed
+        // occurrence still requires explicit neutral evidence before another can fire.
         // Retain the timestamp high-water mark: reset cannot make old samples fresh.
     }
 }
