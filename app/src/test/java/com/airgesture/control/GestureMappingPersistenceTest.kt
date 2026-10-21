@@ -24,6 +24,33 @@ class GestureMappingPersistenceTest {
         prefs.edit().clear().commit()
     }
 
+    @Test fun retiredFocusMappingsFallBackToGestureDefaultsAndCannotBeResaved() {
+        val context = RuntimeEnvironment.getApplication()
+        val prefs = context.getSharedPreferences("aergis_mappings", Context.MODE_PRIVATE)
+        prefs.edit().clear().commit()
+        val store = ActionMappingStore(context)
+        val retired = listOf(AirAction.FOCUS_NEXT, AirAction.FOCUS_PREVIOUS, AirAction.ACTIVATE_FOCUSED)
+        val gestures = listOf(RegisteredGesture.VICTORY, RegisteredGesture.OPEN_PALM, RegisteredGesture.THUMB_UP)
+        retired.zip(gestures).forEach { (action, gesture) ->
+            prefs.edit().putString("gesture_${gesture.name}", action.name).commit()
+            assertEquals(gesture.defaultAction, store.mapping(gesture))
+            store.saveBinding(gesture, action, GestureTuning())
+            assertEquals(gesture.defaultAction, store.mapping(gesture))
+            assertEquals(gesture.defaultAction.name, prefs.getString("gesture_${gesture.name}", null))
+        }
+        prefs.edit().clear().commit()
+    }
+
+    @Test fun retiredLegacyFocusMappingFallsBackToGestureDefault() {
+        val context = RuntimeEnvironment.getApplication()
+        val prefs = context.getSharedPreferences("aergis_mappings", Context.MODE_PRIVATE)
+        prefs.edit().clear().commit()
+        val store = ActionMappingStore(context)
+        store.setMapping(AirAction.TAP, AirAction.FOCUS_NEXT)
+        assertEquals(RegisteredGesture.THUMB_UP.defaultAction, store.mapping(RegisteredGesture.THUMB_UP))
+        prefs.edit().clear().commit()
+    }
+
     @Test fun recognitionMigrationPreservesAllSavedIdsAndLegacyTimingForRollback() {
         val context = RuntimeEnvironment.getApplication()
         val prefs = context.getSharedPreferences("aergis_mappings", Context.MODE_PRIVATE)
@@ -61,11 +88,16 @@ class GestureMappingPersistenceTest {
         assigned.forEach { (gesture, action) -> store.setMapping(gesture, action) }
         val reopened = ActionMappingStore(context)
         assigned.forEach { (gesture, action) ->
-            assertEquals(action, reopened.mapping(gesture))
-            assertEquals(action, GestureInterpreter(reopened).interpret(GestureSignal(gesture.signalName, .9f)).action)
+            val expected = if (action in setOf(AirAction.FOCUS_NEXT, AirAction.FOCUS_PREVIOUS, AirAction.ACTIVATE_FOCUSED))
+                gesture.defaultAction else action
+            assertEquals(expected, reopened.mapping(gesture))
+            assertEquals(expected, GestureInterpreter(reopened).interpret(GestureSignal(gesture.signalName, .9f)).action)
         }
         store.setMapping(RegisteredGesture.OK, AirAction.HOME)
-        assertEquals(assigned[RegisteredGesture.SHAKA], store.mapping(RegisteredGesture.SHAKA))
+        val shakaAssigned = assigned.getValue(RegisteredGesture.SHAKA)
+        val shakaExpected = if (shakaAssigned in setOf(AirAction.FOCUS_NEXT, AirAction.FOCUS_PREVIOUS, AirAction.ACTIVATE_FOCUSED))
+            RegisteredGesture.SHAKA.defaultAction else shakaAssigned
+        assertEquals(shakaExpected, store.mapping(RegisteredGesture.SHAKA))
         prefs.edit().putString("gesture_OK", "unsupported").commit()
         assertEquals(AirAction.NONE, store.mapping(RegisteredGesture.OK))
         prefs.edit().clear().commit()
