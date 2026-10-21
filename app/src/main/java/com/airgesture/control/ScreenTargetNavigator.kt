@@ -4,7 +4,7 @@ import android.graphics.Rect
 import android.view.accessibility.AccessibilityNodeInfo
 
 /** Refresh nodes for every command; never click cached nodes or guess a coordinate. */
-internal class ScreenTargetNavigator(private val highlight: TargetHighlightOverlay) {
+internal class ScreenTargetNavigator(private val highlight: ScreenTargetHighlight) {
     private val state = ScreenSelectionState()
     private data class Target(val key: String, val node: AccessibilityNodeInfo, val bounds: Rect)
     fun clear() { state.clear(); highlight.hide() }
@@ -21,7 +21,7 @@ internal class ScreenTargetNavigator(private val highlight: TargetHighlightOverl
                 if (!node.isVisibleToUser || !node.isEnabled || node.isPassword) return
                 val bounds = Rect(); node.getBoundsInScreen(bounds)
                 if (node.isClickable && !bounds.isEmpty) {
-                    val key = "$path:${node.viewIdResourceName}:$bounds:${node.text?.hashCode()}:${node.contentDescription?.hashCode()}"
+                    val key = ScreenTargetKey.of(path, node.viewIdResourceName, bounds.toString(), node.text, node.contentDescription)
                     targets.add(Target(key, node, bounds))
                 }
                 for (i in 0 until node.childCount) node.getChild(i)?.let { visit(it, "$path/$i") }
@@ -30,7 +30,7 @@ internal class ScreenTargetNavigator(private val highlight: TargetHighlightOverl
             val context = "${root.packageName}:${root.windowId}:$epoch"
             val keys = targets.map { it.key }
             if (action == AirAction.SELECT_ITEM) {
-                val visible = highlight.isAttached
+                val visible = highlight.isVisible
                 val key = state.confirm(keys, context)
                 highlight.hide()
                 visible && key != null && targets.first { it.key == key }.node.performAction(AccessibilityNodeInfo.ACTION_CLICK)

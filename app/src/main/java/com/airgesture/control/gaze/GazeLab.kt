@@ -24,7 +24,7 @@ internal object GazeLab {
         stop(); worker = Worker(context.applicationContext, listener)
     }
     fun stop() { val previous = worker; worker = null; previous?.close() }
-    fun offer(frame: RgbaFrameData, timestamp: Long) { worker?.offer(frame, timestamp) }
+    fun offer(frame: RgbaFrameData, timestamp: Long, frameAgeMs: Long) { worker?.offer(frame, timestamp, frameAgeMs) }
 
     private class Worker(val context: Context, val listener: (Observation) -> Unit) {
         val busy = AtomicBoolean(false)
@@ -34,7 +34,8 @@ internal object GazeLab {
         val executor = Executors.newSingleThreadExecutor { task ->
             Thread({ Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND); task.run() }, "AergisGazeLab")
         }
-        fun offer(frame: RgbaFrameData, timestamp: Long) {
+        fun offer(frame: RgbaFrameData, timestamp: Long, frameAgeMs: Long) {
+            val capturedAt = GazeSampleClock.capturedAt(SystemClock.uptimeMillis(), frameAgeMs) ?: return
             if (closed || timestamp <= lastOffered || (lastOffered >= 0 && timestamp - lastOffered < 100L) || !busy.compareAndSet(false, true)) return
             lastOffered = timestamp
             // Own a small immutable copy before the hand pipeline releases/reuses its frame.
@@ -48,7 +49,6 @@ internal object GazeLab {
                     for (c in 0..3) bytes[target + c] = frame.buffer.get(source + c)
                 }
             } catch (_: RuntimeException) { busy.set(false); return }
-            val capturedAt = SystemClock.uptimeMillis()
             try { executor.execute {
                 try {
                     if (closed) return@execute

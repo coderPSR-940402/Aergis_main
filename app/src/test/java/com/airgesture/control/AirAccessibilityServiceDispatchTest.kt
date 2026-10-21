@@ -192,6 +192,18 @@ class AirAccessibilityServiceDispatchTest {
         assertEquals("Queued pointer click cannot survive switch-off",1,shadow.gesturesDispatched.size)
     }
 
+    @Test fun screenSelectionCannotCommitDuringNativeGesture() {
+        service.dispatch(AirAction.SCROLL_DOWN)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(1,shadow.gesturesDispatched.size)
+        AirRuntime.resetActionDispatchTelemetry()
+        service.dispatch(AirAction.SELECT_ITEM)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals("Selection must be rejected before node execution while input is busy",1L,
+            AirRuntime.state.value.actionDispatchTelemetry.platformRejected)
+        assertEquals(1,shadow.gesturesDispatched.size)
+    }
+
     @Test fun gestureNavigationWorksWithPointerAndClickingOff() {
         AirRuntime.pointerEnabled = false
         AirRuntime.pointerClickingEnabled = false

@@ -189,6 +189,10 @@ class AirAccessibilityService : AccessibilityService() {
                 AirRuntime.recordActionDispatchOutcome(ActionDispatchOutcome.PLATFORM_REJECTED)
                 return@post
             }
+            if (action == AirAction.SELECT_ITEM && boundedInput.isBusy) {
+                AirRuntime.recordActionDispatchOutcome(ActionDispatchOutcome.PLATFORM_REJECTED)
+                return@post
+            }
             if (AppSearchActivity.active.get()?.control(action) == true) return@post
             val nativeTouch = action.usesPointerTouch || action in setOf(AirAction.SCROLL_UP, AirAction.SCROLL_DOWN, AirAction.SWIPE_LEFT, AirAction.SWIPE_RIGHT)
             if (nativeTouch && boundedInput.isBusy) {

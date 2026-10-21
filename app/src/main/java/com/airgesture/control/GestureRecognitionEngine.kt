@@ -139,7 +139,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 currentPixels = image
                 try { publishWithAge(result, timestamp, nowIn(source), image.rotationDegrees, frameAge()) }
                 finally { currentPixels = null }
-                com.airgesture.control.gaze.GazeLab.offer(image, timestamp)
+                com.airgesture.control.gaze.GazeLab.offer(image, timestamp, frameAge())
                 val publishEnd = SystemClock.uptimeMillis()
                 lastPipelineAgeMs = frameAge().coerceAtLeast(0L)
                 metrics.recordFrame(publishEnd, frameAgeAtStart, preEnd - preStart,

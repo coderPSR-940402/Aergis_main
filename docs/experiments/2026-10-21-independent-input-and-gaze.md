@@ -97,3 +97,30 @@ require Galaxy A54 evidence. Do not claim 100% clicks or production-ready gaze.
 5. Optional Gaze Lab: camera capture running, nine stable targets, then held-out
    validation targets. Record error, result cadence and hand-pipeline latency with
    lab OFF versus ON. Leave lab: no continuing face inference or automatic rearm.
+
+## 2026-10-21 adversarial follow-up
+
+The owner's re-evaluation trigger found and corrected four concrete gaps:
+
+- A target key previously used CharSequence.hashCode(). Distinct labels such as
+  "Aa" / "BB" collide, while mutable CharSequence instances with identical text
+  can have different identity hashes. Exact length-prefixed canonical text now
+  distinguishes actual content changes and preserves unchanged fresh text objects.
+  These values are transient selection state only, never persisted or logged.
+- SELECT_ITEM now rejects while bounded native input is in flight, including before
+  App Search interception. A semantic click cannot overlap a scroll/tap/long press.
+- Confirmation requires an attached, shown, actually drawn highlight. Fully offscreen
+  bounds are rejected; visible bounds are clipped to display/view coordinates and
+  the overlay uses the same cutout layout modes as the pointer. Merely attaching
+  an empty overlay no longer grants confirmation authority.
+- Gaze observation uptime now derives from exposure age supplied by the existing
+  camera clock policy. Hand inference and frame-copy time cannot make an old frame
+  appear new. Frames already older than 350 ms are dropped before copying; worker
+  completion and calibration freshness use that original capture time.
+
+Three new host regressions were observed failing before correction, then all
+77 focused JVM tests and 11 Python tooling tests passed. Android integration tests
+exercise actual AccessibilityNodeInfo.ACTION_CLICK exactly once, colliding label
+changes, invisible highlights, disabled/password controls, offscreen overlays and
+selection during native input. Final Android CI and artifact evidence belongs in
+PR #68. No hand filter, click hysteresis, pose mappings or camera configuration changes.
