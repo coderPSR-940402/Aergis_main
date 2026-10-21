@@ -27,6 +27,7 @@ class CalibrationEngineIntegrationTest {
         store = PointerCalibrationStore(context)
         TestingTools.setFilterMode(PointerFilterMode.CURRENT)
         AirRuntime.pointerEnabled = true
+        AirRuntime.pointerClickingEnabled = true
         AirRuntime.gesturesEnabled = false
         AirRuntime.handPreference = ControlHandPreference.EITHER
         AirRuntime.controlMode = ControlMode.ARMED
@@ -40,6 +41,7 @@ class CalibrationEngineIntegrationTest {
         TestingTools.setFilterMode(PointerFilterMode.CURRENT)
         AirRuntime.controlMode = ControlMode.OFF
         AirRuntime.pointerEnabled = true
+        AirRuntime.pointerClickingEnabled = true
         AirRuntime.gesturesEnabled = true
         AirRuntime.setForegroundContext(ForegroundContextState())
     }
@@ -568,6 +570,29 @@ class CalibrationEngineIntegrationTest {
             publish(hand(), 2700L, gestureName = "Victory")
             org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
             assertEquals(2, shadow.globalActionsPerformed.size)
+        }
+    }
+
+    @Test fun pointerPinchAndMappedCommandsRunIndependently() {
+        withMappedBackService { shadow ->
+            val looper = org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper())
+            AirRuntime.gesturesEnabled = false
+            AirRuntime.pointerClickingEnabled = true
+            val open = hand()
+            val closed = open.toMutableList().apply { this[4] = NormalizedLandmark.create(.56f, .65f, 0f) }
+            repeat(4) { publish(open, 1000L + it * 100L); looper.idle() }
+            repeat(3) { publish(closed, 1400L + it * 100L); looper.idle() }
+            assertEquals("Pointer taps must work with commands off", 1, shadow.gesturesDispatched.size)
+            val tap = shadow.gesturesDispatched.single()
+            tap.callback()!!.onCompleted(tap.description())
+            AirRuntime.pointerClickingEnabled = false
+            AirRuntime.gesturesEnabled = true
+            repeat(4) { publish(open, 1800L + it * 100L); looper.idle() }
+            repeat(3) { publish(closed, 2200L + it * 100L); looper.idle() }
+            assertEquals("Pointer clicking switch blocks contact", 1, shadow.gesturesDispatched.size)
+            repeat(4) { publish(open, 2600L + it * 100L); looper.idle() }
+            publish(open, 3000L, gestureName = "Victory"); looper.idle()
+            assertEquals("Commands remain available with clicking off", 1, shadow.globalActionsPerformed.size)
         }
     }
 

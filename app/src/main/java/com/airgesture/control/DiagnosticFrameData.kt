@@ -56,7 +56,7 @@ internal object DiagnosticFrameData {
             .put("sourceCommit", BuildConfig.SOURCE_COMMIT).put("filterMode", TestingTools.state.value.filterMode.name).put("testSegment", TestingTools.state.value.segment.name)
             .put("error", error ?: JSONObject.NULL).put("pointer", pointer(state.pointer)).put("rawUprightTip", pointer(state.rawPointer))
             .put("handPreference", state.handPreference.name).put("controlMode", state.controlMode.name)
-            .put("pointerEnabled", state.pointerEnabled).put("gesturesEnabled", state.gesturesEnabled)
+            .put("pointerEnabled", state.pointerEnabled).put("gesturesEnabled", state.gesturesEnabled).put("pointerClickingEnabled", state.pointerClickingEnabled)
             .put("foregroundSafety", state.foregroundContext.safety.name).put("safetyReason", state.foregroundContext.reason)
             .put("pose", pose ?: JSONObject.NULL).put("actionEpoch", state.actionEpoch)
             .put("calibration", calibration?.let(PointerCalibrationProfileCodec::encode) ?: "Default linear full-frame mapping")

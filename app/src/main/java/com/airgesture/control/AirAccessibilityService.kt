@@ -20,7 +20,7 @@ class AirAccessibilityService : AccessibilityService() {
     private val mainHandler = Handler(Looper.getMainLooper())
     private val boundedInput = BoundedGestureDispatcher(mainHandler,
         dispatch = { gesture, callback -> dispatchGesture(gesture, callback, mainHandler) },
-        permitted = { epoch -> (!coordinateInput || AirRuntime.pointerEnabled) && isActionAllowed(AirAction.TAP, epoch) },
+        permitted = { epoch -> (!coordinateInput || AirRuntime.pointerEnabled) && isActionAllowed(AirAction.TAP, epoch, nativeOrigin) },
         record = AirRuntime::recordActionDispatchOutcome)
     @Volatile var precisionDragActive = false
         private set
@@ -42,6 +42,15 @@ class AirAccessibilityService : AccessibilityService() {
     @Volatile private var visibleHotspot: VisibleHotspot? = null
     private var pointerOverlay: PointerOverlay? = null
     private var trackingMirror: TrackingMirrorOverlay? = null
+    private val screenNavigator by lazy { ScreenTargetNavigator(TargetHighlightOverlay(this)) }
+    private var selectionEpoch = -1L
+    private val selectionGuard = object : Runnable {
+        override fun run() {
+            if (selectionEpoch != AirRuntime.actionEpoch || !isActionAllowed(AirAction.NEXT_ITEM)) {
+                screenNavigator.clear(); selectionEpoch = -1L
+            } else mainHandler.postDelayed(this, 100L)
+        }
+    }
     private val windowManager: WindowManager by lazy {
         getSystemService(WINDOW_SERVICE) as WindowManager
     }
@@ -62,6 +71,7 @@ class AirAccessibilityService : AccessibilityService() {
     }
 
     private var coordinateInput = false
+    private var nativeOrigin = ActionOrigin.GESTURE
     fun cancelPointerTouch() {
         pointerCommandGeneration.incrementAndGet()
         mainHandler.post {
@@ -130,7 +140,12 @@ class AirAccessibilityService : AccessibilityService() {
         }
     }
 
-    fun dispatch(action: AirAction, tuning: GestureTuning = GestureTuning()) {
+    internal fun dispatchPointerTap() = dispatch(AirAction.TAP, origin = ActionOrigin.POINTER)
+
+    fun dispatch(action: AirAction, tuning: GestureTuning = GestureTuning()) =
+        dispatch(action, tuning, ActionOrigin.GESTURE)
+
+    private fun dispatch(action: AirAction, tuning: GestureTuning = GestureTuning(), origin: ActionOrigin) {
         val settings = tuning.bounded()
         if (action == AirAction.NONE) return
         if (Build.VERSION.SDK_INT < action.minimumSdk) {
@@ -143,7 +158,7 @@ class AirAccessibilityService : AccessibilityService() {
                 .put("target", DiagnosticFrameData.pointer(AirRuntime.pointerSnapshot())).put("epoch", AirRuntime.actionEpoch)
                 .put("visiblePixelX", requestedHotspot?.point?.x).put("visiblePixelY", requestedHotspot?.point?.y))
         }
-        if (!isActionAllowed(action)) {
+        if (!isActionAllowed(action, origin = origin)) {
             AirRuntime.recordActionDispatchOutcome(ActionDispatchOutcome.POLICY_DENIED)
             return
         }
@@ -165,7 +180,7 @@ class AirAccessibilityService : AccessibilityService() {
             // (for example, after a disarm or protected-screen event). Check
             // again immediately before injecting instead of trusting the frame-time
             // decision above.
-            if (!isActionAllowed(action, dispatchEpoch) ||
+            if (!isActionAllowed(action, dispatchEpoch, origin) ||
                 (action.usesPointerTouch && pointerGeneration != pointerCommandGeneration.get())) {
                 AirRuntime.recordActionDispatchOutcome(ActionDispatchOutcome.POLICY_DENIED)
                 return@post
@@ -180,9 +195,19 @@ class AirAccessibilityService : AccessibilityService() {
                 AirRuntime.recordActionDispatchOutcome(ActionDispatchOutcome.PLATFORM_REJECTED)
                 return@post
             }
-            if (nativeTouch) coordinateInput = action.usesPointerTouch
+            if (action !in setOf(AirAction.NEXT_ITEM, AirAction.PREVIOUS_ITEM, AirAction.SELECT_ITEM)) {
+                screenNavigator.clear(); mainHandler.removeCallbacks(selectionGuard)
+            }
+            if (nativeTouch) { coordinateInput = action.usesPointerTouch; nativeOrigin = origin }
             when (action) {
                 AirAction.NONE, AirAction.ARM_MOTION -> Unit
+                AirAction.NEXT_ITEM, AirAction.PREVIOUS_ITEM, AirAction.SELECT_ITEM -> {
+                    val accepted = screenNavigator.perform(rootInActiveWindow, action, dispatchEpoch)
+                    mainHandler.removeCallbacks(selectionGuard)
+                    selectionEpoch = dispatchEpoch
+                    if (action != AirAction.SELECT_ITEM && accepted) mainHandler.postDelayed(selectionGuard, 100L)
+                    AirRuntime.recordActionDispatchOutcome(if (accepted) ActionDispatchOutcome.SUBMITTED else ActionDispatchOutcome.PLATFORM_UNAVAILABLE)
+                }
                 AirAction.FOCUS_NEXT, AirAction.FOCUS_PREVIOUS, AirAction.ACTIVATE_FOCUSED -> {
                     val accepted = runCatching { AccessibleNavigation.perform(rootInActiveWindow, action) }.getOrDefault(false)
                     AirRuntime.recordActionDispatchOutcome(if (accepted) ActionDispatchOutcome.SUBMITTED else ActionDispatchOutcome.PLATFORM_REJECTED)
@@ -219,14 +244,16 @@ class AirAccessibilityService : AccessibilityService() {
         }
     }
 
-    private fun isActionAllowed(action: AirAction, expectedEpoch: Long? = null): Boolean {
+    private fun isActionAllowed(action: AirAction, expectedEpoch: Long? = null, origin: ActionOrigin = ActionOrigin.GESTURE): Boolean {
         return ActionDispatchGate.evaluate(
             action = action,
             expectedEpoch = expectedEpoch,
             currentEpoch = AirRuntime.actionEpoch,
             gesturesEnabled = AirRuntime.gesturesEnabled,
             controlMode = AirRuntime.controlMode,
-            foregroundSafety = AirRuntime.state.value.foregroundContext.safety
+            foregroundSafety = AirRuntime.state.value.foregroundContext.safety,
+            origin = origin, pointerEnabled = AirRuntime.pointerEnabled,
+            pointerClickingEnabled = AirRuntime.pointerClickingEnabled
         ).allowed
     }
 
@@ -341,13 +368,15 @@ class AirAccessibilityService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
-        AirRuntime.setForegroundContext(
-            ForegroundContextPolicy.evaluate(event.packageName, event.className)
-        )
+        screenNavigator.clear()
+        mainHandler.removeCallbacks(selectionGuard)
+        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED)
+            AirRuntime.setForegroundContext(ForegroundContextPolicy.evaluate(event.packageName, event.className))
     }
 
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
         super.onConfigurationChanged(newConfig)
+        screenNavigator.clear()
         boundedInput.cancel()
         precisionDragActive = false
         precisionDrag.cancel()
@@ -359,6 +388,7 @@ class AirAccessibilityService : AccessibilityService() {
 
     override fun onInterrupt() {
         mainHandler.removeCallbacksAndMessages(null)
+        screenNavigator.clear()
         boundedInput.cancel()
         precisionDragActive = false
         precisionDrag.cancel()
@@ -373,6 +403,7 @@ class AirAccessibilityService : AccessibilityService() {
 
     override fun onDestroy() {
         mainHandler.removeCallbacksAndMessages(null)
+        screenNavigator.clear()
         boundedInput.cancel()
         precisionDragActive = false
         precisionDrag.cancel()

@@ -5,6 +5,20 @@ import kotlin.math.sqrt
 
 /** Five additional poses from the owned hand. Ambiguous bends produce no custom evidence. */
 internal object LandmarkGestureRecognizer {
+    fun recognizeDirectional(points: List<Point3D>, aspect: Float): GestureSignal? {
+        val generic = recognize(points, aspect) ?: return null
+        if (generic.name != RegisteredGesture.THUMB_INDEX_MIDDLE.signalName) return null
+        val dx = -((points[8].x - points[5].x) + (points[12].x - points[9].x)) * aspect
+        val dy = (points[8].y - points[5].y) + (points[12].y - points[9].y)
+        val major = maxOf(kotlin.math.abs(dx), kotlin.math.abs(dy))
+        val minor = minOf(kotlin.math.abs(dx), kotlin.math.abs(dy))
+        if (major < .025f || major < minor * 1.8f) return GestureSignal("Double_Gun_Ambiguous", 0f)
+        val pose = if (kotlin.math.abs(dx) > kotlin.math.abs(dy)) {
+            if (dx < 0) RegisteredGesture.DOUBLE_GUN_LEFT else RegisteredGesture.DOUBLE_GUN_RIGHT
+        } else if (dy < 0) RegisteredGesture.DOUBLE_GUN_UP else RegisteredGesture.DOUBLE_GUN_DOWN
+        return GestureSignal(pose.signalName, generic.score)
+    }
+
     fun recognize(points: List<Point3D>, aspect: Float): GestureSignal? {
         if (points.size != 21 || !aspect.isFinite() || aspect <= 0f ||
             points.any { !it.x.isFinite() || !it.y.isFinite() || !it.z.isFinite() || it.x !in 0f..1f || it.y !in 0f..1f }) return null

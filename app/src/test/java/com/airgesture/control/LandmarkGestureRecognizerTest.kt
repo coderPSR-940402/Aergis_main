@@ -6,7 +6,7 @@ import org.junit.Test
 
 class LandmarkGestureRecognizerTest {
     @Test fun allElevenCustomPosesSurviveScaleMirrorAndInPlaneRotation() {
-        for (gesture in RegisteredGesture.entries.filter { it.isLandmarkPose }) {
+        for (gesture in RegisteredGesture.entries.filter { it.isLandmarkPose && !it.isDirectionalGun }) {
             for (scale in listOf(.5f, 1f)) for (mirror in listOf(-1f, 1f)) for (turn in 0..3) {
                 val points = pose(gesture).map {
                     var x = (it.x - .5f) * scale * mirror
@@ -22,7 +22,7 @@ class LandmarkGestureRecognizerTest {
 
     @Test fun modestYawAndPitchPreserveDistinctCandidatePoses() {
         val angle = Math.toRadians(20.0)
-        for (gesture in RegisteredGesture.entries.filter { it.isLandmarkPose }) {
+        for (gesture in RegisteredGesture.entries.filter { it.isLandmarkPose && !it.isDirectionalGun }) {
             for (yaw in listOf(false, true)) for (sign in listOf(-1f, 1f)) {
                 val points = pose(gesture).map {
                     val x=it.x-.5f; val y=it.y-.5f

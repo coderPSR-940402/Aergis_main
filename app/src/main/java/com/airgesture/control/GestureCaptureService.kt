@@ -67,6 +67,7 @@ class GestureCaptureService : Service(), LifecycleOwner {
         val mappings = ActionMappingStore(this)
         AirRuntime.pointerEnabled = mappings.pointerEnabled()
         AirRuntime.gesturesEnabled = mappings.gesturesEnabled()
+        AirRuntime.pointerClickingEnabled = mappings.pointerClickingEnabled()
         runCatching { visionEngine = GestureRecognitionEngine(this) }
             .onFailure {
                 AirRuntime.visionReady = false

@@ -47,6 +47,7 @@ import java.io.File
 class MainActivity : ComponentActivity() {
     private var pointerEnabled by mutableStateOf(true)
     private var gesturesEnabled by mutableStateOf(true)
+    private var pointerClickingEnabled by mutableStateOf(true)
     private var handPreference by mutableStateOf(ControlHandPreference.EITHER)
     private var sessionStartError by mutableStateOf<String?>(null)
     private var accessibilityEnabled by mutableStateOf(false)
@@ -149,6 +150,8 @@ class MainActivity : ComponentActivity() {
         val mappings = ActionMappingStore(this)
         pointerEnabled = mappings.pointerEnabled()
         gesturesEnabled = mappings.gesturesEnabled()
+        pointerClickingEnabled = mappings.pointerClickingEnabled()
+        AirRuntime.pointerClickingEnabled = pointerClickingEnabled
         handPreference = mappings.handPreference()
         refreshCalibrationSettings()
         AirRuntime.handPreference = handPreference
@@ -276,12 +279,12 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun AirGestureScreen() {
         AergisTheme {
-            AergisShell(gesturesEnabled) { destination, navigate ->
+            AergisShell(gesturesEnabled || (pointerEnabled && pointerClickingEnabled)) { destination, navigate ->
                 when (destination) {
                     AergisDestination.HOME -> ControlScreen(
                         accessibilityEnabled = accessibilityEnabled,
                         pointerEnabled = pointerEnabled,
-                        gesturesEnabled = gesturesEnabled,
+                        gesturesEnabled = gesturesEnabled || (pointerEnabled && pointerClickingEnabled),
                         startError = sessionStartError,
                         onCapture = { if (AirRuntime.running) stopSession() else startSession() },
                         onArm = {
@@ -417,6 +420,7 @@ class MainActivity : ComponentActivity() {
             contentPadding = androidx.compose.foundation.layout.PaddingValues(20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            item { Text(stringResource(R.string.navigation_gesture_help), modifier = Modifier.padding(horizontal = 20.dp)) }
             item { AergisSection(stringResource(R.string.ui_gestures_title), stringResource(R.string.ui_gestures_screen_description)) }
             item {
                 AergisPanel {
@@ -459,6 +463,17 @@ class MainActivity : ComponentActivity() {
                             AirRuntime.pointerY,
                             it && AirRuntime.pointerTracking
                         )
+                    }
+                    androidx.compose.material3.HorizontalDivider(color = AergisColors.Outline)
+                    AergisSettingRow(stringResource(R.string.pointer_clicking), stringResource(R.string.pointer_clicking_help), pointerClickingEnabled) {
+                        pointerClickingEnabled = it
+                        ActionMappingStore(this@MainActivity).setPointerClickingEnabled(it)
+                        AirRuntime.pointerClickingEnabled = it
+                        AirAccessibilityService.instance?.cancelPointerTouch()
+                    }
+                    AergisButton(onClick = { startActivity(Intent(this@MainActivity,
+                        com.airgesture.control.gaze.GazeLabActivity::class.java)) }) {
+                        Text(stringResource(R.string.gaze_lab))
                     }
                     androidx.compose.material3.HorizontalDivider(color = AergisColors.Outline)
                     AergisSettingRow(stringResource(R.string.gesture_actions), stringResource(R.string.gesture_actions_description), gesturesEnabled) {
@@ -683,10 +698,17 @@ class MainActivity : ComponentActivity() {
             RegisteredGesture.FOUR_LITTLE_FOLDED -> R.string.mapping_four_little_folded
             RegisteredGesture.THREE_OUTER_FINGERS -> R.string.mapping_three_outer_fingers
             RegisteredGesture.FOUR_INDEX_FOLDED -> R.string.mapping_four_index_folded
+            RegisteredGesture.DOUBLE_GUN_LEFT -> R.string.mapping_double_gun_left
+            RegisteredGesture.DOUBLE_GUN_RIGHT -> R.string.mapping_double_gun_right
+            RegisteredGesture.DOUBLE_GUN_UP -> R.string.mapping_double_gun_up
+            RegisteredGesture.DOUBLE_GUN_DOWN -> R.string.mapping_double_gun_down
         })
         AergisPanel {
             Text(gestureName, style = MaterialTheme.typography.titleMedium)
             Text(stringResource(when (source) {
+                RegisteredGesture.L_SHAPE, RegisteredGesture.THUMB_INDEX_MIDDLE,
+                RegisteredGesture.DOUBLE_GUN_LEFT, RegisteredGesture.DOUBLE_GUN_RIGHT,
+                RegisteredGesture.DOUBLE_GUN_UP, RegisteredGesture.DOUBLE_GUN_DOWN -> R.string.pose_gun_help
                 RegisteredGesture.OK -> R.string.pose_ok_help
                 RegisteredGesture.THREE_FINGERS -> R.string.pose_three_help
                 RegisteredGesture.FOUR_FINGERS -> R.string.pose_four_help

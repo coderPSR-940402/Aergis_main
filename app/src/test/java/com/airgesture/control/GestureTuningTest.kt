@@ -5,7 +5,7 @@ import org.junit.Test
 
 class GestureTuningTest {
     @Test fun expandedCatalogWorksAlongsidePointerWithoutEnablingCompetingTouchCommands() {
-        assertEquals(30, AirAction.entries.count { it != AirAction.NONE })
+        assertEquals(33, AirAction.entries.count { it != AirAction.NONE })
         for (action in AirAction.entries.filter { it != AirAction.NONE }) {
             assertTrue(GestureActionPolicy.isClassifierActionEnabled(true, action, false))
             assertEquals(!action.usesPointerTouch, GestureActionPolicy.isClassifierActionEnabled(true, action, true))

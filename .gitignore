@@ -21,3 +21,5 @@ __pycache__/
 
 # Kotlin compiler state
 .kotlin/
+
+/app/src/main/assets/face_landmarker.task

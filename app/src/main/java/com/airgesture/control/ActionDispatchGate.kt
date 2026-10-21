@@ -14,14 +14,17 @@ internal object ActionDispatchGate {
         currentEpoch: Long,
         gesturesEnabled: Boolean,
         controlMode: ControlMode,
-        foregroundSafety: ForegroundSafety
+        foregroundSafety: ForegroundSafety,
+        origin: ActionOrigin = ActionOrigin.GESTURE,
+        pointerEnabled: Boolean = true,
+        pointerClickingEnabled: Boolean = true
     ): ActionSafetyDecision {
         if (expectedEpoch != null && expectedEpoch != currentEpoch) {
             return ActionSafetyDecision(false, "Runtime safety state changed")
         }
         return ActionSafetyPolicy.evaluate(
             action = action,
-            gesturesEnabled = gesturesEnabled,
+            gesturesEnabled = InputChannelPolicy.enabled(origin, action, pointerEnabled, pointerClickingEnabled, gesturesEnabled),
             controlMode = controlMode,
             foregroundSafety = foregroundSafety
         )

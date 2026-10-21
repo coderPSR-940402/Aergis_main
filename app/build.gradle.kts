@@ -138,3 +138,28 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.robolectric:robolectric:4.17")
 }
+
+// Opt-in gaze lab uses a separate pinned model; no runtime download or network permission.
+val faceModelFile = layout.projectDirectory.file("src/main/assets/face_landmarker.task").asFile
+fun validFaceModel(file: File): Boolean = file.isFile && file.length() == 3_758_596L &&
+    MessageDigest.getInstance("SHA-256").digest(file.readBytes()).joinToString("") { "%02x".format(it.toInt() and 255) } ==
+        "64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff"
+tasks.register("prepareFaceModel") {
+    outputs.file(faceModelFile)
+    outputs.upToDateWhen { validFaceModel(faceModelFile) }
+    doLast {
+        if (!validFaceModel(faceModelFile)) {
+            faceModelFile.parentFile.mkdirs()
+            val temporary = File.createTempFile("face-model-", ".partial", faceModelFile.parentFile)
+            try {
+                URL("https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task")
+                    .openConnection().apply { connectTimeout = 30_000; readTimeout = 120_000 }
+                    .getInputStream().use { input -> temporary.outputStream().use { input.copyTo(it) } }
+                check(validFaceModel(temporary)) { "Face model size/SHA-256 verification failed" }
+                Files.move(temporary.toPath(), faceModelFile.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+            } finally { temporary.delete() }
+        }
+        check(validFaceModel(faceModelFile))
+    }
+}
+tasks.named("preBuild").configure { dependsOn("prepareFaceModel") }

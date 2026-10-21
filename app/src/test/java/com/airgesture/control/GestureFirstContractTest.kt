@@ -15,7 +15,7 @@ class GestureFirstContractTest {
         val original = listOf("THUMB_UP", "VICTORY", "OPEN_PALM", "CLOSED_FIST", "POINTING_UP",
             "THUMB_DOWN", "I_LOVE_YOU", "OK", "THREE_FINGERS", "FOUR_FINGERS", "SHAKA", "PINKY_ONLY")
         assertEquals(original, RegisteredGesture.entries.take(12).map { it.name })
-        assertEquals(18, RegisteredGesture.entries.size)
+        assertEquals(22, RegisteredGesture.entries.size)
         RegisteredGesture.entries.drop(12).forEach { assertEquals(AirAction.NONE, it.defaultAction) }
     }
 }

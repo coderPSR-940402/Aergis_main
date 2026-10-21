@@ -57,6 +57,7 @@ data class AirRuntimeState(
     val cameraReady: Boolean = false,
     val pointerEnabled: Boolean = true,
     val gesturesEnabled: Boolean = true,
+    val pointerClickingEnabled: Boolean = true,
     val controlMode: ControlMode = ControlMode.OFF,
     val foregroundContext: ForegroundContextState = ForegroundContextState(),
     val handPreference: ControlHandPreference = ControlHandPreference.EITHER,
@@ -146,6 +147,13 @@ object AirRuntime {
         set(value) = _state.update {
             if (it.pointerEnabled == value) it
             else it.copy(pointerEnabled = value, actionEpoch = it.actionEpoch + 1L)
+        }
+
+    var pointerClickingEnabled: Boolean
+        get() = state.value.pointerClickingEnabled
+        set(value) = _state.update {
+            if (it.pointerClickingEnabled == value) it
+            else it.copy(pointerClickingEnabled = value, actionEpoch = it.actionEpoch + 1L)
         }
 
     var gesturesEnabled: Boolean

@@ -8,6 +8,9 @@ class ActionMappingStore(context: Context) {
     fun pointerEnabled(): Boolean = prefs.getBoolean(KEY_POINTER, true)
     fun setPointerEnabled(enabled: Boolean) = prefs.edit().putBoolean(KEY_POINTER, enabled).apply()
 
+    fun pointerClickingEnabled(): Boolean = prefs.getBoolean("pointer_clicking_enabled", true)
+    fun setPointerClickingEnabled(enabled: Boolean) = prefs.edit().putBoolean("pointer_clicking_enabled", enabled).apply()
+
     fun gesturesEnabled(): Boolean = prefs.getBoolean(KEY_GESTURES, true)
     fun setGesturesEnabled(enabled: Boolean) = prefs.edit().putBoolean(KEY_GESTURES, enabled).apply()
 

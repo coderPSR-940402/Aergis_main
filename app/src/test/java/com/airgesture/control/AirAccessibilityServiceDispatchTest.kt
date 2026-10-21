@@ -54,6 +54,7 @@ class AirAccessibilityServiceDispatchTest {
         AirRuntime.resetActionDispatchTelemetry()
         AirRuntime.gesturesEnabled = true
         AirRuntime.pointerEnabled = true
+        AirRuntime.pointerClickingEnabled = true
         AirRuntime.controlMode = ControlMode.ARMED
         AirRuntime.setForegroundContext(
             ForegroundContextState(
@@ -73,6 +74,7 @@ class AirAccessibilityServiceDispatchTest {
         legacyTouch.cancel()
         controller.destroy()
         AirRuntime.pointerEnabled = true
+        AirRuntime.pointerClickingEnabled = true
         AirRuntime.resetActionDispatchTelemetry()
         AirRuntime.controlMode = ControlMode.OFF
         AirRuntime.setForegroundContext(ForegroundContextState())
@@ -173,6 +175,30 @@ class AirAccessibilityServiceDispatchTest {
         assertEquals(1L, telemetry.cancelled)
         assertEquals(0L, telemetry.completed)
         assertEquals(ActionDispatchOutcome.CANCELLED, telemetry.lastOutcome)
+    }
+
+    @Test fun pointerTapWorksWhenCommandsOffButToggleInvalidatesQueuedTap() {
+        AirRuntime.gesturesEnabled = false
+        service.updatePointer(.5f,.5f,true)
+        shadowOf(Looper.getMainLooper()).idle()
+        service.dispatchPointerTap()
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(1, shadow.gesturesDispatched.size)
+        val tap=shadow.gesturesDispatched.single()
+        tap.callback()!!.onCompleted(tap.description())
+        service.dispatchPointerTap()
+        AirRuntime.pointerClickingEnabled = false
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals("Queued pointer click cannot survive switch-off",1,shadow.gesturesDispatched.size)
+    }
+
+    @Test fun gestureNavigationWorksWithPointerAndClickingOff() {
+        AirRuntime.pointerEnabled = false
+        AirRuntime.pointerClickingEnabled = false
+        service.dispatch(AirAction.BACK)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(listOf(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK),shadow.globalActionsPerformed)
+        assertTrue(shadow.gesturesDispatched.isEmpty())
     }
 
     @Test

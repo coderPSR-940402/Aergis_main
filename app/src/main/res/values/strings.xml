@@ -46,8 +46,8 @@
     <string name="diagnostics_privacy_note">Diagnostics retain aggregate counters and named reasons only; raw camera frames and landmarks are not stored.</string>
     <string name="pointer_mode">Pointer mode</string>
     <string name="pointer_mode_description">Enable pointer tracking</string>
-    <string name="gesture_actions">Gesture actions</string>
-    <string name="gesture_actions_description">Enable gesture-triggered actions</string>
+    <string name="gesture_actions">Gesture Commands</string>
+    <string name="gesture_actions_description">Mapped commands work independently of pointer clicking</string>
     <string name="tracking_hand_preference">Tracking hand preference</string>
     <string name="accessibility_status">Accessibility: %1$s</string>
     <string name="vision_status">Vision: %1$s</string>
@@ -189,7 +189,7 @@
     <string name="ui_tracking_title">Precision in motion.</string>
     <string name="ui_tracking_screen_description">Tune your reach. See what tracking sees.</string>
     <string name="ui_gestures_title">Make movement useful.</string>
-    <string name="ui_gestures_screen_description">18 gestures, each with its own device action. New gestures start disabled until assigned.</string>
+    <string name="ui_gestures_screen_description">22 gestures, each with its own device action. New gestures start disabled until assigned.</string>
     <string name="ui_implemented">Available</string>
     <string name="ui_pointer_gestures">Pointer interaction</string>
     <string name="ui_pointer_gestures_description">Fingertip movement, tap and vertical scroll are supported by the current pointer engine. Start with actions disarmed to practice.</string>
@@ -300,8 +300,8 @@
     <string name="action_swipe_left">Swipe left</string>
     <string name="action_swipe_right">Swipe right</string>
     <string name="action_arm_motion">Arm one motion command</string>
-    <string name="mapping_l_shape">L Shape (experimental)</string>
-    <string name="mapping_thumb_index_middle">Thumb + Index + Middle (experimental)</string>
+    <string name="mapping_l_shape">Finger gun / L shape (experimental)</string>
+    <string name="mapping_thumb_index_middle">Double finger gun, any direction (experimental)</string>
     <string name="mapping_horns">Horns (experimental)</string>
     <string name="mapping_four_little_folded">Four / Little Folded (experimental)</string>
     <string name="mapping_three_outer_fingers">Three Outer Fingers (experimental)</string>
@@ -312,4 +312,16 @@
     <string name="action_focus_previous">Focus previous control</string>
     <string name="action_activate_focused">Activate focused control</string>
     <string name="motion_armed_help">Motion armed: hold still briefly, then move once. Expires in 3 seconds.</string>
+    <string name="pointer_clicking">Pointer clicking</string>
+    <string name="pointer_clicking_help">Thumb–middle contact taps the pointer target, independently of Gesture Commands.</string>
+    <string name="mapping_double_gun_left">Double finger gun left</string>
+    <string name="mapping_double_gun_right">Double finger gun right</string>
+    <string name="mapping_double_gun_up">Double finger gun up</string>
+    <string name="mapping_double_gun_down">Double finger gun down</string>
+    <string name="action_next_item">Next screen item</string>
+    <string name="action_previous_item">Previous screen item</string>
+    <string name="action_select_item">Select highlighted item</string>
+    <string name="gaze_lab">Gaze Lab (experimental)</string>
+    <string name="navigation_gesture_help">With pointer off, map Double finger gun Up/Down to Scroll Up/Down and Left/Right to Swipe Left/Right. Map distinct poses to Next screen item, Previous screen item and Select highlighted item. Yellow outlines mark exposed clickable controls. New poses are disabled until mapped; keep a neutral interval between commands.</string>
+    <string name="pose_gun_help">Extend thumb and index for Finger gun; extend thumb, index and middle for Double finger gun. Fold ring and little fingers. Direction follows the screen; avoid diagonals. Existing generic mappings remain unless a directional mapping is assigned.</string>
 </resources>
