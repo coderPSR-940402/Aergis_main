@@ -105,11 +105,6 @@ class MainActivity : ComponentActivity() {
         }.onFailure { android.widget.Toast.makeText(this, "Share failed: ${it.message}", android.widget.Toast.LENGTH_LONG).show() }
     }
 
-    // Setup asks only for permission. Starting capture remains an explicit Control action.
-    private val setupCameraPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { _ ->
-        refreshSettings()
-    }
-
     private val cameraPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) {
             refreshSettings()
@@ -117,6 +112,11 @@ class MainActivity : ComponentActivity() {
         } else {
             sessionStartError = getString(R.string.camera_permission_required)
         }
+    }
+
+    // Setup asks only for permission. Starting capture remains an explicit Control action.
+    private val setupCameraPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { _ ->
+        refreshSettings()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

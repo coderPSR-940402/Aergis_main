@@ -22,17 +22,18 @@ internal fun AergisShell(
     onEntering: (AergisDestination) -> Unit = {},
     content: @Composable (AergisDestination, (AergisDestination) -> Unit) -> Unit
 ) {
-    var routes by rememberSaveable { mutableStateOf(arrayListOf(initialDestination.name)) }
-    val navigation = ProductNavigation(routes)
+    // Keep a String saveable, compatible with the previous shell's selectedName state.
+    var routeNames by rememberSaveable { mutableStateOf(initialDestination.name) }
+    val navigation = ProductNavigation(routeNames.split('|'))
     val selected = navigation.current
     LaunchedEffect(Unit) { onEntering(selected) }
     val navigate: (AergisDestination) -> Unit = { destination ->
         if (destination != selected) {
             onEntering(destination)
-            routes = ArrayList(navigation.open(destination).routes)
+            routeNames = navigation.open(destination).routes.joinToString("|")
         }
     }
-    val back: () -> Unit = { routes = ArrayList(navigation.back().routes) }
+    val back: () -> Unit = { routeNames = navigation.back().routes.joinToString("|") }
     BackHandler(enabled = navigation.canGoBack || !selected.root) { back() }
     Scaffold(
         modifier = Modifier.fillMaxSize().safeDrawingPadding(),
