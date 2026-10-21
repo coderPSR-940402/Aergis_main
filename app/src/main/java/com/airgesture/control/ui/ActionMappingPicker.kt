@@ -1,88 +1,71 @@
 package com.airgesture.control.ui
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
+import android.os.Build
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Slider
-import android.os.Build
-import com.airgesture.control.GestureTuning
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
-import com.airgesture.control.AirAction
-import com.airgesture.control.GestureActionPolicy
-import com.airgesture.control.R
-import com.airgesture.control.RegisteredGesture
+import com.airgesture.control.*
 
-/** Draft selection is local: Back, outside-tap and Cancel never write preferences. */
+/** Local draft only: Cancel, outside tap and Back never write bindings or tuning. */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun ActionMappingPicker(
-    gestureName: String,
-    source: RegisteredGesture,
-    current: AirAction,
-    pointerEnabled: Boolean,
-    tuning: GestureTuning,
-    onSave: (AirAction, GestureTuning) -> Unit,
-    onDismiss: () -> Unit
+    gestureName: String, source: RegisteredGesture, current: AirAction, pointerEnabled: Boolean,
+    tuning: GestureTuning, onSave: (AirAction, GestureTuning) -> Unit, onDismiss: () -> Unit
 ) {
     var draftName by rememberSaveable(source.name, current.name) { mutableStateOf(current.name) }
-    var confidence by rememberSaveable(source.name) { mutableStateOf(tuning.confidencePercent.toFloat()) }
-    var volume by rememberSaveable(source.name) { mutableStateOf(tuning.volumeSteps.toFloat()) }
-    var scroll by rememberSaveable(source.name) { mutableStateOf(tuning.scrollPercent.toFloat()) }
-    var longPress by rememberSaveable(source.name) { mutableStateOf(tuning.longPressMs.toFloat()) }
+    var query by rememberSaveable(source.name) { mutableStateOf("") }
+    var confidence by rememberSaveable(source.name) { mutableFloatStateOf(tuning.confidencePercent.toFloat()) }
+    var volume by rememberSaveable(source.name) { mutableFloatStateOf(tuning.volumeSteps.toFloat()) }
+    var scroll by rememberSaveable(source.name) { mutableFloatStateOf(tuning.scrollPercent.toFloat()) }
+    var longPress by rememberSaveable(source.name) { mutableFloatStateOf(tuning.longPressMs.toFloat()) }
     val draft = AirAction.valueOf(draftName)
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.ui_mapping_picker_title, gestureName)) },
-        text = {
-            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(stringResource(R.string.ui_mapping_picker_help))
-                Column(Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState()).selectableGroup()) {
-                    AirAction.entries.filter { it.isUserMappable }.forEach { action ->
-                        val supported = Build.VERSION.SDK_INT >= action.minimumSdk
-                        val restricted = action != AirAction.NONE && !GestureActionPolicy.isClassifierActionEnabled(
-                            gesturesEnabled = true, action = action, pointerControlActive = pointerEnabled, gesture = source
-                        )
-                        Row(
-                            Modifier.fillMaxWidth().heightIn(min = 56.dp)
+    val rows = AirAction.entries.filter { it.isUserMappable }.map { it to actionLabel(it) }
+        .filter { (_, label) -> label.contains(query, ignoreCase = true) }
+    ModalBottomSheet(onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = AergisColors.Surface) {
+        Column(Modifier.fillMaxWidth().fillMaxHeight(.92f).imePadding()) {
+            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(gestureName, style = MaterialTheme.typography.headlineSmall)
+                Text(stringResource(R.string.product_map_intro), color = AergisColors.Muted)
+                OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth(),
+                    label = { Text(stringResource(R.string.product_search_actions)) }, singleLine = true)
+                Column(Modifier.fillMaxWidth().heightIn(max = 320.dp).verticalScroll(rememberScrollState()).selectableGroup()) {
+                    rows.groupBy { actionGroupRes(it.first) }.forEach { (group, actions) ->
+                        Text(stringResource(group), color = AergisColors.Purple, style = MaterialTheme.typography.labelMedium,
+                            modifier = Modifier.padding(vertical = 12.dp))
+                        actions.forEach { (action, label) ->
+                            val supported = Build.VERSION.SDK_INT >= action.minimumSdk
+                            val restricted = action != AirAction.NONE && !GestureActionPolicy.isClassifierActionEnabled(true, action, pointerEnabled, source)
+                            Row(Modifier.fillMaxWidth().heightIn(min = 56.dp)
                                 .selectable(selected = action == draft, role = Role.RadioButton, enabled = supported,
-                                    onClick = { draftName = action.name })
-                                .padding(vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            RadioButton(selected = action == draft, onClick = null, enabled = supported)
-                            Column(Modifier.weight(1f)) {
-                                Text(actionLabel(action), style = MaterialTheme.typography.bodyLarge)
-                                if (!supported) Text(stringResource(R.string.action_unavailable), color = AergisColors.Caution)
-                                if (restricted) Text(stringResource(R.string.ui_mapping_pointer_restriction),
-                                    color = AergisColors.Caution, style = MaterialTheme.typography.bodySmall)
+                                    onClick = { draftName = action.name }).padding(vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                RadioButton(selected = action == draft, onClick = null, enabled = supported)
+                                Column(Modifier.weight(1f)) {
+                                    Text(label, style = MaterialTheme.typography.bodyLarge)
+                                    if (!supported) Text(stringResource(R.string.action_unavailable), color = AergisColors.Caution)
+                                    if (restricted) Text(stringResource(R.string.ui_mapping_pointer_restriction), color = AergisColors.Caution,
+                                        style = MaterialTheme.typography.bodySmall)
+                                }
                             }
                         }
                     }
+                    if (rows.isEmpty()) Text(stringResource(R.string.product_no_matches), modifier = Modifier.padding(16.dp))
                 }
                 if (draft != AirAction.NONE) {
-                    Text(stringResource(R.string.gesture_tuning_title), style = MaterialTheme.typography.titleMedium)
-                    Text(stringResource(R.string.gesture_tuning_help))
                     if (!source.isLandmarkPose) TuningSlider(stringResource(R.string.tuning_confidence, confidence.toInt()), confidence, 65f..95f, 5) { confidence = it }
                     if (draft == AirAction.VOLUME_UP || draft == AirAction.VOLUME_DOWN)
                         TuningSlider(stringResource(R.string.tuning_volume, volume.toInt()), volume, 1f..5f, 3) { volume = it }
@@ -91,35 +74,44 @@ internal fun ActionMappingPicker(
                     if (draft == AirAction.LONG_PRESS)
                         TuningSlider(stringResource(R.string.tuning_long_press, longPress.toInt()), longPress, 500f..2000f, 14) { longPress = it }
                     if (draft in setOf(AirAction.MEDIA_PLAY_PAUSE, AirAction.MEDIA_NEXT, AirAction.MEDIA_PREVIOUS))
-                        Text(stringResource(R.string.action_media_help))
+                        Text(stringResource(R.string.action_media_help), color = AergisColors.Muted)
+                    if (!GestureActionPolicy.isClassifierActionEnabled(true, draft, pointerEnabled, source))
+                        Text(stringResource(R.string.product_saved_restricted), color = AergisColors.Caution)
                 }
-                TextButton(onClick = { draftName = source.defaultAction.name
-                    confidence = 65f; volume = 1f; scroll = 50f; longPress = 650f }, modifier = Modifier.heightIn(min = 48.dp)) {
-                    Text(stringResource(R.string.ui_mapping_restore_default))
+                TextButton(onClick = {
+                    val defaults = GestureTuning()
+                    draftName = source.defaultAction.name
+                    confidence = defaults.confidencePercent.toFloat(); volume = defaults.volumeSteps.toFloat()
+                    scroll = defaults.scrollPercent.toFloat(); longPress = defaults.longPressMs.toFloat()
+                }, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.ui_mapping_restore_default)) }
+            }
+            HorizontalDivider(color = AergisColors.Outline)
+            Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
+                AergisButton(onClick = { onSave(draft, tuning.copy(confidencePercent = confidence.toInt(), volumeSteps = volume.toInt(),
+                    scrollPercent = scroll.toInt(), longPressMs = longPress.toLong()).bounded()) },
+                    enabled = Build.VERSION.SDK_INT >= draft.minimumSdk, primary = true, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.ui_mapping_save))
                 }
-            }
-        },
-        confirmButton = {
-            TextButton(enabled = Build.VERSION.SDK_INT >= draft.minimumSdk,
-                onClick = { onSave(draft, tuning.copy(confidencePercent = confidence.toInt(),
-                    volumeSteps = volume.toInt(), scrollPercent = scroll.toInt(),
-                    longPressMs = longPress.toLong()).bounded()) }, modifier = Modifier.heightIn(min = 48.dp)) {
-                Text(stringResource(R.string.ui_mapping_save))
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) {
-                Text(stringResource(R.string.ui_mapping_cancel))
+                TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(stringResource(R.string.ui_mapping_cancel)) }
             }
         }
-    )
+    }
+}
+
+private fun actionGroupRes(action: AirAction): Int = when {
+    action == AirAction.NONE -> R.string.product_group_off
+    action == AirAction.ARM_MOTION -> R.string.product_group_motion
+    action.usesPointerTouch -> R.string.product_group_pointer
+    action in setOf(AirAction.APP_SEARCH, AirAction.WEB_SEARCH, AirAction.MEDIA_PLAY_PAUSE, AirAction.MEDIA_NEXT, AirAction.MEDIA_PREVIOUS) -> R.string.product_group_media
+    action in setOf(AirAction.VOLUME_UP, AirAction.VOLUME_DOWN, AirAction.SCREENSHOT, AirAction.LOCK_SCREEN,
+        AirAction.WIFI_CONTROLS, AirAction.BLUETOOTH_SETTINGS, AirAction.ROTATION_TOGGLE) -> R.string.product_group_device
+    else -> R.string.product_group_navigation
 }
 
 @Composable
-private fun TuningSlider(label: String, value: Float, range: ClosedFloatingPointRange<Float>, steps: Int,
-    change: (Float) -> Unit) {
-    Text(label, style = MaterialTheme.typography.bodyMedium)
-    Slider(value = value, onValueChange = change, valueRange = range, steps = steps)
+private fun TuningSlider(label: String, value: Float, range: ClosedFloatingPointRange<Float>, steps: Int, onChanged: (Float) -> Unit) {
+    Text(label, color = AergisColors.Muted)
+    Slider(value = value, onValueChange = onChanged, valueRange = range, steps = steps)
 }
 
 @Composable

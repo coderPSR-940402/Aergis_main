@@ -39,7 +39,7 @@ internal fun AergisPanel(
     val border by animateColorAsState(accent, tween(AergisMotion.StateMs, easing = AergisMotion.Easing), label = "panel state")
     Surface(
         modifier = modifier.fillMaxWidth(), shape = AergisShapes.Card,
-        color = AergisColors.Surface, border = BorderStroke(1.dp, border), tonalElevation = 3.dp, shadowElevation = 12.dp
+        color = AergisColors.Surface, border = BorderStroke(1.dp, border), tonalElevation = 3.dp, shadowElevation = 4.dp
     ) {
         Column(
             Modifier.background(
@@ -63,7 +63,7 @@ internal fun AergisButton(
     primary: Boolean = false,
     content: @Composable RowScope.() -> Unit
 ) {
-    val brush = if (primary && enabled) Brush.verticalGradient(listOf(AergisColors.SilverBright, AergisColors.Cyan, AergisColors.YellowDeep))
+    val brush = if (primary && enabled) Brush.verticalGradient(listOf(AergisColors.Yellow, AergisColors.YellowDeep))
         else Brush.verticalGradient(listOf(AergisColors.Raised, AergisColors.Surface))
     Button(
         onClick = onClick, enabled = enabled,

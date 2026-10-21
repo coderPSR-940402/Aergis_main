@@ -135,6 +135,9 @@ dependencies {
     implementation("com.google.mediapipe:tasks-vision:1.0.0")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
+    // Native Compose navigation and mapping-draft regression tests (no runtime dependency).
+    testImplementation("androidx.compose.ui:ui-test-junit4")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.robolectric:robolectric:4.17")
 }
