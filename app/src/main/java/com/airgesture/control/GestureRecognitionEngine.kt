@@ -139,6 +139,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 currentPixels = image
                 try { publishWithAge(result, timestamp, nowIn(source), image.rotationDegrees, frameAge()) }
                 finally { currentPixels = null }
+                com.airgesture.control.gaze.GazeLab.offer(image, timestamp, frameAge())
                 val publishEnd = SystemClock.uptimeMillis()
                 lastPipelineAgeMs = frameAge().coerceAtLeast(0L)
                 metrics.recordFrame(publishEnd, frameAgeAtStart, preEnd - preStart,
@@ -316,7 +317,12 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             }
         }
         if (handSelection != null) {
-            LandmarkGestureRecognizer.recognize(reusablePointsList, frameAspectRatio)?.let {
+            val directionalEnabled = RegisteredGesture.entries.any { it.isDirectionalGun && mappings.mapping(it) != AirAction.NONE }
+            val directional = if (directionalEnabled) LandmarkGestureRecognizer.recognizeDirectional(reusablePointsList, frameAspectRatio) else null
+            val custom = directional?.takeIf {
+                it.name == "Double_Gun_Ambiguous" || RegisteredGesture.fromSignal(it.name)?.let { pose -> mappings.mapping(pose) != AirAction.NONE } == true
+            } ?: LandmarkGestureRecognizer.recognize(reusablePointsList, frameAspectRatio)
+            custom?.let {
                 gestureName = it.name
                 gestureScore = it.score
             }
@@ -391,7 +397,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             CommandTrackingEligibility.isEligible(controlSafe, handSelection != null,
                 AirRuntime.pointerEnabled, indexTip != null,
                 if (selectedHand != null) poseEvidenceEvaluator.evaluatePointer(reusablePointsList, frameAspectRatio) else null)
-        diagnosticTrace?.put("pointerTouchAllowed", pointerTouchTracking && AirRuntime.gesturesEnabled)
+        diagnosticTrace?.put("pointerTouchAllowed", pointerTouchTracking && AirRuntime.pointerClickingEnabled)
         // A pause/resume or permission/owner change between frames must not preserve
         // an open/contact history and replay it in the new authority epoch.
         if (lastPointerActionEpoch != AirRuntime.actionEpoch) {
@@ -409,7 +415,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         var pinchInProgress = motionWasActive
         if (pointerActive && indexTip != null) {
             val dragging = AirAccessibilityService.instance?.precisionDragActive == true
-            val touchAllowed = pointerTouchTracking && AirRuntime.gesturesEnabled && !motionWasActive && !dragging && reacquireFrom == null
+            val touchAllowed = pointerTouchTracking && AirRuntime.pointerClickingEnabled && !motionWasActive && !dragging && reacquireFrom == null
             val processed = interpreter.processFrame(reusablePointsList, timestamp, actionsAllowed = touchAllowed, aspectRatio = frameAspectRatio) ?: run {
                 handlePointerGap(observedAtMs, pointerActive, landmarks.size <= 1,
                     "NON_FINITE_OR_MISSING_TIP", PointerFeedback.INVALID_TIP)
@@ -494,7 +500,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             // Recognition initiates one bounded tap. Release only rearms. The same
             // frame's pinch evidence excludes the classifier before its dispatch gate.
             if (touchAllowed && trusted && processed.isClickEngaged) {
-                AirAccessibilityService.instance?.dispatch(AirAction.TAP)
+                AirAccessibilityService.instance?.dispatchPointerTap()
             }
 
             // Pointer travel and held contact never dispatch scrolling or drag.
@@ -582,7 +588,8 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 tuning = gestureTuning,
                 actionEpoch = AirRuntime.actionEpoch,
                 evidenceValid = commandTracking,
-                confirmationReady = confirmedPose
+                confirmationReady = confirmedPose,
+                occurrenceSuppressed = pinchInProgress
             )
         )
         if (confirmedAction != null &&

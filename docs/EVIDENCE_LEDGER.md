@@ -520,3 +520,46 @@ tapping and recognizer arbitration, with explicit migration away from held touch
 **Decision:** Defer multi-screen prototype workflow recovery until the runtime safety and measurement boundaries are stronger.
 
 **Reason:** A UI that visually resembles the prototype but lacks authoritative runtime state would violate the directive's truthfulness and safety gates.
+
+
+## 2026-10-21 — PR #68 first-occurrence CI continuation
+
+Resumed source `b1f441835d02c86a5babc63db320834949fffd00` on existing
+`fix/device-gesture-pinch-regressions`; current main and CI build reference both
+resolve to `dcee550410730286ee0b543322c999ac13dd97b7`. No functional-baseline
+promotion: device acceptance remains separate.
+
+CI #294 (`39531411832`) ran 416 tests with 12 failures; CodeQL #283 passed.
+The prior handoff's anticipated run numbers were not completed verification.
+Eleven failing assertions retained the superseded startup/unconsumed-reset
+neutral requirement. Migrate those to the owner-approved contract: the first
+fresh valid occurrence is immediately eligible; invalid evidence cannot dispatch;
+consumed occurrences still require genuine confident neutral, including after
+reset, stale gaps, owner/epoch changes and tracking loss. A newly constructed
+engine starts a new first-occurrence session. This explicitly changes the old
+startup/recreation expectations; it is not evidence of physical-device accuracy.
+
+The remaining failure exposed actual pinch arbitration replay: `tracking=false`
+now preserves unconsumed readiness, so a competing static pose could dispatch
+when contact opens. Pass explicit pinch suppression to the transaction gate and
+consume that occurrence without output. Release alone cannot execute the
+suppressed static command; confident neutral then a new occurrence may execute.
+The existing engine-to-native pinch arbitration regression is retained unchanged.
+
+Verification before publication: the new pure-JVM pinch regression failed with
+unexpected BACK before the correction, then all 35 focused JVM tests passed;
+11 Python tooling tests passed; diff whitespace checks passed. Local Android
+Gradle bootstrap failed with `Network is unreachable` fetching its distribution;
+full Android tests, lint, debug/release packaging and verification remain CI gates.
+Final source/run/artifact evidence belongs in PR #68 after CI, avoiding another
+code-free CI cycle. No merge/release or baseline update is authorized.
+
+Scope: explicit static-command suppression during pointer pinch plus test-contract
+migration. Existing first-occurrence behavior, focus-action retirement and pointer
+release-anchor repair remain on this same PR. No CameraX/MediaPipe, pointer
+filtering/calibration, native dispatch or service lifecycle implementation changes.
+Device gate: first mapped pose with pointer disabled acts once immediately;
+maintained pose cannot repeat; neutral then new pose acts once; thumb-middle
+contact/release has no large pointer jump or delayed classifier action; fast
+separate contacts retain responsiveness. Install the final CI debug APK without
+clearing data and record exact build identity and misses/extras.

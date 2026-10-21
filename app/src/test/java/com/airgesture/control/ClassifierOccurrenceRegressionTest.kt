@@ -19,34 +19,36 @@ class ClassifierOccurrenceRegressionTest {
         assertNoCommands(gate, 1400L)
     }
 
-    @Test fun engineCreationRequiresNeutralBeforeAnyCommand() {
-        assertNoCommands(GestureTransactionStateMachine(), 0L)
+    @Test fun engineCreationAcceptsFirstCommandWithoutNeutralAndCannotRepeat() {
+        val gate = GestureTransactionStateMachine()
+        assertEquals(AirAction.BACK, gate.process(frame(AirAction.BACK, 0L)))
+        assertNoCommands(gate, 50L)
     }
 
-    @Test fun resetWhileReadyRequiresNewNeutral() {
+    @Test fun resetAfterDispatchRequiresNewNeutral() {
         val gate = GestureTransactionStateMachine()
-        neutral(gate, 0L)
+        primeAndFire(gate)
         gate.reset()
-        assertNoCommands(gate, 200L)
+        assertNoCommands(gate, 350L)
     }
 
-    @Test fun trackingLossWhileReadyRequiresNewNeutral() {
+    @Test fun trackingLossAfterDispatchRequiresNewNeutral() {
         val gate = GestureTransactionStateMachine()
-        neutral(gate, 0L)
-        gate.process(frame(AirAction.NONE, 150L).copy(tracking = false))
-        assertNoCommands(gate, 200L)
+        primeAndFire(gate)
+        gate.process(frame(AirAction.NONE, 300L).copy(tracking = false))
+        assertNoCommands(gate, 350L)
     }
 
-    @Test fun staleGapWhileReadyRequiresNewNeutral() {
+    @Test fun staleGapAfterDispatchRequiresNewNeutral() {
         val gate = GestureTransactionStateMachine()
-        neutral(gate, 0L)
+        primeAndFire(gate)
         assertNoCommands(gate, 1000L)
     }
 
-    @Test fun changedOwnerCannotInheritReadyState() {
+    @Test fun changedOwnerCannotReplayConsumedOccurrence() {
         val gate = GestureTransactionStateMachine()
-        neutral(gate, 0L)
-        for (t in 150L..650L step 50L) assertNull(gate.process(frame(AirAction.BACK, t).copy(ownershipId = "new")))
+        primeAndFire(gate)
+        for (t in 300L..800L step 50L) assertNull(gate.process(frame(AirAction.BACK, t).copy(ownershipId = "new")))
     }
 
     @Test fun acceptedRecognitionFiresWithoutSavedHoldDelay() {

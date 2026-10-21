@@ -52,9 +52,9 @@ class AppSearchActivity : Activity() {
     }
     internal fun control(action: AirAction): Boolean {
         when (action) {
-            AirAction.SCROLL_UP -> selected = (selected - 1).coerceAtLeast(0)
-            AirAction.SCROLL_DOWN -> selected = (selected + 1).coerceAtMost((shown.size - 1).coerceAtLeast(0))
-            AirAction.SWIPE_RIGHT -> { launchSelected(); return true }
+            AirAction.SCROLL_UP, AirAction.PREVIOUS_ITEM -> selected = (selected - 1).coerceAtLeast(0)
+            AirAction.SCROLL_DOWN, AirAction.NEXT_ITEM -> selected = (selected + 1).coerceAtMost((shown.size - 1).coerceAtLeast(0))
+            AirAction.SWIPE_RIGHT, AirAction.SELECT_ITEM -> { launchSelected(); return true }
             AirAction.SWIPE_LEFT -> { finish(); AirRuntime.recordActionDispatchOutcome(ActionDispatchOutcome.COMPLETED); return true }
             else -> return false
         }

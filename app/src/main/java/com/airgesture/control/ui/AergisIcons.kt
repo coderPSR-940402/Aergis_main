@@ -14,7 +14,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.semantics.clearAndSetSemantics
 
-internal enum class AergisGlyph { CONTROL, TRACKING, GESTURES, SETTINGS, POWER }
+internal enum class AergisGlyph { CONTROL, TRACKING, GESTURES, SETTINGS, POWER, POINTER, MOTION }
 
 @Composable
 internal fun AergisIcon(glyph: AergisGlyph, modifier: Modifier, color: Color = AergisColors.Cyan) {
@@ -53,6 +53,20 @@ internal fun AergisIcon(glyph: AergisGlyph, modifier: Modifier, color: Color = A
                     drawCircle(color, 2.6f, Offset(16f, 12f), style = stroke)
                     drawCircle(AergisColors.Surface, 2.6f, Offset(7f, 19f))
                     drawCircle(color, 2.6f, Offset(7f, 19f), style = stroke)
+                }
+                AergisGlyph.POINTER -> {
+                    val path = Path().apply { moveTo(5f, 3f); lineTo(20f, 13f); lineTo(12f, 14f); lineTo(9f, 21f); close() }
+                    drawPath(path, color, style = stroke)
+                }
+                AergisGlyph.MOTION -> {
+                    val path = Path().apply {
+                        moveTo(12f, 2f); lineTo(12f, 22f); moveTo(2f, 12f); lineTo(22f, 12f)
+                        moveTo(8f, 6f); lineTo(12f, 2f); lineTo(16f, 6f)
+                        moveTo(18f, 8f); lineTo(22f, 12f); lineTo(18f, 16f)
+                        moveTo(8f, 18f); lineTo(12f, 22f); lineTo(16f, 18f)
+                        moveTo(6f, 8f); lineTo(2f, 12f); lineTo(6f, 16f)
+                    }
+                    drawPath(path, color, style = stroke)
                 }
                 AergisGlyph.POWER -> {
                     drawArc(color, -55f, 290f, false, Offset(4f, 4f), Size(16f, 16f), style = stroke)

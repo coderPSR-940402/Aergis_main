@@ -19,8 +19,13 @@ enum class RegisteredGesture(val signalName: String, val defaultAction: AirActio
     HORNS("Horns", AirAction.NONE),
     FOUR_LITTLE_FOLDED("Four_Little_Folded", AirAction.NONE),
     THREE_OUTER_FINGERS("Three_Outer_Fingers", AirAction.NONE),
-    FOUR_INDEX_FOLDED("Four_Index_Folded", AirAction.NONE);
+    FOUR_INDEX_FOLDED("Four_Index_Folded", AirAction.NONE),
+    DOUBLE_GUN_LEFT("Double_Gun_Left", AirAction.NONE),
+    DOUBLE_GUN_RIGHT("Double_Gun_Right", AirAction.NONE),
+    DOUBLE_GUN_UP("Double_Gun_Up", AirAction.NONE),
+    DOUBLE_GUN_DOWN("Double_Gun_Down", AirAction.NONE);
 
+    val isDirectionalGun: Boolean get() = ordinal >= DOUBLE_GUN_LEFT.ordinal
     val isLandmarkPose: Boolean get() = ordinal >= OK.ordinal
 
     companion object {
@@ -32,6 +37,8 @@ enum class RegisteredGesture(val signalName: String, val defaultAction: AirActio
             "open hand" -> OPEN_PALM
             "fist" -> CLOSED_FIST
             "point" -> POINTING_UP
+            "finger_gun" -> L_SHAPE
+            "double_finger_gun" -> THUMB_INDEX_MIDDLE
             else -> null
         }
     }

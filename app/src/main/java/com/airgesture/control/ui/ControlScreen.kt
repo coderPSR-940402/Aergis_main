@@ -1,23 +1,11 @@
 package com.airgesture.control.ui
 
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
-import androidx.compose.ui.Alignment
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.clearAndSetSemantics
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.airgesture.control.*
@@ -27,185 +15,85 @@ import kotlinx.coroutines.flow.map
 
 @Composable
 internal fun ControlScreen(
-    accessibilityEnabled: Boolean,
-    pointerEnabled: Boolean,
-    gesturesEnabled: Boolean,
-    startError: String?,
-    onCapture: () -> Unit,
-    onArm: () -> Unit,
-    onAccessibility: () -> Unit,
-    onNavigate: (AergisDestination) -> Unit
+    accessibilityEnabled: Boolean, pointerEnabled: Boolean, pointerClickingEnabled: Boolean,
+    gesturesEnabled: Boolean, assignedCount: Int, startError: String?, onCapture: () -> Unit,
+    onArm: () -> Unit, onGestures: (Boolean) -> Unit, onNavigate: (AergisDestination) -> Unit
 ) {
+    // Avoid subscribing Home to per-frame pointer coordinates, evidence and counters.
     val flow = remember { AirRuntime.uiState.map { HomeUiState.from(it) }.distinctUntilChanged() }
-    val runtime by flow.collectAsStateWithLifecycle(initialValue = HomeUiState.from(AirRuntime.uiStateSnapshot()))
-    val status = runtime.status(accessibilityEnabled, pointerEnabled)
-    val statusText = stringResource(status.label())
-    val accent = status.color()
-    val modeText = stringResource(when {
-        !gesturesEnabled -> R.string.ui_actions_disabled
-        runtime.controlMode == ControlMode.PAUSED ||
-            (runtime.controlMode == ControlMode.ARMED && runtime.foregroundSafety != ForegroundSafety.SAFE) -> R.string.ui_actions_paused
-        runtime.controlMode == ControlMode.ARMED -> R.string.ui_actions_armed
-        else -> R.string.ui_actions_disarmed
-    })
-
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        item {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text(stringResource(R.string.ui_system_overview), style = MaterialTheme.typography.labelMedium, color = AergisColors.Muted)
-                AergisStatusChip(stringResource(if (runtime.running) R.string.ui_capture_on else R.string.ui_capture_off), if (runtime.running) AergisColors.Cyan else AergisColors.Muted)
-            }
-        }
-        item { AergisSection(stringResource(R.string.ui_control_title), stringResource(R.string.ui_control_description)) }
-        item {
-            AergisPanel(accent = accent.copy(alpha = .5f)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    ActivationEmblem(runtime.running, accent)
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(statusText, style = MaterialTheme.typography.titleMedium,
-                            modifier = Modifier.semantics { stateDescription = statusText })
-                        Text(stringResource(when (status) {
-                            HomeStatus.SETUP_REQUIRED -> R.string.ui_setup_description
-                            HomeStatus.IDLE -> R.string.ui_idle_description
-                            HomeStatus.ERROR -> R.string.ui_error_description
-                            HomeStatus.CAMERA_STARTING -> R.string.ui_camera_starting_description
-                            HomeStatus.VISION_STARTING -> R.string.ui_vision_starting_description
-                            HomeStatus.PAUSED -> R.string.ui_paused_description
-                            HomeStatus.POINTER_PAUSED -> R.string.ui_pointer_paused_description
-                            HomeStatus.TRACKING -> R.string.ui_tracking_description
-                            HomeStatus.SEARCHING -> R.string.ui_searching_description
-                        }), style = MaterialTheme.typography.bodyMedium, color = AergisColors.Muted)
-                    }
-                }
-                AergisButton(onCapture, modifier = Modifier.fillMaxWidth(), primary = true) {
-                    AergisIcon(AergisGlyph.POWER, Modifier.size(20.dp), AergisColors.Background)
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(if (runtime.running) R.string.stop_capture else R.string.start_capture))
-                }
-                AergisArmControl(
-                    armed = runtime.controlMode == ControlMode.ARMED,
-                    enabled = runtime.running,
-                    stateText = modeText, onClick = onArm
-                )
-                // Tracking and control authority are different facts and are shown as separate chips.
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    AergisStatusChip(statusText, accent)
-                    AergisStatusChip(modeText, if (gesturesEnabled && runtime.controlMode == ControlMode.ARMED) AergisColors.Success else AergisColors.Muted)
-                }
-                Text(stringResource(R.string.ui_capture_arm_explanation), color = AergisColors.Muted, style = MaterialTheme.typography.bodyMedium)
-            }
-        }
+    val home by flow.collectAsStateWithLifecycle(initialValue = HomeUiState.from(AirRuntime.uiStateSnapshot()))
+    val snapshot = AirRuntime.uiStateSnapshot().copy(running = home.running, cameraReady = home.cameraReady,
+        visionReady = home.visionReady, visionError = home.visionError, controlMode = home.controlMode,
+        foregroundSafety = home.foregroundSafety)
+    val shown = ProductSession.from(snapshot, accessibilityEnabled, gesturesEnabled, pointerEnabled, pointerClickingEnabled)
+    val armed = home.controlMode == ControlMode.ARMED
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        item { ProductHeading(R.string.product_control, R.string.product_kicker) }
         if (!accessibilityEnabled) item {
-            AergisPanel(accent = AergisColors.Caution.copy(alpha = .5f)) {
-                Text(stringResource(R.string.ui_setup_title), style = MaterialTheme.typography.titleMedium)
-                Text(stringResource(R.string.ui_setup_help), color = AergisColors.Muted, style = MaterialTheme.typography.bodyMedium)
-                AergisButton(onAccessibility, Modifier.fillMaxWidth()) { Text(stringResource(R.string.accessibility_settings)) }
+            AergisPanel(accent = AergisColors.Caution) {
+                Text(stringResource(R.string.product_setup_required), style = MaterialTheme.typography.titleMedium)
+                Text(stringResource(R.string.product_setup_required_help), color = AergisColors.Muted)
+                AergisButton({ onNavigate(AergisDestination.WELCOME) }, Modifier.fillMaxWidth()) { Text(stringResource(R.string.product_continue)) }
             }
         }
-        startError?.let { error -> item { ErrorPanel(stringResource(R.string.session_start_error_title), error) } }
-        if (runtime.running) runtime.visionError?.let { error -> item { ErrorPanel(stringResource(R.string.vision_error_title), error) } }
         item {
-            AergisPanel {
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween) {
-                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text(stringResource(R.string.ui_tracking_snapshot), style = MaterialTheme.typography.titleMedium)
-                        Text(stringResource(R.string.ui_live_description), style = MaterialTheme.typography.labelMedium, color = AergisColors.Muted)
-                    }
-                    AergisMotionTrace(if (status == HomeStatus.TRACKING) AergisColors.Cyan else AergisColors.Muted.copy(alpha = .6f),
-                        Modifier.size(72.dp, 28.dp))
+            AergisPanel(accent = AergisColors.Purple.copy(alpha = .5f)) {
+                AergisStatusChip(stringResource(shown.actions.label()), if (shown.actions == ProductActionState.ARMED) AergisColors.Yellow else AergisColors.Purple)
+                Text(stringResource(when {
+                    shown.actions == ProductActionState.ARMED -> R.string.product_hero_active
+                    home.running -> R.string.product_hero_ready
+                    else -> R.string.product_hero_stopped
+                }), style = MaterialTheme.typography.headlineMedium)
+                Text(stringResource(when {
+                    shown.actions == ProductActionState.ARMED -> R.string.product_hero_active_help
+                    home.running -> R.string.product_hero_ready_help
+                    else -> R.string.product_hero_stopped_help
+                }), color = AergisColors.Muted)
+                AergisButton(onArm, Modifier.fillMaxWidth(), enabled = shown.canToggleArm, primary = true) {
+                    Text(stringResource(if (armed) R.string.disarm_control else R.string.arm_control))
                 }
-                SnapshotRow(stringResource(R.string.ui_camera), stringResource(if (runtime.cameraReady) R.string.status_ready else R.string.status_not_active), runtime.cameraReady)
-                SnapshotRow(stringResource(R.string.ui_vision), stringResource(if (runtime.visionReady) R.string.status_ready else R.string.status_not_ready), runtime.visionReady)
-                SnapshotRow(stringResource(R.string.ui_hand), if (runtime.handsDetected > 0) runtime.handedness else stringResource(R.string.ui_no_hand), runtime.handsDetected > 0)
-                Text(stringResource(runtime.pointerFeedback.label()), color = AergisColors.Muted, style = MaterialTheme.typography.bodyMedium)
-                if (status == HomeStatus.PAUSED) Text(runtime.safetyReason, color = AergisColors.Caution, style = MaterialTheme.typography.bodyMedium)
+                AergisButton(onCapture, Modifier.fillMaxWidth()) {
+                    Text(stringResource(if (home.running) R.string.stop_capture else R.string.start_capture))
+                }
+                if (shown.actions == ProductActionState.PAUSED) Text(home.safetyReason, color = AergisColors.Caution)
+                startError?.let { Text(it, color = AergisColors.Error) }
+                home.visionError?.let { Text(it, color = AergisColors.Error) }
             }
         }
+        item { Text(stringResource(R.string.product_primary_inputs), style = MaterialTheme.typography.labelMedium, color = AergisColors.Muted) }
         item {
-            AergisSection(stringResource(R.string.ui_quick_access))
+            ProductLink(AergisDestination.GESTURES, stringResource(R.string.product_assigned_count, assignedCount, RegisteredGesture.entries.size), onNavigate)
+        }
+        item { ProductLink(AergisDestination.MOTION, stringResource(R.string.product_motion_path_help), onNavigate) }
+        item {
+            AergisPanel {
+                AergisSettingRow(stringResource(R.string.product_gestures), stringResource(R.string.product_gesture_switch_help), gesturesEnabled, onGestures)
+                ProductLink(AergisDestination.LEARN, stringResource(R.string.product_learn_help), onNavigate)
+            }
         }
         item {
             AergisPanel {
-                Shortcut(AergisDestination.LIVE, R.string.ui_live_shortcut, R.string.ui_live_shortcut_description, onNavigate)
-                Shortcut(AergisDestination.CONTROLS, R.string.ui_controls_shortcut, R.string.ui_controls_shortcut_description, onNavigate)
-                Shortcut(AergisDestination.MORE, R.string.ui_more_shortcut, R.string.ui_more_shortcut_description, onNavigate)
+                Text(stringResource(R.string.product_feedback_title), style = MaterialTheme.typography.titleSmall)
+                Text(stringResource(when {
+                    !home.running -> R.string.product_camera_off
+                    !home.cameraReady || !home.visionReady -> R.string.product_camera_starting
+                    home.handsDetected == 0 -> R.string.product_no_hand
+                    else -> R.string.product_hand_visible
+                }, home.handedness), color = AergisColors.Muted)
+                Text(stringResource(if (pointerEnabled) R.string.product_pointer_on_help else R.string.product_pointer_off_help), style = MaterialTheme.typography.bodySmall)
+                ProductLink(AergisDestination.LIVE, stringResource(R.string.product_live_help), onNavigate)
             }
         }
-        item { Text(stringResource(R.string.ui_preview_note), color = AergisColors.Muted, style = MaterialTheme.typography.bodySmall) }
+        item { ProductLink(AergisDestination.PRECISION, stringResource(R.string.product_precision_help), onNavigate) }
     }
 }
 
-@Composable
-private fun ActivationEmblem(active: Boolean, accent: Color) {
-    Box(Modifier.size(64.dp).clearAndSetSemantics {}, contentAlignment = Alignment.Center) {
-        Canvas(Modifier.fillMaxSize()) {
-            val center = Offset(size.width / 2, size.height / 2)
-            // Bounded layered rings create depth without blur or animated shader cost.
-            if (active) drawCircle(Brush.radialGradient(listOf(accent.copy(alpha = .26f), Color.Transparent), center, size.width / 2))
-            drawCircle(AergisColors.Deep.copy(alpha = .9f), size.width * .43f)
-            drawCircle(Brush.radialGradient(listOf(AergisColors.Raised, AergisColors.Deep), center, size.width * .43f), size.width * .43f)
-            drawCircle(accent.copy(alpha = .34f), size.width * .43f, style = Stroke(1.dp.toPx()))
-            drawCircle(AergisColors.SilverBright.copy(alpha = .72f), size.width * .34f, style = Stroke(1.dp.toPx()))
-        }
-        AergisIcon(AergisGlyph.POWER, Modifier.size(26.dp), accent)
-    }
-}
-
-@Composable
-private fun SnapshotRow(title: String, value: String, available: Boolean) {
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Text(title, style = MaterialTheme.typography.bodyMedium, color = AergisColors.Muted)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                androidx.compose.foundation.Canvas(Modifier.size(6.dp)) { drawCircle(if (available) AergisColors.Cyan else AergisColors.Outline) }
-                Text(value, style = MaterialTheme.typography.titleSmall, color = if (available) AergisColors.Text else AergisColors.Muted)
-            }
-        }
-    }
-}
-
-@Composable
-private fun Shortcut(destination: AergisDestination, title: Int, description: Int, navigate: (AergisDestination) -> Unit) {
-    AergisButton({ navigate(destination) }, Modifier.fillMaxWidth()) {
-        AergisIcon(destination.glyph, Modifier.size(24.dp), AergisColors.Violet)
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(stringResource(title), style = MaterialTheme.typography.titleSmall)
-            Text(stringResource(description), style = MaterialTheme.typography.bodyMedium, color = AergisColors.Muted)
-        }
-    }
-}
-
-@Composable
-private fun ErrorPanel(title: String, error: String) {
-    AergisPanel(accent = AergisColors.Error.copy(alpha = .5f)) {
-        Text(title, style = MaterialTheme.typography.titleMedium, color = AergisColors.Error)
-        Text(error, style = MaterialTheme.typography.bodyMedium)
-    }
-}
-
-private fun HomeStatus.label() = when (this) {
-    HomeStatus.SETUP_REQUIRED -> R.string.ui_setup_required
-    HomeStatus.IDLE -> R.string.ui_idle
-    HomeStatus.ERROR -> R.string.ui_needs_attention
-    HomeStatus.CAMERA_STARTING -> R.string.ui_camera_starting
-    HomeStatus.VISION_STARTING -> R.string.ui_vision_starting
-    HomeStatus.PAUSED -> R.string.ui_actions_paused
-    HomeStatus.POINTER_PAUSED -> R.string.ui_pointer_paused
-    HomeStatus.TRACKING -> R.string.ui_tracking_live
-    HomeStatus.SEARCHING -> R.string.ui_waiting_for_hand
-}
-
-private fun HomeStatus.color() = when (this) {
-    HomeStatus.TRACKING -> AergisColors.Cyan
-    HomeStatus.ERROR -> AergisColors.Error
-    HomeStatus.SETUP_REQUIRED, HomeStatus.PAUSED -> AergisColors.Caution
-    HomeStatus.CAMERA_STARTING, HomeStatus.VISION_STARTING -> AergisColors.Blue
-    else -> AergisColors.Muted
+internal fun ProductActionState.label(): Int = when (this) {
+    ProductActionState.STOPPED -> R.string.product_action_stopped
+    ProductActionState.DISABLED -> R.string.product_action_disabled
+    ProductActionState.DISARMED -> R.string.product_action_disarmed
+    ProductActionState.ARMED -> R.string.product_action_armed
+    ProductActionState.PAUSED -> R.string.product_action_paused
 }
 
 internal fun PointerFeedback.label() = when (this) {

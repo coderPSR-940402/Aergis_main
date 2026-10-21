@@ -4,6 +4,18 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class GestureTransactionStateMachineTest {
+    @Test fun firstValidOccurrenceDoesNotRequirePrimingNeutral() {
+        val gate = GestureTransactionStateMachine()
+        assertEquals(AirAction.BACK, gate.process(input(AirAction.BACK, 0L)))
+        assertEquals(GestureTransactionStateMachine.State.COOLDOWN, gate.currentState())
+    }
+
+    @Test fun resetBeforeFirstDispatchKeepsFirstOccurrenceEligible() {
+        val gate = GestureTransactionStateMachine()
+        gate.reset()
+        assertEquals(AirAction.BACK, gate.process(input(AirAction.BACK, 150L)))
+    }
+
     @Test fun recognitionHasNoHoldDelayAt15_30_60Fps() {
         for (fps in listOf(15, 30, 60)) {
             val gate = ready()
@@ -55,12 +67,10 @@ class GestureTransactionStateMachineTest {
         }
     }
 
-    @Test fun ownershipChangeRequiresItsOwnNeutralEvidence() {
+    @Test fun ownershipChangeWhileReadyDoesNotConsumeFirstOccurrence() {
         val gate = ready()
-        for (time in 150L..350L step 50L) assertNull(gate.process(input(AirAction.BACK, time, "left")))
-        gate.process(input(AirAction.NONE, 400L, "left"))
-        gate.process(input(AirAction.NONE, 500L, "left"))
-        assertEquals(AirAction.BACK, gate.process(input(AirAction.BACK, 550L, "left")))
+        assertEquals(AirAction.BACK, gate.process(input(AirAction.BACK, 150L, "left")))
+        for (time in 200L..350L step 50L) assertNull(gate.process(input(AirAction.BACK, time, "left")))
     }
 
     @Test fun staleGapCannotCompleteNeutralOrReplayCommand() {
@@ -82,12 +92,12 @@ class GestureTransactionStateMachineTest {
         assertEquals(AirAction.BACK, gate.process(input(AirAction.BACK, 1500L)))
     }
 
-    @Test fun invalidConfidenceOrUnknownOwnerCannotConfirmOrRelease() {
+    @Test fun invalidConfidenceDoesNotConsumeReadinessAndUnknownOwnerCannotFire() {
         for (confidence in listOf(Float.NaN, Float.POSITIVE_INFINITY, -.1f, 1.1f)) {
             val gate = GestureTransactionStateMachine()
             for (time in 0L..300L step 50L)
                 assertNull(gate.process(input(AirAction.NONE, time).copy(confidence = confidence)))
-            assertNull(gate.process(input(AirAction.BACK, 350L)))
+            assertEquals(AirAction.BACK, gate.process(input(AirAction.BACK, 350L)))
         }
         for (owner in listOf(null, "")) {
             val gate = ready()
@@ -96,12 +106,12 @@ class GestureTransactionStateMachineTest {
         }
     }
 
-    @Test fun duplicateAndOutOfOrderSamplesCannotAdvanceNeutralEvenAfterReset() {
+    @Test fun duplicateAndOutOfOrderSamplesCannotAdvanceStateOrBypassCooldown() {
         val gate = GestureTransactionStateMachine()
         gate.process(input(AirAction.NONE, 100L))
         repeat(10) { assertNull(gate.process(input(AirAction.NONE, 100L))) }
         gate.process(input(AirAction.NONE, 99L))
-        assertNull(gate.process(input(AirAction.BACK, 150L)))
+        assertEquals(AirAction.BACK, gate.process(input(AirAction.BACK, 150L)))
         gate.reset()
         gate.process(input(AirAction.NONE, 0L))
         gate.process(input(AirAction.NONE, 100L))
@@ -118,13 +128,11 @@ class GestureTransactionStateMachineTest {
         assertNull(gate.process(input(AirAction.HOME, 400L)))
     }
 
-    @Test fun runtimeEpochChangeBetweenFramesRequiresNeutral() {
+    @Test fun runtimeEpochChangeWhileReadyDoesNotConsumeFirstOccurrence() {
         val gate = ready()
-        for (time in 150L..350L step 50L)
+        assertEquals(AirAction.BACK, gate.process(input(AirAction.BACK, 150L).copy(actionEpoch = 2L)))
+        for (time in 200L..350L step 50L)
             assertNull(gate.process(input(AirAction.BACK, time).copy(actionEpoch = 2L)))
-        gate.process(input(AirAction.NONE, 400L).copy(actionEpoch = 2L))
-        gate.process(input(AirAction.NONE, 500L).copy(actionEpoch = 2L))
-        assertEquals(AirAction.BACK, gate.process(input(AirAction.BACK, 550L).copy(actionEpoch = 2L)))
     }
 
     @Test fun irregularCadenceAndDropoutCannotReplayOrCompleteRelease() {
@@ -142,6 +150,19 @@ class GestureTransactionStateMachineTest {
         assertNull(gate.process(input(AirAction.NONE, 150L).copy(gestureId = "THUMB_DOWN")))
         for (t in 200L..400L step 50L)
             assertNull(gate.process(input(AirAction.HOME, t).copy(gestureId = "THUMB_DOWN")))
+    }
+
+    @Test fun pinchSuppressionConsumesOccurrenceWithoutDispatchOrDelayedReplay() {
+        for (action in listOf(AirAction.BACK, AirAction.NONE)) {
+            val gate = GestureTransactionStateMachine()
+            assertNull(gate.process(input(action, 0L).copy(
+                tracking = false, occurrenceSuppressed = true)))
+            for (t in 50L..300L step 50L)
+                assertNull("Suppressed pose cannot fire on release", gate.process(input(AirAction.BACK, t)))
+            gate.process(input(AirAction.NONE, 350L))
+            gate.process(input(AirAction.NONE, 450L))
+            assertEquals(AirAction.BACK, gate.process(input(AirAction.BACK, 500L)))
+        }
     }
 
     private fun ready() = GestureTransactionStateMachine().also {
