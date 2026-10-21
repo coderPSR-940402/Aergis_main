@@ -14,7 +14,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.semantics.clearAndSetSemantics
 
-internal enum class AergisGlyph { CONTROL, TRACKING, GESTURES, SETTINGS, POWER, POINTER, MOTION }
+internal enum class AergisGlyph { CONTROL, TRACKING, GESTURES, SETTINGS, POWER, POINTER, MOTION, CAMERA, ARROW }
 
 @Composable
 internal fun AergisIcon(glyph: AergisGlyph, modifier: Modifier, color: Color = AergisColors.Cyan) {
@@ -22,6 +22,19 @@ internal fun AergisIcon(glyph: AergisGlyph, modifier: Modifier, color: Color = A
         scale(size.width / 24f, size.height / 24f, pivot = Offset.Zero) {
             val stroke = Stroke(1.7f, cap = StrokeCap.Round, join = StrokeJoin.Round)
             when (glyph) {
+                AergisGlyph.ARROW -> {
+                    drawLine(color, Offset(4f, 12f), Offset(20f, 12f), 1.5f, StrokeCap.Round)
+                    val path = Path().apply { moveTo(14f, 6f); lineTo(20f, 12f); lineTo(14f, 18f) }
+                    drawPath(path, color, style = stroke)
+                }
+                AergisGlyph.CAMERA -> {
+                    val path = Path().apply {
+                        moveTo(3f, 7f); lineTo(8f, 7f); lineTo(10f, 4f); lineTo(16f, 4f)
+                        lineTo(18f, 7f); lineTo(21f, 7f); lineTo(21f, 20f); lineTo(3f, 20f); close()
+                    }
+                    drawPath(path, color, style = stroke)
+                    drawCircle(color, 4f, Offset(12f, 13f), style = stroke)
+                }
                 AergisGlyph.CONTROL -> {
                     drawCircle(color, 8.5f, Offset(12f, 12f), style = stroke)
                     drawCircle(color, 3f, Offset(12f, 12f), style = stroke)
@@ -81,15 +94,11 @@ internal fun AergisIcon(glyph: AergisGlyph, modifier: Modifier, color: Color = A
 internal fun AergisMark(modifier: Modifier) {
     Canvas(modifier.clearAndSetSemantics {}) {
         val path = Path().apply {
-            moveTo(size.width * .12f, size.height * .82f)
-            lineTo(size.width * .50f, size.height * .13f)
-            lineTo(size.width * .88f, size.height * .82f)
-            lineTo(size.width * .65f, size.height * .82f)
-            lineTo(size.width * .50f, size.height * .55f)
-            lineTo(size.width * .35f, size.height * .82f)
-            close()
+            moveTo(size.width * .15f, size.height * .88f)
+            lineTo(size.width * .49f, size.height * .12f)
+            lineTo(size.width * .82f, size.height * .88f)
         }
-        drawPath(path, Brush.linearGradient(listOf(AergisColors.Cyan, AergisColors.Blue, AergisColors.Violet)),
-            style = Stroke(size.width * .065f, join = StrokeJoin.Round))
+        drawPath(path, Brush.linearGradient(listOf(AergisColors.Yellow, AergisColors.SilverBright, AergisColors.Yellow)),
+            style = Stroke(size.width * .075f, cap = StrokeCap.Round, join = StrokeJoin.Round))
     }
 }

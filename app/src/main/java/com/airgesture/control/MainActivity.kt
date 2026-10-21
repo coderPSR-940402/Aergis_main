@@ -429,9 +429,9 @@ class MainActivity : ComponentActivity() {
                 (filter == 0 || (filter == 1) == (mapping(gesture, mappingsVersion) != AirAction.NONE))
         }
         LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(20.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            verticalArrangement = Arrangement.spacedBy(8.dp)) {
             item { ProductHeading(R.string.product_gestures) }
-            item { Text(stringResource(R.string.product_gesture_path_help), color = AergisColors.Muted) }
+            item { GestureLibraryIntro() }
             item { Text(stringResource(R.string.navigation_gesture_help), color = AergisColors.Muted) }
             item { ProductLink(AergisDestination.LEARN, stringResource(R.string.product_learn_help), navigate) }
             item { androidx.compose.material3.OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth(),
@@ -677,15 +677,10 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun MappingRow(source: RegisteredGesture, onEdit: (RegisteredGesture) -> Unit) {
         val current = mapping(source, mappingsVersion)
-        AergisPanel {
-            Text(stringResource(gestureLabelRes(source)), style = MaterialTheme.typography.titleMedium)
-            Text(stringResource(gestureHelpRes(source)), color = AergisColors.Muted, style = MaterialTheme.typography.bodySmall)
-            AergisButton({ onEdit(source) }, Modifier.fillMaxWidth()) {
-                Text(stringResource(R.string.ui_change_mapping, actionLabel(current)))
-            }
-            if (current != AirAction.NONE && !GestureActionPolicy.isClassifierActionEnabled(true, current, pointerEnabled, source)) {
-                Text(stringResource(R.string.ui_mapping_pointer_restriction), color = AergisColors.Caution, style = MaterialTheme.typography.bodyMedium)
-            }
-        }
+        val restriction = if (current != AirAction.NONE &&
+            !GestureActionPolicy.isClassifierActionEnabled(true, current, pointerEnabled, source))
+            stringResource(R.string.ui_mapping_pointer_restriction) else null
+        GestureMappingRow(source, stringResource(gestureLabelRes(source)), actionLabel(current),
+            stringResource(gestureHelpRes(source)), restriction) { onEdit(source) }
     }
 }

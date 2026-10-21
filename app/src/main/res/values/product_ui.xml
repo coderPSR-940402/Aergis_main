@@ -15,7 +15,7 @@
     <string name="product_diagnostics">Diagnostics</string>
     <string name="product_advanced">Advanced diagnostics</string>
     <string name="product_about">About Aergis</string>
-    <string name="product_touchless">TOUCHLESS CONTROL</string>
+    <string name="product_touchless">CONTROL, NATURALLY.</string>
     <string name="product_back">← Back</string>
     <string name="product_kicker">YOUR HANDS. YOUR ANDROID.</string>
     <string name="product_hero_ready">Ready when you are.</string>
@@ -24,7 +24,7 @@
     <string name="product_hero_ready_help">The camera can run while device actions stay disarmed. Choose when to arm.</string>
     <string name="product_hero_active_help">Use a mapped pose or a deliberately armed hand movement.</string>
     <string name="product_hero_stopped_help">Start the camera, then choose when device actions can run.</string>
-    <string name="product_primary_inputs">TOUCHLESS CONTROL</string>
+    <string name="product_primary_inputs">CONTROL, NATURALLY.</string>
     <string name="product_gesture_path_help">One pose. One action. Make the controls feel like yours.</string>
     <string name="product_motion_path_help">Pose, settle, then move in a direction. No pointer required.</string>
     <string name="product_precision_help">Optional pointing, pinch clicking and reach calibration.</string>
@@ -115,4 +115,15 @@ A gesture away.</string>
 ← Swipe left    → Swipe right</string>
     <string name="product_practice_enable_pointer">Enable the pointer in Precision tools to check its live reach.</string>
     <string name="product_rehearsal_not_disarmed">Device actions are not disarmed. Disarm before rehearsing.</string>
+    <string name="refined_everyday">YOUR EVERYDAY, REIMAGINED</string>
+    <string name="refined_home_title">Make your\nnext move.</string>
+    <string name="refined_instrument_code">A—01</string>
+    <string name="refined_hand_caption">Your hand. A more natural controller.</string>
+    <string name="refined_safety_caption">Camera on does not mean actions armed.</string>
+    <string name="refined_disarm_caption">Disarm at any time. Camera capture stays separate.</string>
+    <string name="refined_motion_caption">A deliberate move. A clear direction.</string>
+    <string name="refined_gesture_number">01 / POSES</string>
+    <string name="refined_motion_number">02 / DIRECTION</string>
+    <string name="refined_possibilities">possibilities.</string>
+    <string name="refined_language">A language that is yours.</string>
 </resources>

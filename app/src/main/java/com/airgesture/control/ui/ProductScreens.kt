@@ -45,14 +45,19 @@ internal fun ProductPage(title: Int, content: @Composable ColumnScope.() -> Unit
 @Composable
 internal fun ProductLink(destination: AergisDestination, description: String,
     onNavigate: (AergisDestination) -> Unit) {
-    OutlinedButton(onClick = { onNavigate(destination) }, shape = AergisShapes.Control,
-        modifier = Modifier.fillMaxWidth().heightIn(min = 72.dp),
-        contentPadding = PaddingValues(16.dp)) {
-        AergisIcon(destination.glyph, Modifier.size(24.dp), AergisColors.Purple)
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-            Text(stringResource(destination.label), style = MaterialTheme.typography.titleSmall, color = AergisColors.Text)
-            Text(description, style = MaterialTheme.typography.bodySmall, color = AergisColors.Muted)
+    Surface(onClick = { onNavigate(destination) }, color = androidx.compose.ui.graphics.Color.Transparent,
+        shape = AergisShapes.Control, modifier = Modifier.fillMaxWidth()) {
+        Column {
+            Row(Modifier.fillMaxWidth().heightIn(min = 76.dp).padding(vertical = 16.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                AergisIcon(destination.glyph, Modifier.size(22.dp), AergisColors.Purple)
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Text(stringResource(destination.label), style = MaterialTheme.typography.titleSmall)
+                    Text(description, style = MaterialTheme.typography.bodySmall, color = AergisColors.Muted)
+                }
+                AergisIcon(AergisGlyph.ARROW, Modifier.size(18.dp), AergisColors.Muted)
+            }
+            HorizontalDivider(color = AergisColors.Outline.copy(alpha = .5f))
         }
     }
 }
@@ -121,7 +126,7 @@ internal fun MotionScreen(entryGestures: List<RegisteredGesture>, onChoose: () -
     onNavigate: (AergisDestination) -> Unit) {
     ProductPage(R.string.product_motion) {
         AergisSection(stringResource(R.string.product_motion_title))
-        AergisIcon(AergisGlyph.MOTION, Modifier.align(Alignment.CenterHorizontally).size(90.dp), AergisColors.Purple)
+        DirectionInstrument(Modifier.fillMaxWidth().height(230.dp))
         Text(stringResource(R.string.product_motion_direction_help), modifier = Modifier.align(Alignment.CenterHorizontally), color = AergisColors.Purple)
         AergisPanel {
             MotionInstructions()
@@ -154,7 +159,7 @@ internal fun MotionWalkthrough(onNavigate: (AergisDestination) -> Unit) {
     val descriptions = listOf(R.string.product_motion_step1_help, R.string.product_motion_step2_help, R.string.product_motion_step3_help)
     ProductPage(R.string.product_motion_practice) {
         RehearsalStatus()
-        AergisIcon(AergisGlyph.MOTION, Modifier.align(Alignment.CenterHorizontally).size(120.dp), AergisColors.Purple)
+        DirectionInstrument(Modifier.fillMaxWidth().height(230.dp))
         AergisSection(stringResource(titles[step]), stringResource(descriptions[step]))
         Text(stringResource(R.string.product_motion_walkthrough_note), color = AergisColors.Muted)
         AergisButton({ if (step < 2) step++ else onNavigate(AergisDestination.CONTROL) }, Modifier.fillMaxWidth(), primary = true) {
@@ -187,61 +192,10 @@ internal fun LearnGesturesScreen(mapping: (RegisteredGesture) -> AirAction,
     }
 }
 
-/** Decorative pose guide. Labels and the existing pose instructions carry the semantics. */
+/** Decorative pose artwork; written pose instructions remain the authoritative guide. */
 @Composable
 private fun GestureIllustration(gesture: RegisteredGesture) {
-    val extended = when (gesture) {
-        RegisteredGesture.VICTORY -> setOf(0, 1)
-        RegisteredGesture.CLOSED_FIST, RegisteredGesture.THUMB_UP, RegisteredGesture.THUMB_DOWN -> emptySet()
-        RegisteredGesture.POINTING_UP, RegisteredGesture.L_SHAPE -> setOf(0)
-        RegisteredGesture.PINKY_ONLY, RegisteredGesture.SHAKA -> setOf(3)
-        RegisteredGesture.I_LOVE_YOU, RegisteredGesture.HORNS -> setOf(0, 3)
-        RegisteredGesture.THREE_FINGERS -> setOf(0, 1, 2)
-        RegisteredGesture.OK, RegisteredGesture.THREE_OUTER_FINGERS, RegisteredGesture.FOUR_INDEX_FOLDED -> setOf(1, 2, 3)
-        RegisteredGesture.THUMB_INDEX_MIDDLE, RegisteredGesture.DOUBLE_GUN_LEFT, RegisteredGesture.DOUBLE_GUN_RIGHT,
-        RegisteredGesture.DOUBLE_GUN_UP, RegisteredGesture.DOUBLE_GUN_DOWN -> setOf(0, 1)
-        RegisteredGesture.FOUR_LITTLE_FOLDED -> setOf(0, 1, 2)
-        else -> setOf(0, 1, 2, 3)
-    }
-    Canvas(Modifier.fillMaxWidth().height(160.dp).clearAndSetSemantics {}) {
-        val unit = size.height / 120f
-        val left = size.width / 2f - unit * 30f
-        fun p(x: Float, y: Float) = Offset(left + x * unit, y * unit)
-        val color = AergisColors.Purple
-        val palm = Path().apply {
-            moveTo(p(5f, 62f).x, p(5f, 62f).y)
-            lineTo(p(5f, 82f).x, p(5f, 82f).y)
-            cubicTo(p(5f, 112f).x, p(5f, 112f).y, p(60f, 112f).x, p(60f, 112f).y, p(60f, 82f).x, p(60f, 82f).y)
-            lineTo(p(60f, 62f).x, p(60f, 62f).y)
-        }
-        val rotation = when (gesture) {
-            RegisteredGesture.DOUBLE_GUN_LEFT -> -90f
-            RegisteredGesture.DOUBLE_GUN_RIGHT -> 90f
-            RegisteredGesture.DOUBLE_GUN_DOWN -> 180f
-            else -> 0f
-        }
-        rotate(rotation, p(30f, 65f)) {
-        drawPath(palm, color.copy(alpha = .12f))
-        drawPath(palm, color, style = Stroke(2f * unit))
-        for (finger in 0..3) {
-            val x = 13f + finger * 13f
-            val y = if (finger in extended) listOf(29f, 15f, 24f, 42f)[finger] else 55f
-            drawLine(color, p(x, 67f), p(x, y), unit * 8, StrokeCap.Round)
-        }
-        val thumb = when (gesture) {
-            RegisteredGesture.THUMB_UP -> p(-3f, 25f)
-            RegisteredGesture.THUMB_DOWN -> p(-3f, 112f)
-            RegisteredGesture.OPEN_PALM, RegisteredGesture.I_LOVE_YOU, RegisteredGesture.SHAKA,
-            RegisteredGesture.L_SHAPE, RegisteredGesture.THUMB_INDEX_MIDDLE,
-            RegisteredGesture.FOUR_LITTLE_FOLDED, RegisteredGesture.FOUR_INDEX_FOLDED,
-            RegisteredGesture.DOUBLE_GUN_LEFT, RegisteredGesture.DOUBLE_GUN_RIGHT,
-            RegisteredGesture.DOUBLE_GUN_UP, RegisteredGesture.DOUBLE_GUN_DOWN -> p(-10f, 58f)
-            else -> p(30f, 75f)
-        }
-        drawLine(color, p(8f, 83f), thumb, unit * 8, StrokeCap.Round)
-        drawCircle(AergisColors.Yellow, 3f * unit, p(31f, 84f))
-        }
-    }
+    SculptedHand(gesture, Modifier.fillMaxWidth().height(210.dp))
 }
 
 /** Four native corner indicators around the existing raw-pointer preview; no coordinate logic. */

@@ -39,7 +39,14 @@ internal fun ActionMappingPicker(
         Column(Modifier.fillMaxWidth().fillMaxHeight(.92f).imePadding()) {
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(gestureName, style = MaterialTheme.typography.headlineSmall)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    SculptedHand(source, Modifier.size(72.dp))
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        ProductEyebrow(stringResource(R.string.product_assign_pose))
+                        Text(gestureName, style = MaterialTheme.typography.headlineSmall)
+                    }
+                }
                 Text(stringResource(R.string.product_map_intro), color = AergisColors.Muted)
                 OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth(),
                     label = { Text(stringResource(R.string.product_search_actions)) }, singleLine = true)
