@@ -1,5 +1,6 @@
 package com.airgesture.control
 
+import kotlin.math.hypot
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -54,6 +55,38 @@ class PointerPinchControllerTest {
         assertEquals(p(0.6f, 0.7f), controller.update(p(0.6f, 0.7f), false, false, 280L).point)
     }
 
+    @Test fun largeReleaseRefitCannotJumpAwayFromTheClickAnchor() {
+        val controller = PointerPinchController()
+        val anchor = p(.4f, .5f)
+        controller.update(anchor, false, false, 1L)
+        controller.update(p(.5f, .6f), true, true, 100L)
+        assertEquals(anchor, controller.update(p(.9f, .1f), false, false, 200L).point)
+        assertEquals("A false-open burst must keep the exact visible target", anchor,
+            controller.update(p(.9f, .1f), false, false, 300L).point)
+        assertEquals("Re-contact during the guard must reacquire the same target", anchor,
+            controller.update(p(.9f, .1f), true, true, 310L).point)
+    }
+
+    @Test fun sustainedLargeReleaseRecoversInBoundedSteps() {
+        val controller = PointerPinchController()
+        val anchor = p(.4f, .5f)
+        val candidate = p(.9f, .1f)
+        controller.update(anchor, false, false, 1L)
+        controller.update(p(.5f, .6f), true, true, 100L)
+        controller.update(candidate, false, false, 200L)
+        controller.update(candidate, false, false, 300L)
+        var previous = anchor
+        var timestamp = 340L
+        repeat(20) {
+            val next = controller.update(candidate, false, false, timestamp).point
+            assertTrue("Release recovery step must stay bounded", distance(previous, next) <= .0401f)
+            previous = next
+            timestamp += 40L
+        }
+        assertEquals(candidate.x, previous.x, .0001f)
+        assertEquals(candidate.y, previous.y, .0001f)
+    }
+
     @Test fun cancellationCannotReuseAnOldHeldTarget() {
         val controller = PointerPinchController()
         controller.update(p(0.4f, 0.5f), false, false, 1L)
@@ -97,4 +130,6 @@ class PointerPinchControllerTest {
     }
 
     private fun p(x: Float, y: Float) = PointerCoordinateMapper.Point(x, y)
+    private fun distance(a: PointerCoordinateMapper.Point, b: PointerCoordinateMapper.Point): Float =
+        hypot(a.x - b.x, a.y - b.y)
 }

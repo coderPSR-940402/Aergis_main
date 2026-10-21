@@ -30,29 +30,4 @@ class BoundedPinchContractTest {
         assertFalse(gate.processFrame(.1f, 16L))
         assertFalse(gate.processFrame(.8f, 150L))
     }
-
-    @Test fun briefSeparationSpikeCannotUnlockTheFrozenPinchTarget() {
-        val gate = ClickHysteresisStateMachine()
-        assertFalse(gate.processFrame(.8f, 0L))
-        assertTrue(gate.processFrame(.1f, 100L))
-        assertTrue(gate.isPointerLocked)
-
-        assertFalse(gate.processFrame(.8f, 200L))
-        assertTrue("One noisy separation sample must not release the pointer anchor", gate.isPointerLocked)
-        assertFalse(gate.processFrame(.1f, 233L))
-        assertTrue(gate.isPointerLocked)
-    }
-
-    @Test fun sustainedSeparationReleasesAndRearmsNormally() {
-        val gate = ClickHysteresisStateMachine()
-        gate.processFrame(.8f, 0L)
-        assertTrue(gate.processFrame(.1f, 100L))
-
-        assertFalse(gate.processFrame(.8f, 200L))
-        assertTrue(gate.isPointerLocked)
-        assertFalse(gate.processFrame(.8f, 260L))
-        assertFalse("Sustained separation must release the pointer anchor", gate.isPointerLocked)
-
-        assertTrue("A fresh contact after release must click once", gate.processFrame(.1f, 360L))
-    }
 }

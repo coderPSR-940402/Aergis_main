@@ -5,8 +5,7 @@ class ClickHysteresisStateMachine(
     private val engageThreshold: Float = 0.18f,
     private val releaseThreshold: Float = 0.32f,
     private val confirmationMs: Long = 40L,
-    private val refractoryPeriodMs: Long = 110L,
-    private val releaseConfirmationMs: Long = 50L
+    private val refractoryPeriodMs: Long = 110L
 ) {
     enum class State { IDLE, ENGAGING, CLICKED, REFRACTORY }
 
@@ -14,7 +13,6 @@ class ClickHysteresisStateMachine(
     private var observedOpen = false
     private var contactSince: Long? = null
     private var contactSampleIntervalMs = 0L
-    private var releaseSince: Long? = null
     private var lastClickAt: Long? = null
     private var lastTimestampMs: Long? = null
 
@@ -32,21 +30,13 @@ class ClickHysteresisStateMachine(
         val coolingDown = lastClickAt?.let { timestampMs - it < refractoryPeriodMs } ?: false
 
         if (dNorm >= releaseThreshold) {
-            // Once contact acquisition has started, do not unlock the pointer from one
-            // noisy scale/depth sample. Require sustained separation before releasing
-            // the frozen target. Startup/open-hand acquisition remains immediate.
-            if (currentState == State.ENGAGING || currentState == State.CLICKED) {
-                val start = releaseSince ?: timestampMs.also { releaseSince = it }
-                if (timestampMs - start < releaseConfirmationMs) return false
-            }
-            releaseSince = null
+            // Release is evidence for the next occurrence, never an output command.
             observedOpen = true
             contactSince = null
             contactSampleIntervalMs = 0L
             currentState = if (coolingDown) State.REFRACTORY else State.IDLE
             return false
         }
-        releaseSince = null
         if (currentState == State.CLICKED) return false
         if (!observedOpen || coolingDown) return false
 
@@ -77,10 +67,9 @@ class ClickHysteresisStateMachine(
         currentState = State.IDLE
         observedOpen = false
         contactSince = null
-        contactSampleIntervalMs = 0L
-        releaseSince = null
         lastClickAt = null
         lastTimestampMs = null
+        contactSampleIntervalMs = 0L
     }
 
     private companion object { const val MAX_GAP_MS = 350L }
