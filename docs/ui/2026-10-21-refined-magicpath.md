@@ -32,3 +32,7 @@ Three new screenshot captures timed out in PixelCopy after interaction assertion
 passed. Use the existing native-graphics bitmap-draw approach for actual view capture;
 retain all interaction assertions. Full-screen Control capture also includes the
 real shell/navigation. Android CI rerun required; no device acceptance claimed.
+
+Author review: preserve Disarm priority even when capture stops while control mode
+still reports ARMED. The camera key can restart capture separately. Added an explicit
+regression for this transient/error state; no engine or session-state logic changes.

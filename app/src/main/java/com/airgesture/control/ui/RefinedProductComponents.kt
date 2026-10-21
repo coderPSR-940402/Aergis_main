@@ -52,11 +52,11 @@ internal fun ControlCommandCenter(
         Text(stringResource(if (running) R.string.refined_hand_caption else R.string.product_hero_stopped_help),
             style = MaterialTheme.typography.bodySmall, color = AergisColors.Muted,
             modifier = Modifier.align(Alignment.CenterHorizontally))
-        AergisButton(onClick = if (running) onArm else onCapture,
-            enabled = !running || canToggleArm, primary = true, modifier = Modifier.fillMaxWidth()) {
-            Text(stringResource(if (!running) R.string.start_capture else if (armed) R.string.disarm_control else R.string.arm_control),
+        AergisButton(onClick = if (running || armed) onArm else onCapture,
+            enabled = armed || !running || canToggleArm, primary = true, modifier = Modifier.fillMaxWidth()) {
+            Text(stringResource(if (armed) R.string.disarm_control else if (!running) R.string.start_capture else R.string.arm_control),
                 modifier = Modifier.weight(1f))
-            AergisIcon(if (armed && running) AergisGlyph.POWER else AergisGlyph.ARROW, Modifier.size(20.dp), AergisColors.Background)
+            AergisIcon(if (armed) AergisGlyph.POWER else AergisGlyph.ARROW, Modifier.size(20.dp), AergisColors.Background)
         }
         Text(stringResource(if (armed) R.string.refined_disarm_caption else R.string.refined_safety_caption),
             style = MaterialTheme.typography.bodySmall, color = AergisColors.Muted)

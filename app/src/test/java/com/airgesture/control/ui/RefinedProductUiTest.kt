@@ -63,6 +63,20 @@ class RefinedProductUiTest {
         compose.runOnIdle { assertEquals(1, captures); assertEquals(1, arms) }
     }
 
+    @Test fun stoppedCameraCannotHideDisarmForAnArmedMode() {
+        var captures = 0
+        var arms = 0
+        compose.setContent {
+            PreviewSurface {
+                ControlCommandCenter(false, true, true, ProductActionState.STOPPED,
+                    { captures++ }, { arms++ })
+            }
+        }
+        compose.onNodeWithText("Disarm control").assertIsEnabled().performClick()
+        compose.runOnIdle { assertEquals(1, arms); assertEquals(0, captures) }
+        compose.onNodeWithContentDescription("Start capture").assertIsDisplayed()
+    }
+
     @Test fun largeTextNarrowLayoutKeepsPrimaryAndInputDestinationsReachable() {
         var route: AergisDestination? = null
         compose.setContent {
