@@ -26,3 +26,9 @@ Risks: layout at large font/landscape and Canvas API compilation; CI + native te
 are the verification gate. No changes to tracking, MediaPipe, CameraX, accessibility
 execution, filters, calibration math/storage, gesture recognition or service lifecycle.
 No new runtime dependency. Author self-review honors the no-subagents instruction.
+
+Verification progress: CI #305 compiled production and test code and ran 455 tests.
+Three new screenshot captures timed out in PixelCopy after interaction assertions
+passed. Use the existing native-graphics bitmap-draw approach for actual view capture;
+retain all interaction assertions. Full-screen Control capture also includes the
+real shell/navigation. Android CI rerun required; no device acceptance claimed.

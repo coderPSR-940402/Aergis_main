@@ -8,12 +8,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
+import com.airgesture.control.AirRuntime
+import com.airgesture.control.ControlMode
 import com.airgesture.control.RegisteredGesture
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -33,10 +34,13 @@ class RefinedProductUiTest {
     @Test fun stoppedPrimaryStartsCaptureWithoutArming() {
         var captures = 0
         var arms = 0
+        AirRuntime.running = false
+        AirRuntime.controlMode = ControlMode.READY
         compose.setContent {
-            PreviewSurface {
-                ControlCommandCenter(false, false, false, ProductActionState.STOPPED,
-                    { captures++ }, { arms++ })
+            AergisTheme {
+                AergisShell(true) { _, navigate ->
+                    ControlScreen(true, false, false, true, 5, null, { captures++ }, { arms++ }, {}, navigate)
+                }
             }
         }
         compose.onNodeWithText("Start capture").performClick()
@@ -98,10 +102,16 @@ class RefinedProductUiTest {
         }
     }
 
-    @OptIn(ExperimentalTestApi::class)
     private fun screenshot(name: String) {
-        val bitmap = compose.onRoot().captureToImage().asAndroidBitmap()
-        val file = File("build/reports/testing-tools/product-ui/$name.png").apply { parentFile!!.mkdirs() }
-        file.outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+        // PixelCopy waits for a hardware-window callback Robolectric does not deliver.
+        // Draw the actual laid-out Compose host using the native-graphics test backend.
+        compose.runOnIdle {
+            val view = compose.activity.window.decorView
+            val bitmap = android.graphics.Bitmap.createBitmap(view.width, view.height, android.graphics.Bitmap.Config.ARGB_8888)
+            view.draw(android.graphics.Canvas(bitmap))
+            val file = File("build/reports/testing-tools/product-ui/$name.png").apply { parentFile!!.mkdirs() }
+            file.outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+            bitmap.recycle()
+        }
     }
 }
