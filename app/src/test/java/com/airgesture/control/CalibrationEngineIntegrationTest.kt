@@ -346,7 +346,7 @@ class CalibrationEngineIntegrationTest {
             assertEquals(1, shadow.gesturesDispatched.size)
             assertTrue(shadow.globalActionsPerformed.isEmpty())
             repeat(3) { publish(open, 2900L + it * 100L) }
-            publish(open, 3234L, gestureName = "Victory")
+            confirmGesture(3234L, open)
             looper.idle()
             assertEquals(listOf(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK),
                 shadow.globalActionsPerformed)
@@ -535,21 +535,21 @@ class CalibrationEngineIntegrationTest {
             val transition = hand().toMutableList().apply {
                 this[8] = NormalizedLandmark.create(.5f, .85f, 0f)
             }
-            // The recorded case had 133 ms to the ratio rejection, then 100 ms to
-            // valid Victory. Neither the rejected command nor rejected None may act.
+            // The recorded case had 133 ms to the ratio rejection. Recovered command
+            // evidence must still satisfy the short confirmation window before acting.
             publish(transition, 1333L, gestureName = "Victory", delayMs = 229L)
             org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
             assertTrue(shadow.globalActionsPerformed.isEmpty())
-            publish(hand(), 1433L, gestureName = "Victory", delayMs = 231L)
+            confirmGesture(1433L, delayMs = 231L)
             org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
             assertEquals(listOf(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK),
                 shadow.globalActionsPerformed)
-            publish(transition, 1533L)
-            repeat(8) { publish(hand(), 1633L + it * 100L, gestureName = "Victory") }
+            publish(transition, 1633L)
+            repeat(8) { publish(hand(), 1733L + it * 100L, gestureName = "Victory") }
             org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
             assertEquals("Rejected None and persistent pose cannot replay", 1, shadow.globalActionsPerformed.size)
-            publish(hand(), 2433L); publish(hand(), 2533L)
-            publish(hand(), 2633L, gestureName = "Victory")
+            publish(hand(), 2533L); publish(hand(), 2633L)
+            confirmGesture(2733L)
             org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
             assertEquals("Only genuine neutral rearms", 2, shadow.globalActionsPerformed.size)
         }
@@ -567,7 +567,7 @@ class CalibrationEngineIntegrationTest {
             assertEquals("Only valid recovery dispatches the first occurrence once", 1,
                 shadow.globalActionsPerformed.size)
             publish(hand(), 2500L); publish(hand(), 2600L)
-            publish(hand(), 2700L, gestureName = "Victory")
+            confirmGesture(2700L)
             org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
             assertEquals(2, shadow.globalActionsPerformed.size)
         }
@@ -591,7 +591,7 @@ class CalibrationEngineIntegrationTest {
             repeat(3) { publish(closed, 2200L + it * 100L); looper.idle() }
             assertEquals("Pointer clicking switch blocks contact", 1, shadow.gesturesDispatched.size)
             repeat(4) { publish(open, 2600L + it * 100L); looper.idle() }
-            publish(open, 3000L, gestureName = "Victory"); looper.idle()
+            confirmGesture(3000L, open); looper.idle()
             assertEquals("Commands remain available with clicking off", 1, shadow.globalActionsPerformed.size)
         }
     }
@@ -654,11 +654,11 @@ class CalibrationEngineIntegrationTest {
             AirRuntime.pointerEnabled = false
             AirRuntime.gesturesEnabled = true
             primeClassifier()
-            publish(hand(), 1250L, gestureName = "Victory")
+            confirmGesture(1250L)
             org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
             val shadow = org.robolectric.Shadows.shadowOf(service)
             assertEquals(1, shadow.globalActionsPerformed.size)
-            var t = 1300L
+            var t = 1450L
             for (category in listOf("None", "Thumb_Down", "Unknown", "", null)) {
                 repeat(8) {
                     publish(hand(), t, gestureName = category ?: "None",
@@ -671,7 +671,7 @@ class CalibrationEngineIntegrationTest {
                 assertEquals("$category is not valid release", 1, shadow.globalActionsPerformed.size)
             }
             publish(hand(), t); publish(hand(), t + 100L)
-            publish(hand(), t + 150L, gestureName = "Victory")
+            confirmGesture(t + 150L)
             org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
             assertEquals("Actual confident neutral rearms", 2, shadow.globalActionsPerformed.size)
         } finally {
@@ -701,7 +701,7 @@ class CalibrationEngineIntegrationTest {
             org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
             assertEquals("Pause/resume cannot replay the consumed pose", 1, shadow.globalActionsPerformed.size)
             publish(hand(), 2000L); publish(hand(), 2100L)
-            publish(hand(), 2150L, gestureName = "Victory")
+            confirmGesture(2150L)
             org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
             assertEquals(2, shadow.globalActionsPerformed.size)
             engine.close()
@@ -716,6 +716,16 @@ class CalibrationEngineIntegrationTest {
     private fun primeClassifier(pose: List<NormalizedLandmark> = hand(), start: Long = 1000L) {
         // First frame establishes geometry/ownership; then 100 ms of fresh neutral.
         publish(pose, start); publish(pose, start + 100L); publish(pose, start + 200L)
+    }
+
+    private fun confirmGesture(
+        start: Long,
+        landmarks: List<NormalizedLandmark> = hand(),
+        gestureName: String = "Victory",
+        delayMs: Long = 0L
+    ) {
+        publish(landmarks, start, gestureName = gestureName, delayMs = delayMs)
+        publish(landmarks, start + 100L, gestureName = gestureName, delayMs = delayMs)
     }
 
     private fun hand(): List<NormalizedLandmark> = MutableList(21) {
