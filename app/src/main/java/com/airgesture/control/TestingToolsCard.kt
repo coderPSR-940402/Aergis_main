@@ -73,13 +73,6 @@ internal fun TestingToolsCard(onSave: (File) -> Unit, onShare: (DiagnosticExport
                 enabled = testing.mirror || (runtime.first && runtime.second && AirAccessibilityService.enabled())) {
                 Text(stringResource(if (testing.mirror) R.string.testing_mirror_hide else R.string.testing_mirror_show))
             }
-            if (testing.filterMode == PointerFilterMode.VC49)
-                AergisStatusChip(stringResource(R.string.ui_experimental), AergisColors.Caution)
-            AergisButton(modifier = Modifier.fillMaxWidth(), onClick = { TestingTools.setFilterMode(
-                PointerFilterMode.entries[(testing.filterMode.ordinal + 1) % PointerFilterMode.entries.size]) }) {
-                Text(stringResource(R.string.testing_filter_mode, testing.filterMode.name))
-            }
-            Text(stringResource(R.string.testing_filter_description))
             AergisButton(modifier = Modifier.fillMaxWidth(), onClick = { TestingTools.nextSegment() }) {
                 Text(stringResource(R.string.testing_segment, testing.segment.name))
             }
@@ -112,5 +105,22 @@ internal fun TestingToolsCard(onSave: (File) -> Unit, onShare: (DiagnosticExport
             }
             if (!runtime.first) Text(stringResource(R.string.testing_start_camera))
         }
+    }
+}
+
+/** Existing filter callback isolated under Advanced; daily recording does not cycle filters. */
+@Composable
+internal fun DiagnosticFilterPanel() {
+    val testing by TestingTools.state.collectAsStateWithLifecycle()
+    AergisPanel {
+        Text(stringResource(R.string.product_filter_advanced), style = MaterialTheme.typography.titleMedium)
+        Text(stringResource(R.string.product_filter_advanced_help), color = AergisColors.Caution)
+            if (testing.filterMode == PointerFilterMode.VC49)
+                AergisStatusChip(stringResource(R.string.ui_experimental), AergisColors.Caution)
+            AergisButton(modifier = Modifier.fillMaxWidth(), onClick = { TestingTools.setFilterMode(
+                PointerFilterMode.entries[(testing.filterMode.ordinal + 1) % PointerFilterMode.entries.size]) }) {
+                Text(stringResource(R.string.testing_filter_mode, testing.filterMode.name))
+            }
+            Text(stringResource(R.string.testing_filter_description))
     }
 }
