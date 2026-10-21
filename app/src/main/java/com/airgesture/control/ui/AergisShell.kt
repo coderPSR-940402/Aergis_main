@@ -39,25 +39,26 @@ internal fun AergisShell(
         modifier = Modifier.fillMaxSize().safeDrawingPadding(),
         containerColor = AergisColors.Background,
         bottomBar = {
-            NavigationBar(containerColor = AergisColors.Surface, tonalElevation = 0.dp,
+            NavigationBar(containerColor = AergisColors.Background, tonalElevation = 0.dp,
                 windowInsets = WindowInsets(0, 0, 0, 0)) {
                 AergisDestination.entries.filter { it.root }.forEach { destination ->
+                    val isSelected = destination == selected || (navigation.routes.firstOrNull() == destination.name && !selected.root)
                     NavigationBarItem(
-                        selected = destination == selected || (navigation.routes.firstOrNull() == destination.name && !selected.root),
+                        selected = isSelected,
                         onClick = { navigate(destination) },
-                        icon = { AergisIcon(destination.glyph, Modifier.size(24.dp), AergisColors.Purple) },
+                        icon = { AergisIcon(destination.glyph, Modifier.size(22.dp), if (isSelected) AergisColors.Purple else AergisColors.Muted) },
                         label = { Text(stringResource(destination.label), style = MaterialTheme.typography.labelMedium) },
                         colors = NavigationBarItemDefaults.colors(selectedTextColor = AergisColors.Purple,
-                            unselectedTextColor = AergisColors.Muted, indicatorColor = AergisColors.Purple.copy(alpha = .12f))
+                            unselectedTextColor = AergisColors.Muted, indicatorColor = AergisColors.Raised.copy(alpha = .45f))
                     )
                 }
             }
         }
     ) { insets ->
         Column(Modifier.fillMaxSize().padding(insets)) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
+            Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 16.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                AergisMark(Modifier.size(30.dp))
+                AergisMark(Modifier.size(32.dp))
                 Column(Modifier.weight(1f)) {
                     Text(stringResource(R.string.ui_brand), style = AergisType.Brand)
                     Text(stringResource(R.string.product_touchless), color = AergisColors.Muted,
@@ -91,8 +92,8 @@ private fun SessionLabel(inputEnabled: Boolean) {
         state.second == ControlMode.ARMED -> R.string.ui_actions_armed
         else -> R.string.ui_actions_disarmed
     })
-    Surface(color = AergisColors.Raised.copy(alpha = .45f)) {
+    Surface(color = AergisColors.Background) {
         Text(stringResource(R.string.ui_session_summary, capture, actions), color = AergisColors.Muted,
-            style = MaterialTheme.typography.labelMedium, modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 10.dp))
+            style = MaterialTheme.typography.labelSmall, modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp))
     }
 }

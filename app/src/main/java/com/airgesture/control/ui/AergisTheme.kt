@@ -17,18 +17,18 @@ import androidx.compose.ui.unit.sp
 
 internal object AergisColors {
     /** Near-black base keeps the accent colors intentional instead of decorative noise. */
-    val Background = Color(0xFF0D0E12)
-    val Surface = Color(0xFF18191F)
-    val Raised = Color(0xFF25232C)
+    val Background = Color(0xFF101014)
+    val Surface = Color(0xFF19191F)
+    val Raised = Color(0xFF26262E)
     val Deep = Color(0xFF111218)
-    val Outline = Color(0xFF403A49)
-    val Text = Color(0xFFEDEEF2)
-    val Muted = Color(0xFFA6A5B1)
+    val Outline = Color(0xFF34343E)
+    val Text = Color(0xFFE7E7EF)
+    val Muted = Color(0xFFA2A2AF)
     val Silver = Color(0xFFD5DAE1)
     val SilverBright = Color(0xFFF1F3F5)
-    val Yellow = Color(0xFFECE577)
-    val YellowDeep = Color(0xFFD8D266)
-    val Purple = Color(0xFFB9A4F1)
+    val Yellow = Color(0xFFDCE38B)
+    val YellowDeep = Color(0xFFBEC576)
+    val Purple = Color(0xFFB9A8DF)
     val PurpleDeep = Color(0xFF5B3B9B)
     // Compatibility names keep status code readable while the palette is explicit above.
     val Cyan = Yellow
@@ -49,8 +49,8 @@ internal object AergisSpace {
 }
 
 internal object AergisShapes {
-    val Card = RoundedCornerShape(22.dp)
-    val Control = RoundedCornerShape(13.dp)
+    val Card = RoundedCornerShape(24.dp)
+    val Control = RoundedCornerShape(16.dp)
     val Chip = RoundedCornerShape(50)
     val Segment = RoundedCornerShape(12.dp)
     /** Aergis brand detail: used sparingly, for the primary command and brand marks only. */
@@ -60,7 +60,7 @@ internal object AergisShapes {
 internal object AergisType {
     /** Wide-tracked wordmark. Minimal use. */
     val Brand = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 18.sp, lineHeight = 24.sp,
-        fontWeight = FontWeight.SemiBold, letterSpacing = 4.sp)
+        fontWeight = FontWeight.Medium, letterSpacing = 4.sp)
     /** Tabular numerals so changing telemetry does not jitter horizontally. */
     val Telemetry = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 20.sp, lineHeight = 26.sp,
         fontWeight = FontWeight.SemiBold, fontFeatureSettings = "tnum")
@@ -92,11 +92,11 @@ private fun style(size: Int, height: Int, weight: FontWeight = FontWeight.Normal
 )
 
 private val typography = Typography(
-    headlineLarge = style(32, 38, FontWeight.SemiBold),
-    headlineMedium = style(28, 34, FontWeight.SemiBold),
-    headlineSmall = style(24, 30, FontWeight.SemiBold),
-    titleLarge = style(20, 26, FontWeight.SemiBold),
-    titleMedium = style(18, 24, FontWeight.SemiBold),
+    headlineLarge = style(34, 39, FontWeight.Light).copy(letterSpacing = (-1).sp),
+    headlineMedium = style(28, 34, FontWeight.Normal).copy(letterSpacing = (-.6).sp),
+    headlineSmall = style(24, 30, FontWeight.Normal),
+    titleLarge = style(20, 26, FontWeight.Medium),
+    titleMedium = style(18, 24, FontWeight.Medium),
     titleSmall = style(16, 22, FontWeight.Medium),
     bodyLarge = style(16, 24), bodyMedium = style(14, 20), bodySmall = style(12, 18),
     labelLarge = style(14, 20, FontWeight.SemiBold),

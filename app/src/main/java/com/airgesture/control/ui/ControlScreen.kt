@@ -28,7 +28,9 @@ internal fun ControlScreen(
     val shown = ProductSession.from(snapshot, accessibilityEnabled, gesturesEnabled, pointerEnabled, pointerClickingEnabled)
     val armed = home.controlMode == ControlMode.ARMED
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        item { ProductHeading(R.string.product_control, R.string.product_kicker) }
+        item {
+            ControlCommandCenter(home.running, armed, shown.canToggleArm, shown.actions, onCapture, onArm)
+        }
         if (!accessibilityEnabled) item {
             AergisPanel(accent = AergisColors.Caution) {
                 Text(stringResource(R.string.product_setup_required), style = MaterialTheme.typography.titleMedium)
@@ -36,35 +38,10 @@ internal fun ControlScreen(
                 AergisButton({ onNavigate(AergisDestination.WELCOME) }, Modifier.fillMaxWidth()) { Text(stringResource(R.string.product_continue)) }
             }
         }
-        item {
-            AergisPanel(accent = AergisColors.Purple.copy(alpha = .5f)) {
-                AergisStatusChip(stringResource(shown.actions.label()), if (shown.actions == ProductActionState.ARMED) AergisColors.Yellow else AergisColors.Purple)
-                Text(stringResource(when {
-                    shown.actions == ProductActionState.ARMED -> R.string.product_hero_active
-                    home.running -> R.string.product_hero_ready
-                    else -> R.string.product_hero_stopped
-                }), style = MaterialTheme.typography.headlineMedium)
-                Text(stringResource(when {
-                    shown.actions == ProductActionState.ARMED -> R.string.product_hero_active_help
-                    home.running -> R.string.product_hero_ready_help
-                    else -> R.string.product_hero_stopped_help
-                }), color = AergisColors.Muted)
-                AergisButton(onArm, Modifier.fillMaxWidth(), enabled = shown.canToggleArm, primary = true) {
-                    Text(stringResource(if (armed) R.string.disarm_control else R.string.arm_control))
-                }
-                AergisButton(onCapture, Modifier.fillMaxWidth()) {
-                    Text(stringResource(if (home.running) R.string.stop_capture else R.string.start_capture))
-                }
-                if (shown.actions == ProductActionState.PAUSED) Text(home.safetyReason, color = AergisColors.Caution)
-                startError?.let { Text(it, color = AergisColors.Error) }
-                home.visionError?.let { Text(it, color = AergisColors.Error) }
-            }
-        }
-        item { Text(stringResource(R.string.product_primary_inputs), style = MaterialTheme.typography.labelMedium, color = AergisColors.Muted) }
-        item {
-            ProductLink(AergisDestination.GESTURES, stringResource(R.string.product_assigned_count, assignedCount, RegisteredGesture.entries.size), onNavigate)
-        }
-        item { ProductLink(AergisDestination.MOTION, stringResource(R.string.product_motion_path_help), onNavigate) }
+        if (shown.actions == ProductActionState.PAUSED) item { Text(home.safetyReason, color = AergisColors.Caution) }
+        startError?.let { error -> item { Text(error, color = AergisColors.Error) } }
+        home.visionError?.let { error -> item { Text(error, color = AergisColors.Error) } }
+        item { ProductInputTiles(assignedCount, onNavigate) }
         item {
             AergisPanel {
                 AergisSettingRow(stringResource(R.string.product_gestures), stringResource(R.string.product_gesture_switch_help), gesturesEnabled, onGestures)
