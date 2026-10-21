@@ -30,3 +30,8 @@ Preserve recognition, CameraX/MediaPipe, coordinate mapping, filtering, native d
 
 - Preparation: clean isolated worktree created; MagicPath source and PR #68 differences inspected. No subagents used (user preference).
 - Local baseline Gradle bootstrap attempted; distribution download is blocked by network. Android SDK is absent. CI remains the Android verification authority; no local Android pass claimed.
+- Integration: native routes and all existing stores/callbacks wired; 22 current gesture IDs and newer #68 controls retained. Native mapping sheet saves bounded tuning atomically and leaves legacy hold/repeat fields unchanged.
+- Review correction: retain the original SessionStartPolicy invocation exactly; permission refresh is separate. CI run 39577977521 failed compiling the misplaced UI assignment; correction committed in 520e77f.
+- Review: restore disarmed rehearsal/calibration entry after recreation, show an explicit pointer-off reach warning, and present four corner progress around the existing raw preview. No tracking/gesture algorithm is changed.
+- Verification: 11 Python tooling tests pass, all string references resolve, diff whitespace passes. New Android/Compose tests await CI. Author self-review is used because the user explicitly requires single-agent work.
+- CI run 39578441095 exposed an ambiguous generated R reference from wildcard Compose imports. Use the explicit application R import consistently in UI files. This is a compile integration correction, not a runtime policy change.

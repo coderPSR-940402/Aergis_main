@@ -15,6 +15,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.airgesture.control.*
+import com.airgesture.control.R
 
 /** Local draft only: Cancel, outside tap and Back never write bindings or tuning. */
 @OptIn(ExperimentalMaterial3Api::class)

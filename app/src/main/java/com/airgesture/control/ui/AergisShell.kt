@@ -11,6 +11,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.airgesture.control.*
+import com.airgesture.control.R
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 
@@ -24,6 +25,7 @@ internal fun AergisShell(
     var routes by rememberSaveable { mutableStateOf(arrayListOf(initialDestination.name)) }
     val navigation = ProductNavigation(routes)
     val selected = navigation.current
+    LaunchedEffect(Unit) { onEntering(selected) }
     val navigate: (AergisDestination) -> Unit = { destination ->
         if (destination != selected) {
             onEntering(destination)

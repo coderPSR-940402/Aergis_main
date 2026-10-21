@@ -13,12 +13,17 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import com.airgesture.control.*
+import com.airgesture.control.R
 
 @Composable
 internal fun ProductHeading(title: Int, eyebrow: Int? = null) {
@@ -148,7 +153,7 @@ internal fun MotionWalkthrough(onNavigate: (AergisDestination) -> Unit) {
     val titles = listOf(R.string.product_motion_step1, R.string.product_motion_step2, R.string.product_motion_step3)
     val descriptions = listOf(R.string.product_motion_step1_help, R.string.product_motion_step2_help, R.string.product_motion_step3_help)
     ProductPage(R.string.product_motion_practice) {
-        AergisStatusChip(stringResource(R.string.product_guide_badge), AergisColors.Purple)
+        RehearsalStatus()
         AergisIcon(AergisGlyph.MOTION, Modifier.align(Alignment.CenterHorizontally).size(120.dp), AergisColors.Purple)
         AergisSection(stringResource(titles[step]), stringResource(descriptions[step]))
         Text(stringResource(R.string.product_motion_walkthrough_note), color = AergisColors.Muted)
@@ -164,7 +169,7 @@ internal fun LearnGesturesScreen(mapping: (RegisteredGesture) -> AirAction,
     var gestureName by rememberSaveable { mutableStateOf(RegisteredGesture.VICTORY.name) }
     val gesture = RegisteredGesture.entries.firstOrNull { it.name == gestureName } ?: RegisteredGesture.VICTORY
     ProductPage(R.string.product_learn) {
-        AergisStatusChip(stringResource(R.string.product_guide_badge), AergisColors.Purple)
+        RehearsalStatus()
         GestureIllustration(gesture)
         Text(stringResource(R.string.product_pose_index, gesture.ordinal + 1, RegisteredGesture.entries.size), color = AergisColors.Muted)
         AergisSection(stringResource(gestureLabelRes(gesture)), stringResource(gestureHelpRes(gesture)))
@@ -209,6 +214,13 @@ private fun GestureIllustration(gesture: RegisteredGesture) {
             cubicTo(p(5f, 112f).x, p(5f, 112f).y, p(60f, 112f).x, p(60f, 112f).y, p(60f, 82f).x, p(60f, 82f).y)
             lineTo(p(60f, 62f).x, p(60f, 62f).y)
         }
+        val rotation = when (gesture) {
+            RegisteredGesture.DOUBLE_GUN_LEFT -> -90f
+            RegisteredGesture.DOUBLE_GUN_RIGHT -> 90f
+            RegisteredGesture.DOUBLE_GUN_DOWN -> 180f
+            else -> 0f
+        }
+        rotate(rotation, p(30f, 65f)) {
         drawPath(palm, color.copy(alpha = .12f))
         drawPath(palm, color, style = Stroke(2f * unit))
         for (finger in 0..3) {
@@ -216,7 +228,62 @@ private fun GestureIllustration(gesture: RegisteredGesture) {
             val y = if (finger in extended) listOf(29f, 15f, 24f, 42f)[finger] else 55f
             drawLine(color, p(x, 67f), p(x, y), unit * 8, StrokeCap.Round)
         }
-        drawLine(color, p(8f, 83f), p(-10f, 58f), unit * 8, StrokeCap.Round)
+        val thumb = when (gesture) {
+            RegisteredGesture.THUMB_UP -> p(-3f, 25f)
+            RegisteredGesture.THUMB_DOWN -> p(-3f, 112f)
+            RegisteredGesture.OPEN_PALM, RegisteredGesture.I_LOVE_YOU, RegisteredGesture.SHAKA,
+            RegisteredGesture.L_SHAPE, RegisteredGesture.THUMB_INDEX_MIDDLE,
+            RegisteredGesture.FOUR_LITTLE_FOLDED, RegisteredGesture.FOUR_INDEX_FOLDED,
+            RegisteredGesture.DOUBLE_GUN_LEFT, RegisteredGesture.DOUBLE_GUN_RIGHT,
+            RegisteredGesture.DOUBLE_GUN_UP, RegisteredGesture.DOUBLE_GUN_DOWN -> p(-10f, 58f)
+            else -> p(30f, 75f)
+        }
+        drawLine(color, p(8f, 83f), thumb, unit * 8, StrokeCap.Round)
         drawCircle(AergisColors.Yellow, 3f * unit, p(31f, 84f))
+        }
+    }
+}
+
+/** Four native corner indicators around the existing raw-pointer preview; no coordinate logic. */
+@Composable
+internal fun CalibrationStepPreview(sampleCount: Int, capturing: Boolean) {
+    Box(Modifier.fillMaxWidth()) {
+        CalibrationPreview(rawCoordinates = true)
+        Column(Modifier.matchParentSize().padding(10.dp).clearAndSetSemantics {},
+            verticalArrangement = Arrangement.SpaceBetween) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                CalibrationCorner(0, sampleCount, capturing)
+                CalibrationCorner(1, sampleCount, capturing)
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                CalibrationCorner(3, sampleCount, capturing)
+                CalibrationCorner(2, sampleCount, capturing)
+            }
+        }
+    }
+}
+
+@Composable
+private fun CalibrationCorner(index: Int, count: Int, capturing: Boolean) {
+    val active = capturing && count == index
+    val completed = capturing && count > index
+    Surface(shape = AergisShapes.Chip, color = if (active) AergisColors.Yellow else AergisColors.Raised) {
+        Text(if (completed) "✓" else (index + 1).toString(), modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+            color = if (active) AergisColors.Background else if (completed) AergisColors.Yellow else AergisColors.Muted,
+            style = MaterialTheme.typography.labelMedium)
+    }
+}
+
+/** A notification can change control mode while a guide is visible; never show a stale safe badge. */
+@Composable
+internal fun RehearsalStatus() {
+    val flow = remember { AirRuntime.uiState.map { it.controlMode }.distinctUntilChanged() }
+    val mode by flow.collectAsStateWithLifecycle(initialValue = AirRuntime.controlMode)
+    if (mode == ControlMode.READY) AergisStatusChip(stringResource(R.string.product_guide_badge), AergisColors.Purple)
+    else AergisPanel(accent = AergisColors.Caution) {
+        Text(stringResource(R.string.product_rehearsal_not_disarmed), color = AergisColors.Caution)
+        AergisButton({ AirRuntime.controlMode = ControlMode.READY }, Modifier.fillMaxWidth()) {
+            Text(stringResource(R.string.disarm_control))
+        }
     }
 }

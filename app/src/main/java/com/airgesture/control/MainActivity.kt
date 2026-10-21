@@ -314,8 +314,9 @@ class MainActivity : ComponentActivity() {
                     AergisDestination.PRECISION -> PrecisionScreen(navigate)
                     AergisDestination.CALIBRATION -> CalibrationScreen()
                     AergisDestination.PRACTICE -> ProductPage(R.string.product_practice) {
-                        Text(stringResource(R.string.product_disarmed_help), color = AergisColors.Purple)
+                        RehearsalStatus()
                         Text(stringResource(R.string.product_practice_help), color = AergisColors.Muted)
+                        if (!pointerEnabled) Text(stringResource(R.string.product_practice_enable_pointer), color = AergisColors.Caution)
                         CalibrationPreview()
                         ProductLink(AergisDestination.CALIBRATION, stringResource(R.string.product_precision_help), navigate)
                     }
@@ -520,7 +521,7 @@ class MainActivity : ComponentActivity() {
                 calibrationSampleCount))
             Text(stringResource(R.string.calibration_raw_preview), color = AergisColors.Muted,
                 style = MaterialTheme.typography.labelMedium)
-            CalibrationPreview(rawCoordinates = true)
+            CalibrationStepPreview(calibrationSampleCount, capturing)
             calibrationMessage?.let { Text(it) }
             if (capturing) {
                 Text(stringResource(if (controlMode == ControlMode.READY) R.string.calibration_actions_disarmed

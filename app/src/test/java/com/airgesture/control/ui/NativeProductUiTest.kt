@@ -21,12 +21,12 @@ import org.robolectric.annotation.GraphicsMode
 class NativeProductUiTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
 
-    @Test fun nestedNavigationRestoresThenBackReturnsToOriginWithoutEngineSideEffects() {
+    @Test fun nestedRehearsalNavigationRestoresDisarmedAndBackReturnsToOrigin() {
         AirRuntime.controlMode = ControlMode.READY
         val restoration = StateRestorationTester(compose)
         restoration.setContent {
             AergisTheme {
-                AergisShell(true) { destination, navigate ->
+                AergisShell(true, onEntering = { if (it.disarmsOnEntry) AirRuntime.controlMode = ControlMode.READY }) { destination, navigate ->
                     when (destination) {
                         AergisDestination.CONTROL -> Button({ navigate(AergisDestination.PRECISION) }) { Text("Open precision") }
                         AergisDestination.PRECISION -> Button({ navigate(AergisDestination.CALIBRATION) }) { Text("Open calibration") }
@@ -36,7 +36,11 @@ class NativeProductUiTest {
             }
         }
         compose.onNodeWithText("Open precision").performClick()
+        compose.runOnIdle { AirRuntime.controlMode = ControlMode.ARMED }
         compose.onNodeWithText("Open calibration").performClick()
+        compose.runOnIdle { assertEquals(ControlMode.READY, AirRuntime.controlMode) }
+        // A notification or another surface may have changed mode while the Activity was gone.
+        compose.runOnIdle { AirRuntime.controlMode = ControlMode.ARMED }
         restoration.emulateSavedInstanceStateRestore()
         compose.onNodeWithText("Calibration content").assertIsDisplayed()
         compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
@@ -77,4 +81,14 @@ class NativeProductUiTest {
             assertEquals(original, saved?.second)
         }
     }
+    @Test fun rehearsalBannerReflectsExternalArmingAndOffersDisarm() {
+        AirRuntime.controlMode = ControlMode.READY
+        compose.setContent { AergisTheme { RehearsalStatus() } }
+        compose.onNodeWithText("REHEARSAL · ACTIONS DISARMED").assertIsDisplayed()
+        compose.runOnIdle { AirRuntime.controlMode = ControlMode.ARMED }
+        compose.onNodeWithText("Device actions are not disarmed. Disarm before rehearsing.").assertIsDisplayed()
+        compose.onNodeWithText("Disarm control").performClick()
+        compose.runOnIdle { assertEquals(ControlMode.READY, AirRuntime.controlMode) }
+    }
+
 }

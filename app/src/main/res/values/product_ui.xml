@@ -113,4 +113,6 @@ A gesture away.</string>
     <string name="product_select_hand">Control hand</string>
     <string name="product_motion_direction_help">↑ Scroll up    ↓ Scroll down
 ← Swipe left    → Swipe right</string>
+    <string name="product_practice_enable_pointer">Enable the pointer in Precision tools to check its live reach.</string>
+    <string name="product_rehearsal_not_disarmed">Device actions are not disarmed. Disarm before rehearsing.</string>
 </resources>
