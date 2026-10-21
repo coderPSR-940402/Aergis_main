@@ -175,7 +175,6 @@ class MainActivity : ComponentActivity() {
         val decision = SessionStartPolicy.evaluate(
             cameraPermissionGranted = true,
             accessibilityEnabled = AirAccessibilityService.enabled()
-        cameraAllowed = ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
         )
         if (!decision.allowed) {
             sessionStartError = decision.reason
