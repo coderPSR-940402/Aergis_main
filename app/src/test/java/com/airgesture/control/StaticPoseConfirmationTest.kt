@@ -1,20 +1,20 @@
 package com.airgesture.control
+
 import org.junit.Assert.*
 import org.junit.Test
+
 class StaticPoseConfirmationTest {
-    @Test fun transientAndWeakEvidenceCannotCompleteConfirmation() {
-        val c=StaticPoseConfirmation()
-        assertFalse(c.accept("Victory","a",0,0,true,100))
-        assertFalse(c.accept("Palm","a",0,60,true,100))
-        assertFalse(c.accept("Palm","a",0,100,false,100))
-        assertFalse(c.accept("Palm","a",0,160,true,100))
-        assertTrue(c.accept("Palm","a",0,260,true,100))
-        assertFalse(c.accept("Palm","a",1,300,true,100))
+    @Test fun legacyHoldValueCannotDelayAValidRecognizedOccurrence() {
+        val gate = StaticPoseConfirmation()
+        assertTrue(gate.accept("Victory", "owner", 0L, 100L, true, 1500L))
+        assertTrue(gate.accept("Open_Palm", "owner", 0L, 101L, true, 100L))
     }
-    @Test fun staleAndDuplicateSamplesDoNotAdvance() {
-        val c=StaticPoseConfirmation()
-        assertFalse(c.accept("a","a",0,0,true,100))
-        assertFalse(c.accept("a","a",0,0,true,100))
-        assertFalse(c.accept("a","a",0,1000,true,100))
+
+    @Test fun invalidEvidenceStillFailsClosed() {
+        val gate = StaticPoseConfirmation()
+        assertFalse(gate.accept("Victory", null, 0L, 100L, true, 100L))
+        assertFalse(gate.accept("Victory", "", 0L, 100L, true, 100L))
+        assertFalse(gate.accept("Victory", "owner", 0L, -1L, true, 100L))
+        assertFalse(gate.accept("Victory", "owner", 0L, 100L, false, 100L))
     }
 }
