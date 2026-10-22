@@ -479,7 +479,13 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                     .put("jumpDistance", DiagnosticFrameData.number(comparison.precisionJumpDistance))
                     .put("jumpLimit", DiagnosticFrameData.number(comparison.precisionJumpLimit))
                     .put("dtMs", timestamp - (lastPointerAt.takeIf { it > 0L } ?: timestamp)))
-            if (trusted && handSelection != null && selectedPoseEvidence?.accepted == true) {
+            // Motion-only recovery follows trusted fingertip evidence, not whole-hand
+            // gesture geometry. Unrelated off-screen landmarks must not erase the
+            // fallback template; handlePointerGap still cancels every action channel.
+            if (trusted && handSelection != null &&
+                indexTip.x().isFinite() && indexTip.y().isFinite() &&
+                indexTip.x() in 0f..1f && indexTip.y() in 0f..1f
+            ) {
                 currentPixels?.let { pixels ->
                     fingertipPatch.seed(pixels.width, pixels.height,
                         (indexTip.x() * pixels.width).toInt(), (indexTip.y() * pixels.height).toInt(),
