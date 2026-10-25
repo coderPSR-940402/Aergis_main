@@ -13,8 +13,13 @@ internal class ScreenSelectionState {
         context = contextKey; selected = keys[next]
         return selected
     }
-    fun confirm(keys: List<String>, contextKey: String): String? {
+    fun retain(keys: List<String>, contextKey: String): String? {
         val result = selected?.takeIf { context == contextKey && it in keys }
+        if (result == null) clear()
+        return result
+    }
+    fun confirm(keys: List<String>, contextKey: String): String? {
+        val result = retain(keys, contextKey)
         clear()
         return result
     }

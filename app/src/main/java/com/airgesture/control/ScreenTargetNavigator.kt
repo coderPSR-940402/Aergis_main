@@ -8,8 +8,15 @@ internal class ScreenTargetNavigator(private val highlight: ScreenTargetHighligh
     private val state = ScreenSelectionState()
     private data class Target(val key: String, val node: AccessibilityNodeInfo, val bounds: Rect)
     fun clear() { state.clear(); highlight.hide() }
+    fun refresh(root: AccessibilityNodeInfo?, epoch: Long): Boolean {
+        if (!highlight.isVisible) { clear(); return false }
+        return update(root, null, epoch)
+    }
     fun perform(root: AccessibilityNodeInfo?, action: AirAction, epoch: Long): Boolean {
         if (action !in setOf(AirAction.NEXT_ITEM, AirAction.PREVIOUS_ITEM, AirAction.SELECT_ITEM)) { clear(); return false }
+        return update(root, action, epoch)
+    }
+    private fun update(root: AccessibilityNodeInfo?, action: AirAction?, epoch: Long): Boolean {
         if (root == null) { clear(); return false }
         val obtained = ArrayList<AccessibilityNodeInfo>()
         return try {
@@ -29,7 +36,11 @@ internal class ScreenTargetNavigator(private val highlight: ScreenTargetHighligh
             visit(root, "root")
             val context = "${root.packageName}:${root.windowId}:$epoch"
             val keys = targets.map { it.key }
-            if (action == AirAction.SELECT_ITEM) {
+            if (action == null) {
+                // Unrelated animations/content updates are not loss of this exact target.
+                val key = state.retain(keys, context)
+                if (key != null) true else { clear(); false }
+            } else if (action == AirAction.SELECT_ITEM) {
                 val visible = highlight.isVisible
                 val key = state.confirm(keys, context)
                 highlight.hide()

@@ -185,7 +185,7 @@ class AirAccessibilityService : AccessibilityService() {
                 AirRuntime.recordActionDispatchOutcome(ActionDispatchOutcome.POLICY_DENIED)
                 return@post
             }
-            if (precisionDrag.isBusy && action != AirAction.POINTER_DRAG) {
+            if (precisionDrag.isBusy && action !in setOf(AirAction.POINTER_DRAG, AirAction.TOGGLE_POINTER)) {
                 AirRuntime.recordActionDispatchOutcome(ActionDispatchOutcome.PLATFORM_REJECTED)
                 return@post
             }
@@ -387,10 +387,15 @@ class AirAccessibilityService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
-        screenNavigator.clear()
-        mainHandler.removeCallbacks(selectionGuard)
-        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED)
+        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+            screenNavigator.clear()
+            mainHandler.removeCallbacks(selectionGuard)
             AirRuntime.setForegroundContext(ForegroundContextPolicy.evaluate(event.packageName, event.className))
+        } else if (!isActionAllowed(AirAction.NEXT_ITEM) ||
+            !screenNavigator.refresh(rootInActiveWindow, AirRuntime.actionEpoch)) {
+            screenNavigator.clear()
+            mainHandler.removeCallbacks(selectionGuard)
+        }
     }
 
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {

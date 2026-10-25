@@ -26,6 +26,23 @@ class ScreenTargetNavigatorTest {
             if (action == AccessibilityNodeInfo.ACTION_CLICK) { click(); true } else false
         }
     }
+    @Test fun contentRefreshRetainsOnlyTheExactVisibleTarget() {
+        var clicks = 0
+        val node = target("Open") { clicks++ }
+        val highlight = VisibleHighlight()
+        val navigator = ScreenTargetNavigator(highlight)
+        assertTrue(navigator.perform(node, AirAction.NEXT_ITEM, 1L))
+        assertTrue(navigator.refresh(node, 1L))
+        assertTrue(highlight.isVisible)
+        assertEquals(0, clicks)
+        assertTrue(navigator.perform(node, AirAction.SELECT_ITEM, 1L))
+        assertEquals(1, clicks)
+        assertTrue(navigator.perform(node, AirAction.NEXT_ITEM, 1L))
+        node.text = "Replacement"
+        assertFalse(navigator.refresh(node, 1L))
+        assertFalse(highlight.isVisible)
+        assertFalse(navigator.perform(node, AirAction.SELECT_ITEM, 1L))
+    }
     @Test fun actualNodeClickOccursOnlyOnceAfterVisibleSelection() {
         var clicked=0; val node=target("Open") { clicked++ }
         val highlight=VisibleHighlight(); val navigator=ScreenTargetNavigator(highlight)

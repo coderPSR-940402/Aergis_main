@@ -117,6 +117,17 @@ class AirAccessibilityServiceDispatchTest {
         ActionMappingStore(service).setPointerEnabled(true)
     }
 
+    @Test fun pointerToggleCanExitAnActivePrecisionDrag() {
+        service.dispatch(AirAction.POINTER_DRAG)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertTrue(service.nativeTouchInFlight)
+        service.dispatch(AirAction.TOGGLE_POINTER)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertFalse(AirRuntime.pointerEnabled)
+        assertFalse(service.precisionDragActive)
+        ActionMappingStore(service).setPointerEnabled(true)
+    }
+
     @Test fun queuedPointerToggleCannotExecuteAfterDisarm() {
         AirRuntime.pointerEnabled = false
         service.dispatch(AirAction.TOGGLE_POINTER)

@@ -20,7 +20,7 @@ internal class StaticPoseConfirmation {
     companion object {
         private const val MIN_CONSECUTIVE_FRAMES = 3
         private const val MIN_TWO_FRAME_WINDOW_MS = 80L
-        private const val MAX_SAMPLE_GAP_MS = 350L
+        private const val MAX_SAMPLE_GAP_MS = VisionResultFreshnessPolicy.DEFAULT_MAX_GAP_MS
     }
 
     private var candidate: Candidate? = null
