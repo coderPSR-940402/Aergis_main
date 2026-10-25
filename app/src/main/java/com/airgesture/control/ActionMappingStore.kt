@@ -32,6 +32,17 @@ class ActionMappingStore(context: Context) {
     fun setMapping(gesture: RegisteredGesture, target: AirAction) =
         prefs.edit().putString("gesture_${gesture.name}", normalizeTarget(gesture, target).name).apply()
 
+    internal fun fillUnassigned(bindings: Map<RegisteredGesture, AirAction>) {
+        val changes = bindings.filterKeys { mapping(it) == AirAction.NONE }
+        if (changes.isEmpty()) return
+        // One in-memory preference transaction: the inference thread and listeners
+        // must not observe a partially installed navigation configuration.
+        val editor = prefs.edit()
+        for ((gesture, target) in changes)
+            editor.putString("gesture_${gesture.name}", normalizeTarget(gesture, target).name)
+        editor.apply()
+    }
+
     fun tuning(gesture: RegisteredGesture): GestureTuning {
         val key = "tune_${gesture.name}_"
         return runCatching { GestureTuning(

@@ -11,6 +11,28 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class TouchFreeNavigationPresetTest {
+    @Test fun everyPreferenceObserverSeesTheWholePreset() {
+        val context = RuntimeEnvironment.getApplication() as Context
+        val prefs = context.getSharedPreferences("aergis_mappings", Context.MODE_PRIVATE)
+        prefs.edit().clear().commit()
+        val store = ActionMappingStore(context)
+        val expected = TouchFreeNavigationPreset.bindings
+        var notifications = 0
+        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
+            notifications++
+            for ((gesture, action) in expected) assertEquals(action, store.mapping(gesture))
+        }
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        try {
+            TouchFreeNavigationPreset.apply(store)
+            org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+            assertTrue(notifications > 0)
+        } finally {
+            prefs.unregisterOnSharedPreferenceChangeListener(listener)
+            prefs.edit().clear().commit()
+        }
+    }
+
     @Test fun presetAddsPointerFreeNavigationWithoutReplacingAssignmentsOrTuning() {
         val context = RuntimeEnvironment.getApplication() as Context
         context.getSharedPreferences("aergis_mappings", Context.MODE_PRIVATE).edit().clear().commit()

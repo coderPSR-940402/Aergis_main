@@ -58,6 +58,35 @@ class AccessibleScrollTest {
         assertEquals(1, rightCalls)
     }
 
+    @Test fun horizontalOnlyCarouselCannotConsumeAVerticalScroll() {
+        val region = node()
+        region.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_LEFT)
+        region.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_RIGHT)
+        region.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_FORWARD)
+        region.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_BACKWARD)
+        var calls = 0
+        shadowOf(region).setOnPerformActionListener { _, _ -> calls++; true }
+        assertFalse(AccessibleScroll.perform(region, true))
+        assertFalse(AccessibleScroll.perform(region, false))
+        assertEquals(0, calls)
+    }
+
+    @Test fun equallySpecificOverlappingRegionsCannotBeChosenByTraversalOrder() {
+        val root = node(Rect(0, 0, 1000, 1000))
+        val first = node(Rect(100, 100, 800, 900))
+        val second = node(Rect(100, 100, 800, 900))
+        val focused = node(Rect(200, 200, 300, 300)).apply { isAccessibilityFocused = true }
+        shadowOf(root).addChild(first); shadowOf(root).addChild(second)
+        shadowOf(first).addChild(focused)
+        var calls = 0
+        for (region in listOf(first, second)) {
+            region.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_DOWN)
+            shadowOf(region).setOnPerformActionListener { _, _ -> calls++; true }
+        }
+        assertFalse(AccessibleScroll.perform(root, true))
+        assertEquals(0, calls)
+    }
+
     @Test fun missingHiddenDisabledOrPasswordRegionsCannotScroll() {
         assertFalse(AccessibleScroll.perform(null, true))
         for (blocked in listOf("hidden", "disabled", "password")) {

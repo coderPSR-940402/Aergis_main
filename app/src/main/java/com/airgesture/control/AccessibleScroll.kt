@@ -24,9 +24,13 @@ internal object AccessibleScroll {
                 val legacy = if (forward) AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
                     else AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD
                 val supported = node.actionList.map { it.id }
+                val horizontalOnly = (AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_LEFT.id in supported ||
+                    AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_RIGHT.id in supported) &&
+                    AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_UP.id !in supported &&
+                    AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_DOWN.id !in supported
                 val action = when {
                     direction.id in supported -> direction.id
-                    legacy in supported -> legacy
+                    !horizontalOnly && legacy in supported -> legacy
                     else -> null
                 }
                 if (node.isEnabled && !bounds.isEmpty && action != null)
@@ -35,8 +39,9 @@ internal object AccessibleScroll {
             }
             visit(root, 0)
             val focused = focus?.let { bounds -> candidates.filter { it.bounds.contains(bounds) } }.orEmpty()
-            val target = if (focused.isNotEmpty()) focused.minByOrNull {
-                it.bounds.width().toLong() * it.bounds.height()
+            val smallestArea = focused.minOfOrNull { it.bounds.width().toLong() * it.bounds.height() }
+            val target = if (focused.isNotEmpty()) focused.singleOrNull {
+                it.bounds.width().toLong() * it.bounds.height() == smallestArea
             } else candidates.singleOrNull()
             target?.let { it.node.performAction(it.action) } == true
         } catch (_: RuntimeException) {

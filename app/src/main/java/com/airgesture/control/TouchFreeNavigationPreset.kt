@@ -15,9 +15,5 @@ internal object TouchFreeNavigationPreset {
         RegisteredGesture.THUMB_INDEX_MIDDLE to AirAction.ARM_MOTION
     )
 
-    fun apply(store: ActionMappingStore) {
-        for ((gesture, action) in bindings) {
-            if (store.mapping(gesture) == AirAction.NONE) store.setMapping(gesture, action)
-        }
-    }
+    fun apply(store: ActionMappingStore) = store.fillUnassigned(bindings)
 }
