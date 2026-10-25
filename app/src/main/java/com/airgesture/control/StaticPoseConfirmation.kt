@@ -20,6 +20,7 @@ internal class StaticPoseConfirmation {
     companion object {
         private const val MIN_CONSECUTIVE_FRAMES = 3
         private const val MIN_TWO_FRAME_WINDOW_MS = 80L
+        private const val MAX_SAMPLE_GAP_MS = 350L
     }
 
     private var candidate: Candidate? = null
@@ -46,7 +47,8 @@ internal class StaticPoseConfirmation {
             current.owner == ownerId &&
             current.epoch == epoch
 
-        if (!sameCandidate || current == null || timestamp < current.lastTimestamp) {
+        if (!sameCandidate || current == null || timestamp < current.lastTimestamp ||
+            timestamp - current.lastTimestamp > MAX_SAMPLE_GAP_MS) {
             candidate = Candidate(
                 id = poseId,
                 owner = ownerId,
@@ -57,6 +59,9 @@ internal class StaticPoseConfirmation {
             )
             return false
         }
+
+        // A replayed result is not another independent observation.
+        if (timestamp == current.lastTimestamp) return false
 
         val updated = current.copy(
             lastTimestamp = timestamp,

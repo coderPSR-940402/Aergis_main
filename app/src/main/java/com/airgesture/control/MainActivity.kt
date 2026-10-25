@@ -285,6 +285,15 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     private fun AirGestureScreen() {
+        // Gesture-dispatched pointer changes must update the open controls too.
+        DisposableEffect(Unit) {
+            val prefs = getSharedPreferences("aergis_mappings", MODE_PRIVATE)
+            val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
+                pointerEnabled = ActionMappingStore(this@MainActivity).pointerEnabled()
+            }
+            prefs.registerOnSharedPreferenceChangeListener(listener)
+            onDispose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+        }
         var editingName by rememberSaveable { mutableStateOf<String?>(null) }
         val edit: (RegisteredGesture) -> Unit = { editingName = it.name }
         AergisTheme {
@@ -433,6 +442,17 @@ class MainActivity : ComponentActivity() {
             item { ProductHeading(R.string.product_gestures) }
             item { GestureLibraryIntro() }
             item { Text(stringResource(R.string.navigation_gesture_help), color = AergisColors.Muted) }
+            item {
+                AergisPanel {
+                    Text(stringResource(R.string.touch_free_preset_help), color = AergisColors.Muted)
+                    AergisButton(onClick = {
+                        TouchFreeNavigationPreset.apply(ActionMappingStore(this@MainActivity))
+                        mappingsVersion++
+                    }, modifier = Modifier.fillMaxWidth()) {
+                        Text(stringResource(R.string.touch_free_preset_apply))
+                    }
+                }
+            }
             item { ProductLink(AergisDestination.LEARN, stringResource(R.string.product_learn_help), navigate) }
             item { androidx.compose.material3.OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth(),
                 label = { Text(stringResource(R.string.product_search_gestures)) }, singleLine = true) }

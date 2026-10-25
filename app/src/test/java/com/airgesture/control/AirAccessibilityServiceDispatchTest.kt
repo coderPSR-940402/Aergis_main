@@ -81,6 +81,51 @@ class AirAccessibilityServiceDispatchTest {
         AirRuntime.setPointerState(0f, 0f, tracking = false)
     }
 
+    @Test fun pointerDisabledScrollUsesAvailableNodeWithoutInjectingATouch() {
+        @Suppress("DEPRECATION")
+        val node = android.view.accessibility.AccessibilityNodeInfo.obtain().apply {
+            isVisibleToUser = true; isEnabled = true
+            setBoundsInScreen(android.graphics.Rect(400, 100, 600, 900))
+            addAction(android.view.accessibility.AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_DOWN)
+        }
+        var calls = 0
+        shadowOf(node).setOnPerformActionListener { _, _ -> calls++; true }
+        shadow.setRootInActiveWindow(node)
+        AirRuntime.pointerEnabled = false
+        val before = shadow.gesturesDispatched.size
+        service.dispatch(AirAction.SCROLL_UP)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(1, calls)
+        assertEquals(before, shadow.gesturesDispatched.size)
+        assertEquals(ActionDispatchOutcome.SUBMITTED, AirRuntime.state.value.actionDispatchTelemetry.lastOutcome)
+        shadow.setRootInActiveWindow(null)
+    }
+
+    @Test fun mappedPointerToggleWorksBothWaysWithoutTouchAndPersists() {
+        AirRuntime.pointerEnabled = false
+        val before = AirRuntime.actionEpoch
+        service.dispatch(AirAction.TOGGLE_POINTER)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertTrue(AirRuntime.pointerEnabled)
+        assertTrue(ActionMappingStore(service).pointerEnabled())
+        assertTrue(AirRuntime.actionEpoch > before)
+        assertEquals(ActionDispatchOutcome.COMPLETED, AirRuntime.state.value.actionDispatchTelemetry.lastOutcome)
+        service.dispatch(AirAction.TOGGLE_POINTER)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertFalse(AirRuntime.pointerEnabled)
+        assertFalse(ActionMappingStore(service).pointerEnabled())
+        ActionMappingStore(service).setPointerEnabled(true)
+    }
+
+    @Test fun queuedPointerToggleCannotExecuteAfterDisarm() {
+        AirRuntime.pointerEnabled = false
+        service.dispatch(AirAction.TOGGLE_POINTER)
+        AirRuntime.controlMode = ControlMode.OFF
+        shadowOf(Looper.getMainLooper()).idle()
+        assertFalse(AirRuntime.pointerEnabled)
+        assertEquals(ActionDispatchOutcome.POLICY_DENIED, AirRuntime.state.value.actionDispatchTelemetry.lastOutcome)
+    }
+
     @Test
     @Config(sdk = [26])
     fun unavailableActionsCannotDispatchOnOlderAndroid() {

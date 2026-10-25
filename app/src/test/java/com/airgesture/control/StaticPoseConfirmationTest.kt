@@ -4,6 +4,21 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class StaticPoseConfirmationTest {
+    @Test fun duplicateSamplesCannotSupplyIndependentConfirmation() {
+        val gate = StaticPoseConfirmation()
+        repeat(4) { assertFalse(gate.accept("Victory", "owner", 0L, 100L, true, 100L)) }
+        assertFalse(gate.accept("Victory", "owner", 0L, 133L, true, 100L))
+        assertTrue(gate.accept("Victory", "owner", 0L, 166L, true, 100L))
+    }
+
+    @Test fun longGapStartsANewCandidateInsteadOfConfirmingOldEvidence() {
+        val gate = StaticPoseConfirmation()
+        assertFalse(gate.accept("Victory", "owner", 0L, 100L, true, 100L))
+        assertFalse(gate.accept("Victory", "owner", 0L, 451L, true, 100L))
+        assertFalse(gate.accept("Victory", "owner", 0L, 484L, true, 100L))
+        assertTrue(gate.accept("Victory", "owner", 0L, 517L, true, 100L))
+    }
+
     @Test fun oneTransientClassifierFrameCanNeverConfirmACommand() {
         val gate = StaticPoseConfirmation()
         assertFalse(gate.accept("Victory", "owner", 0L, 100L, true, 1500L))

@@ -205,6 +205,14 @@ class AirAccessibilityService : AccessibilityService() {
             if (nativeTouch) { coordinateInput = action.usesPointerTouch; nativeOrigin = origin }
             when (action) {
                 AirAction.NONE, AirAction.ARM_MOTION -> Unit
+                AirAction.TOGGLE_POINTER -> {
+                    val enabled = !AirRuntime.pointerEnabled
+                    ActionMappingStore(this).setPointerEnabled(enabled)
+                    AirRuntime.pointerEnabled = enabled // Revokes queued actions through the epoch.
+                    cancelPointerTouch()
+                    updatePointer(AirRuntime.pointerX, AirRuntime.pointerY, false)
+                    AirRuntime.recordActionDispatchOutcome(ActionDispatchOutcome.COMPLETED)
+                }
                 AirAction.NEXT_ITEM, AirAction.PREVIOUS_ITEM, AirAction.SELECT_ITEM -> {
                     val accepted = screenNavigator.perform(rootInActiveWindow, action, dispatchEpoch)
                     mainHandler.removeCallbacks(selectionGuard)
@@ -293,6 +301,13 @@ class AirAccessibilityService : AccessibilityService() {
     }
 
     private fun performScroll(up: Boolean, anchorX: Float, anchorY: Float, percent: Int, epoch: Long) {
+        // Preserve existing swipe direction: an upward stroke advances content.
+        // Semantic scrolling works on lists away from screen centre and avoids a
+        // synthetic touch. Unsupported or ambiguous windows retain the bounded swipe.
+        if (AccessibleScroll.perform(rootInActiveWindow, up)) {
+            AirRuntime.recordActionDispatchOutcome(ActionDispatchOutcome.SUBMITTED)
+            return
+        }
         val display = screenSize()
         val x = anchorX.coerceIn(0f, display.maxX)
         val centerY = anchorY.coerceIn(0f, display.maxY)

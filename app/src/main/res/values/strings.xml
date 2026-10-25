@@ -324,4 +324,7 @@
     <string name="gaze_lab">Gaze Lab (experimental)</string>
     <string name="navigation_gesture_help">With pointer off, map Double finger gun Up/Down to Scroll Up/Down and Left/Right to Swipe Left/Right. Map distinct poses to Next screen item, Previous screen item and Select highlighted item. Yellow outlines mark exposed clickable controls. New poses are disabled until mapped; keep a neutral interval between commands.</string>
     <string name="pose_gun_help">Extend thumb and index for Finger gun; extend thumb, index and middle for Double finger gun. Fold ring and little fingers. Direction follows the screen; avoid diagonals. Existing generic mappings remain unless a directional mapping is assigned.</string>
+    <string name="action_toggle_pointer">Toggle precision pointer</string>
+    <string name="touch_free_preset_apply">Add touch-free navigation mappings</string>
+    <string name="touch_free_preset_help">Fill unassigned poses with next item, previous item, select, scrolling, app search, system panels, motion control and pointer toggle. Existing assignments stay unchanged. Review the mappings below and practise the poses before use.</string>
 </resources>
