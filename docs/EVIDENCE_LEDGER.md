@@ -569,9 +569,11 @@ clearing data and record exact build identity and misses/extras.
 
 Reviewed `Aergis-20261025-114910-334-74a41d1b.zip` locally; camera images and
 landmarks are not committed. Metadata reports source
-`404818ee4c1cfee09af9dfa67b6f3a3ac0550c5c`, which is not an object in the
-current repository clone. Its relationship to current main is unverified;
-do not promote it to a functional baseline or assume that it tests current code.
+`404818ee4c1cfee09af9dfa67b6f3a3ac0550c5c`. An explicit SHA fetch resolved
+this otherwise unreferenced PR #72 merge commit. Its Git tree is identical to
+current main (`98537dc2ab977e2b4f0eeb04bececace82ff19c3`), establishing
+source equivalence. This is device evidence for current source, not blanket
+functional acceptance or proof of APK/signing identity.
 Current main and remotely resolved `baseline-successful-apk` are both
 `dd785124ab2b499c9fa8869bd75a494b77496747`.
 
