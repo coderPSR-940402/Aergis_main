@@ -563,3 +563,42 @@ maintained pose cannot repeat; neutral then new pose acts once; thumb-middle
 contact/release has no large pointer jump or delayed classifier action; fast
 separate contacts retain responsiveness. Install the final CI debug APK without
 clearing data and record exact build identity and misses/extras.
+
+
+## 2026-10-25 — Pointer-disabled recording review
+
+Reviewed `Aergis-20261025-114910-334-74a41d1b.zip` locally; camera images and
+landmarks are not committed. Metadata reports source
+`404818ee4c1cfee09af9dfa67b6f3a3ac0550c5c`. An explicit SHA fetch resolved
+this otherwise unreferenced PR #72 merge commit. Its Git tree is identical to
+current main (`98537dc2ab977e2b4f0eeb04bececace82ff19c3`), establishing
+source equivalence. This is device evidence for current source, not blanket
+functional acceptance or proof of APK/signing identity.
+Current main and remotely resolved `baseline-successful-apk` are both
+`dd785124ab2b499c9fa8869bd75a494b77496747`.
+
+The recording spans 498.420 seconds with 6,134 readable frames. Pointer is
+disabled and gestures enabled throughout. There are 47 action requests across
+14 action types, 31 COMPLETED outcome events and 16 SUBMITTED outcome events.
+No failure outcomes are recorded. SUBMITTED does not prove completion, and
+aggregate outcomes are not paired to requests. This demonstrates a functioning
+pointer-independent command path, not a measured recognition success rate.
+
+Command eligibility is true on 3,413 frames. Pose reasons include 2,144 NO_POSE,
+252 OUT_OF_RANGE_LANDMARK and 252 EXCESSIVE_INDEX_BONE frames. These are
+observations, not proof of 504 missed intended gestures. There are no labelled
+attempts. Pointer rejection DISABLED is expected in this test and must not be
+reported as gesture failure or lost pointer tracking.
+
+Instrumented frame-to-publish age: median 194 ms, nearest-rank p95 291 ms.
+Age at analysis start: median 114 ms, p95 205 ms. Inference: median 64 ms,
+p95 98 ms. These timings are not display or Android-response latency; disabled
+pointer frames still contain the historical `frameToPointerMs` timing field.
+The upstream age requires a current-build reproduction before camera changes.
+
+The replay analyzer now emits action/outcome counts, pose reasons, command
+eligibility and robust timing summaries without requiring pointer comparisons.
+Existing pointer comparison behavior is retained. Two added regression tests
+first failed on absent summaries; all 13 Python tooling tests then passed.
+The supplied ZIP was processed successfully. No Android runtime code changed.
+Current pinch/partial-hand fixes remain intact; physical validation is outstanding.
