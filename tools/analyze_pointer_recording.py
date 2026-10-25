@@ -6,6 +6,7 @@ import collections
 import json
 import math
 import pathlib
+import statistics
 import zipfile
 
 
@@ -97,6 +98,39 @@ def metrics(rows, mode, segment):
     }
 
 
+def operational_summary(frames, events):
+    """Summarize observations independently of optional pointer comparisons."""
+    frames = [f for f in frames if isinstance(f, dict)]
+    events = [e for e in events if isinstance(e, dict)]
+    def nonnegative(value):
+        return type(value) in (int, float) and math.isfinite(value) and value >= 0
+    times = [f['timestampMs'] for f in frames if nonnegative(f.get('timestampMs'))]
+    timings = collections.defaultdict(list)
+    for frame in frames:
+        timing = frame.get('timing')
+        if isinstance(timing, dict):
+            for key in ('frameAgeAtStartMs', 'captureToAnalysisMs', 'preprocessMs',
+                        'inferenceMs', 'publishMs', 'frameToPointerMs'):
+                if nonnegative(timing.get(key)):
+                    timings[key].append(timing[key])
+    def counts(records, field):
+        return dict(collections.Counter(r[field] for r in records
+                                       if isinstance(r.get(field), str)))
+    return {
+        'durationMs': max(times) - min(times) if len(times) >= 2 else None,
+        'commands': {
+            'pointerDisabledGestureFrames': sum(f.get('pointerEnabled') is False and
+                f.get('gesturesEnabled') is True for f in frames),
+            'eligibleFrames': sum(f.get('commandsAllowed') is True for f in frames),
+            'poseReasons': counts(frames, 'commandPoseReason'),
+            'requestedActions': counts([e for e in events if e.get('event') == 'action_requested'], 'action'),
+            'outcomes': counts([e for e in events if e.get('event') == 'action_outcome'], 'outcome'),
+        },
+        'pipelineTimingMs': {key: {'samples': len(values), 'median': statistics.median(values),
+            'p95': sorted(values)[math.ceil(.95 * len(values)) - 1]} for key, values in timings.items()},
+    }
+
+
 def analyze(frames, events, metadata):
     groups = collections.defaultdict(list)
     labels = {}
@@ -165,6 +199,7 @@ def analyze(frames, events, metadata):
         groups[run].append({"time": timestamp, "raw": raw, **candidates})
     overlay = [e for e in events if isinstance(e, dict) and e.get("event") == "overlay_applied"]
     return {
+        **operational_summary(frames, events),
         "sourceCommit": metadata.get("sourceCommit"), "historicalSource": metadata.get("historicalSource"),
         "frames": len(frames), "invalidOrUncomparedFrames": invalid,
         "unreadableFrameRecords": sum(not isinstance(f, dict) for f in frames),
@@ -179,7 +214,10 @@ def analyze(frames, events, metadata):
                    "Each segment key describes one contiguous run; #2 etc. mark later runs of the same label.",
                    "Runs split at missing comparisons, owner/filter/calibration/epoch/rotation changes and gaps over 150 ms.",
                    "Label STATIONARY only while holding one fixed target. Relabel when moving to another target.",
-                   "CameraX skips before analysis are not inferred as detector-invalid frames."]
+                   "CameraX skips before analysis are not inferred as detector-invalid frames.",
+                   "SUBMITTED is not completion. Outcome totals are not paired to individual requests.",
+                   "Unlabelled recordings cannot establish intended attempts, misses or false-positive rates.",
+                   "frameToPointerMs is instrumented pipeline age, not measured display or Android response latency."]
     }
 
 
