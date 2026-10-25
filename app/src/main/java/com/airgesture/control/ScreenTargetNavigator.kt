@@ -22,16 +22,28 @@ internal class ScreenTargetNavigator(private val highlight: ScreenTargetHighligh
         return try {
             val targets = ArrayList<Target>()
             var visited = 0
-            fun visit(node: AccessibilityNodeInfo, path: String) {
+            fun visit(node: AccessibilityNodeInfo, path: String): String {
                 obtained.add(node)
                 check(++visited <= 512) { "Window too large for bounded target scan" }
-                if (!node.isVisibleToUser || !node.isEnabled || node.isPassword) return
+                if (!node.isVisibleToUser || !node.isEnabled || node.isPassword) return ""
                 val bounds = Rect(); node.getBoundsInScreen(bounds)
-                if (node.isClickable && !bounds.isEmpty) {
-                    val key = ScreenTargetKey.of(path, node.viewIdResourceName, bounds.toString(), node.text, node.contentDescription)
-                    targets.add(Target(key, node, bounds))
+                // Reserve pre-order navigation before collecting the visible subtree.
+                val targetIndex = if (node.isClickable && !bounds.isEmpty) {
+                    targets.add(Target("", node, bounds)); targets.lastIndex
+                } else -1
+                val ownIdentity = ScreenTargetKey.of(path, node.viewIdResourceName,
+                    bounds.toString(), node.text, node.contentDescription)
+                val identity = buildString {
+                    append(ownIdentity.length).append(':').append(ownIdentity)
+                    for (i in 0 until node.childCount) node.getChild(i)?.let {
+                        val child = visit(it, "$path/$i")
+                        append(child.length).append(':').append(child)
+                    }
                 }
-                for (i in 0 until node.childCount) node.getChild(i)?.let { visit(it, "$path/$i") }
+                // Clickable rows often have no label themselves; a recycled row's
+                // changed child label must revoke the old selection just as its own would.
+                if (targetIndex >= 0) targets[targetIndex] = Target(identity, node, bounds)
+                return identity
             }
             visit(root, "root")
             val context = "${root.packageName}:${root.windowId}:$epoch"

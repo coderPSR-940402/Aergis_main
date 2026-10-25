@@ -26,6 +26,20 @@ class ScreenTargetNavigatorTest {
             if (action == AccessibilityNodeInfo.ACTION_CLICK) { click(); true } else false
         }
     }
+    @Test fun recycledClickableRowCannotRetainSelectionAfterItsChildLabelChanges() {
+        var clicks = 0
+        val row = target("") { clicks++ }
+        val child = target("Original app") { }.apply { isClickable = false }
+        shadowOf(row).addChild(child)
+        val navigator = ScreenTargetNavigator(VisibleHighlight())
+        assertTrue(navigator.perform(row, AirAction.NEXT_ITEM, 1L))
+        assertTrue(navigator.refresh(row, 1L))
+        child.text = "Different app"
+        assertFalse(navigator.refresh(row, 1L))
+        assertFalse(navigator.perform(row, AirAction.SELECT_ITEM, 1L))
+        assertEquals(0, clicks)
+    }
+
     @Test fun contentRefreshRetainsOnlyTheExactVisibleTarget() {
         var clicks = 0
         val node = target("Open") { clicks++ }
