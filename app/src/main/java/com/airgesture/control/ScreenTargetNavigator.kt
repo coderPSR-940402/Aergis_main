@@ -6,7 +6,8 @@ import android.view.accessibility.AccessibilityNodeInfo
 /** Refresh nodes for every command; never click cached nodes or guess a coordinate. */
 internal class ScreenTargetNavigator(private val highlight: ScreenTargetHighlight) {
     private val state = ScreenSelectionState()
-    private data class Target(val key: String, val node: AccessibilityNodeInfo, val bounds: Rect)
+    private data class Target(val key: String, val node: AccessibilityNodeInfo, val bounds: Rect,
+        val containerPath: String)
     fun clear() { state.clear(); highlight.hide() }
     fun refresh(root: AccessibilityNodeInfo?, epoch: Long): Boolean {
         if (!highlight.isVisible) { clear(); return false }
@@ -21,31 +22,42 @@ internal class ScreenTargetNavigator(private val highlight: ScreenTargetHighligh
         val obtained = ArrayList<AccessibilityNodeInfo>()
         return try {
             val targets = ArrayList<Target>()
+            val identities = HashMap<String, String>()
             var visited = 0
-            fun visit(node: AccessibilityNodeInfo, path: String): String {
+            fun visit(node: AccessibilityNodeInfo, path: String, parentPath: String?, itemPath: String?): String {
                 obtained.add(node)
                 check(++visited <= 512) { "Window too large for bounded target scan" }
                 if (!node.isVisibleToUser || !node.isEnabled || node.isPassword) return ""
                 val bounds = Rect(); node.getBoundsInScreen(bounds)
+                val rowPath = if (node.collectionItemInfo != null) path else itemPath
                 // Reserve pre-order navigation before collecting the visible subtree.
                 val targetIndex = if (node.isClickable && !bounds.isEmpty) {
-                    targets.add(Target("", node, bounds)); targets.lastIndex
+                    targets.add(Target("", node, bounds, rowPath ?: parentPath ?: path)); targets.lastIndex
                 } else -1
                 val ownIdentity = ScreenTargetKey.of(path, node.viewIdResourceName,
                     bounds.toString(), node.text, node.contentDescription)
                 val identity = buildString {
                     append(ownIdentity.length).append(':').append(ownIdentity)
                     for (i in 0 until node.childCount) node.getChild(i)?.let {
-                        val child = visit(it, "$path/$i")
+                        val child = visit(it, "$path/$i", path, rowPath)
                         append(child.length).append(':').append(child)
                     }
                 }
                 // Clickable rows often have no label themselves; a recycled row's
                 // changed child label must revoke the old selection just as its own would.
-                if (targetIndex >= 0) targets[targetIndex] = Target(identity, node, bounds)
+                identities[path] = identity
+                if (targetIndex >= 0) targets[targetIndex] = targets[targetIndex].copy(key = identity)
                 return identity
             }
-            visit(root, "root")
+            visit(root, "root", null, null)
+            // A button's label may stay "Delete" while a sibling identifies a new
+            // item. Bind it to its collection row, or conservatively its immediate
+            // container, without including unrelated rows elsewhere in the window.
+            for (i in targets.indices) {
+                val target = targets[i]
+                val container = checkNotNull(identities[target.containerPath])
+                targets[i] = target.copy(key = "${target.key.length}:${target.key}${container.length}:$container")
+            }
             val context = "${root.packageName}:${root.windowId}:$epoch"
             val keys = targets.map { it.key }
             if (action == null) {
