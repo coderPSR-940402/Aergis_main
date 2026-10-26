@@ -431,6 +431,11 @@ class MainActivity : ComponentActivity() {
     private fun GesturesScreen(onEdit: (RegisteredGesture) -> Unit, navigate: (AergisDestination) -> Unit) {
         var query by rememberSaveable { mutableStateOf("") }
         var filter by rememberSaveable { mutableIntStateOf(0) }
+        var presetApplied by rememberSaveable { mutableStateOf(false) }
+        val missingPresetActions = remember(mappingsVersion) {
+            TouchFreeNavigationPreset.missingActions(ActionMappingStore(this@MainActivity))
+        }
+        val missingPresetLabels = missingPresetActions.map { actionLabel(it) }.joinToString(", ")
         val rows = RegisteredGesture.entries.map { gesture ->
             Triple(gesture, stringResource(gestureLabelRes(gesture)), actionLabel(mapping(gesture, mappingsVersion)))
         }.filter { (gesture, name, action) ->
@@ -447,9 +452,17 @@ class MainActivity : ComponentActivity() {
                     Text(stringResource(R.string.touch_free_preset_help), color = AergisColors.Muted)
                     AergisButton(onClick = {
                         TouchFreeNavigationPreset.apply(ActionMappingStore(this@MainActivity))
+                        presetApplied = true
                         mappingsVersion++
                     }, modifier = Modifier.fillMaxWidth()) {
                         Text(stringResource(R.string.touch_free_preset_apply))
+                    }
+                    if (presetApplied) {
+                        Text(
+                            if (missingPresetActions.isEmpty()) stringResource(R.string.touch_free_preset_complete)
+                            else stringResource(R.string.touch_free_preset_missing, missingPresetLabels),
+                            color = if (missingPresetActions.isEmpty()) AergisColors.Muted else AergisColors.Caution
+                        )
                     }
                 }
             }

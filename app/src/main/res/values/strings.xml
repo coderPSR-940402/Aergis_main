@@ -327,4 +327,6 @@
     <string name="action_toggle_pointer">Toggle precision pointer</string>
     <string name="touch_free_preset_apply">Add touch-free navigation mappings</string>
     <string name="touch_free_preset_help">Fill unassigned poses with next item, previous item, select, scrolling, app search, system panels, motion control and pointer toggle. Existing assignments stay unchanged. Review the mappings below and practise the poses before use.</string>
+    <string name="touch_free_preset_complete">All navigation setup actions have a gesture assigned. Existing mappings were kept.</string>
+    <string name="touch_free_preset_missing">Still unassigned: %1$s. Assign these actions to gestures below. Existing mappings were kept.</string>
 </resources>

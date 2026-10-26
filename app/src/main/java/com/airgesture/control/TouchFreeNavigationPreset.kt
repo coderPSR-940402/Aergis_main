@@ -15,5 +15,13 @@ internal object TouchFreeNavigationPreset {
         RegisteredGesture.THUMB_INDEX_MIDDLE to AirAction.ARM_MOTION
     )
 
-    fun apply(store: ActionMappingStore) = store.fillUnassigned(bindings)
+    fun apply(store: ActionMappingStore): List<AirAction> {
+        store.fillUnassigned(bindings)
+        return missingActions(store)
+    }
+
+    fun missingActions(store: ActionMappingStore): List<AirAction> {
+        val assigned = RegisteredGesture.entries.map(store::mapping).toSet()
+        return bindings.values.distinct().filterNot { it in assigned }
+    }
 }

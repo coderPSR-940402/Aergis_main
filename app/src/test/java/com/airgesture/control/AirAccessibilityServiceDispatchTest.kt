@@ -101,6 +101,51 @@ class AirAccessibilityServiceDispatchTest {
         shadow.setRootInActiveWindow(null)
     }
 
+    @Test
+    @Suppress("DEPRECATION")
+    fun focusedPaneWithoutRequestedActionKeepsBoundedPointerFreeFallback() {
+        fun node(bounds: android.graphics.Rect) = android.view.accessibility.AccessibilityNodeInfo.obtain().apply {
+            isVisibleToUser = true; isEnabled = true; setBoundsInScreen(bounds)
+        }
+        val root = node(android.graphics.Rect(0, 0, 1000, 1000))
+        val focused = node(android.graphics.Rect(10, 10, 100, 100)).apply {
+            isAccessibilityFocused = true
+        }
+        val otherPane = node(android.graphics.Rect(500, 0, 1000, 900)).apply {
+            addAction(android.view.accessibility.AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_DOWN)
+            addAction(android.view.accessibility.AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_UP)
+        }
+        shadowOf(root).addChild(focused); shadowOf(root).addChild(otherPane)
+        var otherCalls = 0
+        shadowOf(otherPane).setOnPerformActionListener { _, _ -> otherCalls++; true }
+        shadow.setRootInActiveWindow(root)
+        AirRuntime.pointerEnabled = false
+        val metrics = DisplayMetrics()
+        (service.getSystemService(Context.WINDOW_SERVICE) as WindowManager)
+            .defaultDisplay.getRealMetrics(metrics)
+        try {
+            for (action in listOf(AirAction.SCROLL_UP, AirAction.SCROLL_DOWN)) {
+                val before = shadow.gesturesDispatched.size
+                service.dispatch(action, GestureTuning(scrollPercent = 30))
+                shadowOf(Looper.getMainLooper()).idle()
+                assertEquals(0, otherCalls)
+                assertEquals(before + 1, shadow.gesturesDispatched.size)
+                val call = shadow.gesturesDispatched.last()
+                val stroke = call.description().getStroke(0)
+                val bounds = RectF()
+                stroke.path.computeBounds(bounds, true)
+                assertEquals((metrics.widthPixels - 1) * .5f, bounds.left, .01f)
+                assertEquals(metrics.heightPixels * .30f, bounds.height(), .01f)
+                assertTrue(bounds.top >= 0f && bounds.bottom <= metrics.heightPixels - 1f)
+                assertEquals(280L, stroke.duration)
+                assertEquals(ActionDispatchOutcome.SUBMITTED, AirRuntime.state.value.actionDispatchTelemetry.lastOutcome)
+                call.callback()!!.onCompleted(call.description())
+            }
+        } finally {
+            shadow.setRootInActiveWindow(null)
+        }
+    }
+
     @Test fun mappedPointerToggleWorksBothWaysWithoutTouchAndPersists() {
         AirRuntime.pointerEnabled = false
         val before = AirRuntime.actionEpoch

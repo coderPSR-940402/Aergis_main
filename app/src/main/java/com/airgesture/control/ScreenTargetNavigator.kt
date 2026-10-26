@@ -24,7 +24,7 @@ internal class ScreenTargetNavigator(private val highlight: ScreenTargetHighligh
             val targets = ArrayList<Target>()
             val identities = HashMap<String, String>()
             var visited = 0
-            fun visit(node: AccessibilityNodeInfo, path: String, parentPath: String?, itemPath: String?): String {
+            fun visit(node: AccessibilityNodeInfo, path: String, itemPath: String?): String {
                 obtained.add(node)
                 check(++visited <= 512) { "Window too large for bounded target scan" }
                 if (!node.isVisibleToUser || !node.isEnabled || node.isPassword) return ""
@@ -32,14 +32,14 @@ internal class ScreenTargetNavigator(private val highlight: ScreenTargetHighligh
                 val rowPath = if (node.collectionItemInfo != null) path else itemPath
                 // Reserve pre-order navigation before collecting the visible subtree.
                 val targetIndex = if (node.isClickable && !bounds.isEmpty) {
-                    targets.add(Target("", node, bounds, rowPath ?: parentPath ?: path)); targets.lastIndex
+                    targets.add(Target("", node, bounds, rowPath ?: "root")); targets.lastIndex
                 } else -1
                 val ownIdentity = ScreenTargetKey.of(path, node.viewIdResourceName,
                     bounds.toString(), node.text, node.contentDescription)
                 val identity = buildString {
                     append(ownIdentity.length).append(':').append(ownIdentity)
                     for (i in 0 until node.childCount) node.getChild(i)?.let {
-                        val child = visit(it, "$path/$i", path, rowPath)
+                        val child = visit(it, "$path/$i", rowPath)
                         append(child.length).append(':').append(child)
                     }
                 }
@@ -49,10 +49,12 @@ internal class ScreenTargetNavigator(private val highlight: ScreenTargetHighligh
                 if (targetIndex >= 0) targets[targetIndex] = targets[targetIndex].copy(key = identity)
                 return identity
             }
-            visit(root, "root", null, null)
+            visit(root, "root", null)
             // A button's label may stay "Delete" while a sibling identifies a new
-            // item. Bind it to its collection row, or conservatively its immediate
-            // container, without including unrelated rows elsewhere in the window.
+            // item. A collection item supplies an explicit row boundary, allowing
+            // unrelated rows to change. Without that metadata, an immediate parent
+            // may only be an actions wrapper: bind to the whole visible window so
+            // a changed identifying label at any ancestor depth revokes selection.
             for (i in targets.indices) {
                 val target = targets[i]
                 val container = checkNotNull(identities[target.containerPath])

@@ -40,7 +40,9 @@ internal object AccessibleScroll {
             visit(root, 0)
             val focused = focus?.let { bounds -> candidates.filter { it.bounds.contains(bounds) } }.orEmpty()
             val smallestArea = focused.minOfOrNull { it.bounds.width().toLong() * it.bounds.height() }
-            val target = if (focused.isNotEmpty()) focused.singleOrNull {
+            // Focus outside all eligible regions must not redirect the command
+            // to a different pane merely because it is the only one that can scroll.
+            val target = if (focus != null) focused.singleOrNull {
                 it.bounds.width().toLong() * it.bounds.height() == smallestArea
             } else candidates.singleOrNull()
             target?.let { it.node.performAction(it.action) } == true
