@@ -126,6 +126,7 @@ class AirAccessibilityServiceDispatchTest {
         try {
             for (action in listOf(AirAction.SCROLL_UP, AirAction.SCROLL_DOWN)) {
                 val before = shadow.gesturesDispatched.size
+                val completedBefore = AirRuntime.state.value.actionDispatchTelemetry.completed
                 service.dispatch(action, GestureTuning(scrollPercent = 30))
                 shadowOf(Looper.getMainLooper()).idle()
                 assertEquals(0, otherCalls)
@@ -138,8 +139,10 @@ class AirAccessibilityServiceDispatchTest {
                 assertEquals(metrics.heightPixels * .30f, bounds.height(), .01f)
                 assertTrue(bounds.top >= 0f && bounds.bottom <= metrics.heightPixels - 1f)
                 assertEquals(280L, stroke.duration)
-                assertEquals(ActionDispatchOutcome.SUBMITTED, AirRuntime.state.value.actionDispatchTelemetry.lastOutcome)
+                // Native submission is not completion; the callback is authoritative.
+                assertEquals(completedBefore, AirRuntime.state.value.actionDispatchTelemetry.completed)
                 call.callback()!!.onCompleted(call.description())
+                assertEquals(completedBefore + 1, AirRuntime.state.value.actionDispatchTelemetry.completed)
             }
         } finally {
             shadow.setRootInActiveWindow(null)
