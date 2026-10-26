@@ -58,6 +58,25 @@ class AccessibleScrollTest {
         assertEquals(1, rightCalls)
     }
 
+    @Test fun focusedPaneAtItsBoundaryCannotRedirectScrollToAnotherPane() {
+        val root = node(Rect(0, 0, 1000, 1000))
+        val left = node(Rect(0, 0, 400, 900))
+        val right = node(Rect(500, 0, 1000, 900))
+        val focused = node(Rect(50, 100, 150, 200)).apply { isAccessibilityFocused = true }
+        shadowOf(root).addChild(left); shadowOf(root).addChild(right)
+        shadowOf(left).addChild(focused)
+        left.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_UP)
+        right.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_DOWN)
+        var leftCalls = 0; var rightCalls = 0
+        shadowOf(left).setOnPerformActionListener { _, _ -> leftCalls++; true }
+        shadowOf(right).setOnPerformActionListener { _, _ -> rightCalls++; true }
+        assertFalse(AccessibleScroll.perform(root, true))
+        assertEquals(0, leftCalls + rightCalls)
+        assertTrue(AccessibleScroll.perform(root, false))
+        assertEquals(1, leftCalls)
+        assertEquals(0, rightCalls)
+    }
+
     @Test fun horizontalOnlyCarouselCannotConsumeAVerticalScroll() {
         val region = node()
         region.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_LEFT)

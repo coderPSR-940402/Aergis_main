@@ -11,6 +11,26 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class TouchFreeNavigationPresetTest {
+    @Test fun presetReportsMissingActionsWithoutOverwritingOccupiedSlots() {
+        val context = RuntimeEnvironment.getApplication() as Context
+        val prefs = context.getSharedPreferences("aergis_mappings", Context.MODE_PRIVATE)
+        prefs.edit().clear().commit()
+        try {
+            val store = ActionMappingStore(context)
+            store.saveBinding(RegisteredGesture.THREE_FINGERS, AirAction.VOLUME_UP,
+                GestureTuning(volumeSteps = 3))
+            assertEquals(listOf(AirAction.NEXT_ITEM), TouchFreeNavigationPreset.apply(store))
+            assertEquals(AirAction.VOLUME_UP, store.mapping(RegisteredGesture.THREE_FINGERS))
+            assertEquals(3, store.tuning(RegisteredGesture.THREE_FINGERS).volumeSteps)
+            // An existing alternative assignment satisfies the action; don't report
+            // the preferred slot as missing just because it is occupied.
+            store.setMapping(RegisteredGesture.THUMB_UP, AirAction.NEXT_ITEM)
+            assertEquals(emptyList<AirAction>(), TouchFreeNavigationPreset.apply(store))
+        } finally {
+            prefs.edit().clear().commit()
+        }
+    }
+
     @Test fun everyPreferenceObserverSeesTheWholePreset() {
         val context = RuntimeEnvironment.getApplication() as Context
         val prefs = context.getSharedPreferences("aergis_mappings", Context.MODE_PRIVATE)

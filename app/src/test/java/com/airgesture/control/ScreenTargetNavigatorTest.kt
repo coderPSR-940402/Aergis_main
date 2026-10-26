@@ -77,10 +77,13 @@ class ScreenTargetNavigatorTest {
         assertEquals(0, clicks)
     }
 
-    @Test fun updatingAnotherRowRetainsTheSelectedButtonAndConsumesItOnce() {
+    @Suppress("DEPRECATION")
+    @Test fun updatingAnotherCollectionRowRetainsTheSelectedButtonAndConsumesItOnce() {
         var clicks = 0
         val root = container()
-        val selectedRow = container()
+        val selectedRow = container().apply {
+            collectionItemInfo = AccessibilityNodeInfo.CollectionItemInfo.obtain(0, 1, 0, 1, false)
+        }
         val otherRow = container()
         val otherLabel = target("Other item") { }.apply { isClickable = false }
         shadowOf(root).addChild(selectedRow); shadowOf(root).addChild(otherRow)
@@ -96,6 +99,36 @@ class ScreenTargetNavigatorTest {
         assertTrue(navigator.perform(root, AirAction.SELECT_ITEM, 1L))
         assertFalse(navigator.perform(root, AirAction.SELECT_ITEM, 1L))
         assertEquals(1, clicks)
+    }
+
+    @Test fun nestedButtonWithoutCollectionMetadataRevokesOnRowReplacement() {
+        assertNestedUnlabelledRowRevoked(refreshFirst = true)
+    }
+
+    @Test fun nestedButtonWithoutCollectionMetadataRechecksBeforeClick() {
+        assertNestedUnlabelledRowRevoked(refreshFirst = false)
+    }
+
+    private fun assertNestedUnlabelledRowRevoked(refreshFirst: Boolean) {
+        var clicks = 0
+        val root = container()
+        val row = container()
+        val label = target("Original item") { }.apply { isClickable = false }
+        val actions = container()
+        shadowOf(root).addChild(row)
+        shadowOf(row).addChild(label); shadowOf(row).addChild(actions)
+        shadowOf(actions).addChild(target("Delete") { clicks++ })
+        val highlight = VisibleHighlight()
+        val navigator = ScreenTargetNavigator(highlight)
+        assertTrue(navigator.perform(root, AirAction.NEXT_ITEM, 1L))
+        assertTrue(navigator.refresh(root, 1L))
+        label.text = "Replacement item"
+        if (refreshFirst) {
+            assertFalse(navigator.refresh(root, 1L))
+            assertFalse(highlight.isVisible)
+        }
+        assertFalse(navigator.perform(root, AirAction.SELECT_ITEM, 1L))
+        assertEquals(0, clicks)
     }
 
     @Test fun recycledClickableRowCannotRetainSelectionAfterItsChildLabelChanges() {
