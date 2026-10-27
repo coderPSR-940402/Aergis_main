@@ -1,5 +1,51 @@
 # Aergis Evidence Ledger and Decision Log
 
+
+## Current continuation — 2026-10-27: projected thumb-middle contact
+
+- Main and automatic build reference resolve to `a53596b2d2c25ced3026d42a31d9b10b60225b5f`.
+  Preserve PR #74's navigation changes at `1bb69d4e637b43ec3d5eb5fa746242d29f7e8703`;
+  merge current main's recording-tooling changes into that branch before this correction.
+- Latest supplied A54 / Android 16 recording identifies PR #74 merge
+  `5385146d296b06de6fc7dad5af5c052782071e49`, CI #327. Across 1,215 records,
+  two native TAP requests have COMPLETED callbacks. This proves two dispatches, not
+  reliable target activation or release acceptance. The owner reports missed clicks.
+- In the labelled CLICK segment, 117 frames expose contact measurements. Eight have
+  aspect-corrected image-plane thumb-middle/palm separation below the existing 0.18
+  threshold; only one passes the current 3D metric. All eight retain pointer-touch
+  eligibility. Sampled camera images around several discrepancies show fingers together;
+  the 2 FPS images do not establish every attempted click or exact contact timing.
+- Root cause reproduced with synthetic geometry: inferred fingertip depth changes
+  a projected contact ratio of 0.10 into 0.269, suppressing confirmation. Inferred
+  palm-depth expansion can conversely admit visibly separated fingers. The prior
+  mixed 2D-tip/3D-palm metric must not be restored either.
+
+Correction: measure BOTH fingertip separation and palm width in aspect-corrected
+upright image coordinates. No contact/release threshold or timing change. Preserve
+finite/visible relevant-landmark checks, ownership/epoch/freshness gates, observed
+opening, high-rate confirmation, refractory guard, one tap per contact, pointer
+anchor and native dispatch. No CameraX, MediaPipe delegate/mode, filter, calibration,
+gesture mapping or lifecycle change in this correction. Existing PR #74 navigation
+implementation remains intact.
+
+Verification before CI: five new synthetic regressions fail against the unchanged
+metric; after correction all 40 selected production-core JUnit tests pass, including
+existing palm-roll, partial-hand, aspect, contact/release and anchoring cases. Host
+stubs cover Android clock, the unused MediaPipe smoother overload and mapping-store
+access only. Thirteen Python tooling tests and whitespace checks pass. Added actual
+engine-to-native-dispatch regression requires Android CI. Local Gradle bootstrap is
+network-blocked; do not claim a local Android build.
+
+Regression risk: projected fingertip overlap is not proof of physical touch. Check
+unintended commands as well as misses, especially oblique hands, passing fingers,
+held contact and release. Severe palm foreshortening can still make contact difficult.
+The correction does not solve the recorded roughly 12 FPS / 211 ms pipeline delay or
+whole-hand command rejection. No click-accuracy rate, device success or baseline
+promotion is claimed. Keep PR #74 unmerged until acceptance of the exact new APK:
+normal-posture repeated taps on labelled targets; no click from ordinary hand roll;
+no repeat during hold; release/reclick, pause/resume and partial-hand cancellation;
+gesture-only next/previous/select, scrolling and pointer toggling remain required.
+
 ## Current continuation — 2026-10-19: visible viewport authority
 
 ### Current reality and recording evidence
@@ -563,3 +609,42 @@ maintained pose cannot repeat; neutral then new pose acts once; thumb-middle
 contact/release has no large pointer jump or delayed classifier action; fast
 separate contacts retain responsiveness. Install the final CI debug APK without
 clearing data and record exact build identity and misses/extras.
+
+
+## 2026-10-25 — Pointer-disabled recording review
+
+Reviewed `Aergis-20261025-114910-334-74a41d1b.zip` locally; camera images and
+landmarks are not committed. Metadata reports source
+`404818ee4c1cfee09af9dfa67b6f3a3ac0550c5c`. An explicit SHA fetch resolved
+this otherwise unreferenced PR #72 merge commit. Its Git tree is identical to
+current main (`98537dc2ab977e2b4f0eeb04bececace82ff19c3`), establishing
+source equivalence. This is device evidence for current source, not blanket
+functional acceptance or proof of APK/signing identity.
+Current main and remotely resolved `baseline-successful-apk` are both
+`dd785124ab2b499c9fa8869bd75a494b77496747`.
+
+The recording spans 498.420 seconds with 6,134 readable frames. Pointer is
+disabled and gestures enabled throughout. There are 47 action requests across
+14 action types, 31 COMPLETED outcome events and 16 SUBMITTED outcome events.
+No failure outcomes are recorded. SUBMITTED does not prove completion, and
+aggregate outcomes are not paired to requests. This demonstrates a functioning
+pointer-independent command path, not a measured recognition success rate.
+
+Command eligibility is true on 3,413 frames. Pose reasons include 2,144 NO_POSE,
+252 OUT_OF_RANGE_LANDMARK and 252 EXCESSIVE_INDEX_BONE frames. These are
+observations, not proof of 504 missed intended gestures. There are no labelled
+attempts. Pointer rejection DISABLED is expected in this test and must not be
+reported as gesture failure or lost pointer tracking.
+
+Instrumented frame-to-publish age: median 194 ms, nearest-rank p95 291 ms.
+Age at analysis start: median 114 ms, p95 205 ms. Inference: median 64 ms,
+p95 98 ms. These timings are not display or Android-response latency; disabled
+pointer frames still contain the historical `frameToPointerMs` timing field.
+The upstream age requires a current-build reproduction before camera changes.
+
+The replay analyzer now emits action/outcome counts, pose reasons, command
+eligibility and robust timing summaries without requiring pointer comparisons.
+Existing pointer comparison behavior is retained. Two added regression tests
+first failed on absent summaries; all 13 Python tooling tests then passed.
+The supplied ZIP was processed successfully. No Android runtime code changed.
+Current pinch/partial-hand fixes remain intact; physical validation is outstanding.

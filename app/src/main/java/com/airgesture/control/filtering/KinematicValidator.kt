@@ -1,7 +1,5 @@
 package com.airgesture.control.filtering
 
-import kotlin.math.sqrt
-
 class KinematicValidator {
 
     companion object {
@@ -25,23 +23,15 @@ class KinematicValidator {
         val thumbTip = landmarks[THUMB_TIP]
         val middleTip = landmarks[MIDDLE_TIP]
 
-        // MediaPipe x and z are expressed in image-width units while y is in
-        // image-height units. Convert all three axes to the same upright physical
-        // scale before comparing contact distance with palm width. Using 2D for the
-        // fingertips but depth for the palm makes an unchanged hand appear to pinch
-        // merely because the palm rolls toward profile.
-        val palmWidth = physicalDistance(indexMcp, pinkyMcp, aspectRatio)
+        // Compare both segments in the upright image plane, with the same aspect
+        // correction. Estimated z can disagree at the tips: tip-depth disagreement
+        // can veto visible contact, while a palm-depth refit can invent contact.
+        // Do not mix projected fingertips with a depth-expanded palm denominator.
+        val palmWidth = indexMcp.distance2DTo(pinkyMcp, aspectRatio)
             .coerceAtLeast(MIN_PALM_WIDTH_PX)
-        val fingertipDistance = physicalDistance(thumbTip, middleTip, aspectRatio)
+        val fingertipDistance = thumbTip.distance2DTo(middleTip, aspectRatio)
 
         return fingertipDistance / palmWidth
-    }
-
-    private fun physicalDistance(a: Point3D, b: Point3D, aspectRatio: Float): Float {
-        val dx = (a.x - b.x) * aspectRatio
-        val dy = a.y - b.y
-        val dz = (a.z - b.z) * aspectRatio
-        return sqrt(dx * dx + dy * dy + dz * dz)
     }
 
     fun validateAndConstrainIndexTip(

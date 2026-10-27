@@ -12,6 +12,36 @@ class RecordingAnalysisTest(unittest.TestCase):
     def analyze(self, frames):
         return analyze(frames, [], {})
 
+    def test_pointer_disabled_recording_retains_command_and_timing_evidence(self):
+        rows = [dict(timestampMs=t, pointerEnabled=False, gesturesEnabled=True,
+                     commandsAllowed=True, commandPoseReason='NONE',
+                     timing={'frameToPointerMs': age})
+                for t, age in [(0, 100), (50, 200), (100, 300)]]
+        events = [{'event': 'action_requested', 'action': 'BACK'},
+                  {'event': 'action_outcome', 'outcome': 'COMPLETED'},
+                  {'event': 'action_requested', 'action': 'VOLUME_UP'},
+                  {'event': 'action_outcome', 'outcome': 'SUBMITTED'}]
+        result = analyze(rows, events, {})
+        self.assertEqual({'BACK': 1, 'VOLUME_UP': 1}, result['commands']['requestedActions'])
+        self.assertEqual({'COMPLETED': 1, 'SUBMITTED': 1}, result['commands']['outcomes'])
+        self.assertEqual(3, result['commands']['pointerDisabledGestureFrames'])
+        self.assertEqual(3, result['commands']['eligibleFrames'])
+        self.assertEqual(100, result['durationMs'])
+        self.assertEqual({'samples': 3, 'median': 200, 'p95': 300},
+                         result['pipelineTimingMs']['frameToPointerMs'])
+        self.assertFalse(result['segments'])
+
+    def test_summary_excludes_invalid_timing_and_does_not_invent_completion(self):
+        rows = [None] + [dict(timing={'inferenceMs': v})
+                         for v in [True, -1, float('nan'), float('inf'), '10', None, 0, 10]]
+        result = analyze(rows, [None, {'event': 'action_outcome', 'outcome': 'SUBMITTED'}], {})
+        self.assertEqual({'samples': 2, 'median': 5, 'p95': 10},
+                         result['pipelineTimingMs']['inferenceMs'])
+        self.assertEqual({'SUBMITTED': 1}, result['commands']['outcomes'])
+        self.assertEqual({}, result['commands']['requestedActions'])
+        self.assertIsNone(result['durationMs'])
+        self.assertEqual({}, result['pipelineTimingMs'].get('publishMs', {}))
+
     def test_partial_log_remains_analyzable_without_stitching_across_damage(self):
         import json
         rows = read_records(json.dumps(frame(0)) + '\n{"timestampMs":\n' + json.dumps(frame(66, .8)))

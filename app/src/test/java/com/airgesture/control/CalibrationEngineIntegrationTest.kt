@@ -596,6 +596,29 @@ class CalibrationEngineIntegrationTest {
         }
     }
 
+    @Test fun projectedContactWithDepthDisagreementDispatchesOneAnchoredTap() {
+        withMappedBackService { shadow ->
+            AirRuntime.gesturesEnabled = false
+            val looper = org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper())
+            val open = hand()
+            repeat(4) { publish(open, 1000L + it * 100L); looper.idle() }
+            val target = AirRuntime.pointerSnapshot()
+            val closed = open.toMutableList().apply {
+                this[4] = NormalizedLandmark.create(.56f, .65f, -.05f)
+            }
+            publish(closed, 1400L); looper.idle()
+            assertEquals(PointerInteractionPhase.PRESSED, AirRuntime.pointerInteraction)
+            assertEquals(target.x, AirRuntime.pointerX, .0001f)
+            assertEquals(target.y, AirRuntime.pointerY, .0001f)
+            assertEquals("Contact must reach native dispatch with commands disabled", 1, shadow.gesturesDispatched.size)
+            val tap = shadow.gesturesDispatched.single()
+            tap.callback()!!.onCompleted(tap.description())
+            repeat(4) { publish(closed, 1500L + it * 100L); looper.idle() }
+            assertEquals("Depth refits during held contact cannot repeat", 1, shadow.gesturesDispatched.size)
+            assertTrue(shadow.globalActionsPerformed.isEmpty())
+        }
+    }
+
     private fun withMappedBackService(block: (org.robolectric.shadows.ShadowAccessibilityService) -> Unit) {
         val context = RuntimeEnvironment.getApplication() as Context
         val prefs = context.getSharedPreferences("aergis_mappings", Context.MODE_PRIVATE)
