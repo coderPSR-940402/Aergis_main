@@ -52,4 +52,9 @@ class TouchFreeCalibrationTest {
         repeat(8) { frame(distance=.25f) }
         assertNull(frame(distance=.1f))
     }
+    @Test fun palmLabelDuringHeldContactCannotConfirmTheLastCorner() {
+        input.start()
+        for ((x,y) in listOf(.8f to .2f,.2f to .2f,.2f to .8f,.8f to .8f)) corner(x,y)
+        repeat(15) { assertNull(frame(distance=.1f,pose="Open_Palm")) }
+    }
 }

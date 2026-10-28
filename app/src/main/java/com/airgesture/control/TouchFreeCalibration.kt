@@ -49,7 +49,7 @@ internal class TouchFreeCalibration {
         // Never turn a stale/out-of-order sample into new evidence.
         if (prior != null && frame.timestampMs <= prior.timestampMs) return null
         previous = frame
-        val pose = frame.pose.takeIf { it == "Closed_Fist" || (corners.size >= 4 && it == "Open_Palm") }
+        val pose = frame.pose.takeIf { it == "Closed_Fist" || (corners.size >= 4 && it == "Open_Palm" && frame.distance >= .32f) }
         if (pose != heldPose) { heldPose = pose; heldSince = pose?.let { frame.timestampMs } }
         if (pose != null && frame.timestampMs - (heldSince ?: frame.timestampMs) >= if (pose == "Open_Palm") 1000L else 1200L) {
             stop()

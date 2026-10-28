@@ -451,7 +451,7 @@ class MainActivity : ComponentActivity() {
             frame != null && frame.epoch == AirRuntime.actionEpoch &&
             android.os.SystemClock.uptimeMillis() - frame.observedAtMs in 0L..350L
         val event = touchFreeCalibration.update(if (safe) frame else null)
-        if (frame != null && frame.epoch != AirRuntime.actionEpoch) { touchFreeCalibration.resetEvidence(); return }
+        if (frame != null && frame.epoch != AirRuntime.actionEpoch) { cancelCalibration(); return }
         when (event) {
             is TouchFreeCalibration.Event.Capture -> {
                 if (calibrationSession.addSample(event.x, event.y)) {
