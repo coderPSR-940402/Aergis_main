@@ -276,6 +276,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         if (closed.get()) return
         // Ordering and filter dt use the sensor clock. Age uses only comparable clocks;
         // UNKNOWN cameras have no reliable absolute exposure-to-delivery measurement.
+        if (AirRuntime.controlMode != ControlMode.READY) AirRuntime.setCalibrationGesture(null)
         val freshness = freshnessPolicy.evaluate(timestamp, (timestamp + ageMs).coerceAtLeast(0L))
         diagnosticTrace?.put("freshness", org.json.JSONObject().put("reason", freshness.reason.name)
             .put("ageMs", freshness.ageMs).put("gapMs", freshness.gapMs))
@@ -604,6 +605,15 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             lastPointerObservedAt = 0L
             val rawTip = reusablePointsList[INDEX_TIP]
             AirRuntime.setRawPointerState(rawTip.x, rawTip.y, true)
+            if (actionsFresh && poseEvidenceEvaluator.evaluatePointer(reusablePointsList, frameAspectRatio).accepted) {
+                val validator = com.airgesture.control.filtering.KinematicValidator()
+                val depthScale = if (rotationDegrees % 180 != 0) 1f else frameAspectRatio
+                AirRuntime.setCalibrationGesture(CalibrationGestureFrame(timestamp, AirRuntime.actionEpoch,
+                    handSelection.ownerId, rawTip.x, rawTip.y,
+                    validator.calculateNormalizedFingerDistance(reusablePointsList, frameAspectRatio),
+                    validator.calculateNormalizedFingerDepthDistance(reusablePointsList, frameAspectRatio, depthScale),
+                    if (selectedPoseEvidence?.accepted == true && gestureScore >= .7f) gestureName else "None", observedAtMs))
+            } else AirRuntime.setCalibrationGesture(null)
             AirRuntime.setPointerState(AirRuntime.pointerX, AirRuntime.pointerY, false)
             AirRuntime.pointerFeedback = PointerFeedback.DISABLED
             AirAccessibilityService.instance?.updatePointer(0f, 0f, false)
@@ -725,6 +735,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
     /** Retention changes cursor visibility only. Missing evidence immediately cancels all actions. */
     private fun handlePointerGap(now: Long, pointerActive: Boolean, coastAllowed: Boolean,
         reason: String, feedback: PointerFeedback) {
+        AirRuntime.setCalibrationGesture(null)
         val pixels = currentPixels
         val fallback = if (reason == "RAW_LANDMARK_DROPOUT" && pointerActive && coastAllowed &&
             pixels != null && patchEpoch == AirRuntime.actionEpoch)
@@ -752,6 +763,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         val held = if (pointerActive && coastAllowed) pointerVisibility.heldAt(now) else null
         AirRuntime.setRawPointerState(AirRuntime.rawPointerSnapshot().x, AirRuntime.rawPointerSnapshot().y, false)
         if (held != null) {
+            reacquireFrom = held // Motion catches up in bounded steps; touch history was revoked above.
             AirRuntime.setPointerState(held.x, held.y, false)
             AirRuntime.pointerFeedback = if (feedback == PointerFeedback.VISION_REJECTED) feedback else PointerFeedback.COASTING
             AirAccessibilityService.instance?.updatePointer(held.x, held.y, true, false)

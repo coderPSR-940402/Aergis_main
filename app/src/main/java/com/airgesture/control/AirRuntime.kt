@@ -30,16 +30,6 @@ data class VisionTelemetry(
     val lastRejectionReason: String? = null
 )
 
-enum class ActionDispatchOutcome {
-    POLICY_DENIED,
-    PLATFORM_REJECTED,
-    SUBMITTED,
-    COMPLETED,
-    CANCELLED,
-    PLATFORM_UNAVAILABLE,
-    EXECUTION_FAILED
-}
-
 data class ActionDispatchTelemetry(
     val totalOutcomes: Long = 0L,
     val policyDenied: Long = 0L,
@@ -71,8 +61,10 @@ data class AirRuntimeState(
     val pointerInteraction: PointerInteractionPhase = PointerInteractionPhase.IDLE,
     /** Raw normalized vision coordinates, before screen mapping or calibration. */
     val rawPointer: PointerSnapshot = PointerSnapshot(0f, 0f, false),
+    val calibrationGesture: CalibrationGestureFrame? = null,
     val visionTelemetry: VisionTelemetry = VisionTelemetry(),
     val actionDispatchTelemetry: ActionDispatchTelemetry = ActionDispatchTelemetry(),
+    val actionFeedback: ActionFeedback? = null,
     val poseEvidence: PoseGeometryEvidence? = null,
     /** Invalidates actions queued under an older session or safety state. */
     val actionEpoch: Long = 0L
@@ -292,6 +284,19 @@ object AirRuntime {
         _state.update { it.copy(poseEvidence = null) }
     }
 
+    private val feedbackSequence = java.util.concurrent.atomic.AtomicLong()
+    internal fun beginActionFeedback(action: AirAction): Long {
+        val id = feedbackSequence.incrementAndGet()
+        val feedback = ActionFeedback(id, action, updatedAtMs = android.os.SystemClock.uptimeMillis())
+        _state.update { if ((it.actionFeedback?.requestId ?: 0L) < id) it.copy(actionFeedback = feedback) else it }
+        return id
+    }
+    internal fun recordActionFeedback(outcome: ActionDispatchOutcome, id: Long) {
+        recordActionDispatchOutcome(outcome)
+        _state.update { current -> current.copy(actionFeedback = current.actionFeedback?.result(id, outcome,
+            android.os.SystemClock.uptimeMillis())) }
+    }
+
     internal fun recordActionDispatchOutcome(outcome: ActionDispatchOutcome) {
         if (TestingTools.state.value.status == RecordingStatus.RECORDING) {
             TestingTools.event("action_outcome", org.json.JSONObject().put("outcome", outcome.name).put("epoch", actionEpoch))
@@ -328,6 +333,10 @@ object AirRuntime {
     }
 
     fun pointerSnapshot(): PointerSnapshot = state.value.pointer
+
+    internal fun setCalibrationGesture(frame: CalibrationGestureFrame?) {
+        _state.update { it.copy(calibrationGesture = frame) }
+    }
 
     fun rawPointerSnapshot(): PointerSnapshot = state.value.rawPointer
 

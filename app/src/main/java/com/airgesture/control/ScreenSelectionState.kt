@@ -14,7 +14,7 @@ internal class ScreenSelectionState {
         return selected
     }
     fun retain(keys: List<String>, contextKey: String): String? {
-        val result = selected?.takeIf { context == contextKey && it in keys }
+        val result = selected?.takeIf { context == contextKey && keys.count { key -> key == it } == 1 }
         if (result == null) clear()
         return result
     }

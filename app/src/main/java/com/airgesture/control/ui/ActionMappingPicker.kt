@@ -123,7 +123,9 @@ private fun TuningSlider(label: String, value: Float, range: ClosedFloatingPoint
 }
 
 @Composable
-internal fun actionLabel(action: AirAction): String = stringResource(when (action) {
+internal fun actionLabel(action: AirAction): String = stringResource(actionLabelResource(action))
+
+internal fun actionLabelResource(action: AirAction): Int = when (action) {
     AirAction.TAP -> R.string.action_tap
     AirAction.DOUBLE_TAP -> R.string.action_double_tap
     AirAction.BACK -> R.string.action_back
@@ -160,4 +162,4 @@ internal fun actionLabel(action: AirAction): String = stringResource(when (actio
     AirAction.TOGGLE_POINTER -> R.string.action_toggle_pointer
     AirAction.CALIBRATE_POINTER -> R.string.action_calibrate_pointer
     AirAction.NONE -> R.string.action_disabled
-})
+}

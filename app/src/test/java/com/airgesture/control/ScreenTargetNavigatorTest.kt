@@ -192,4 +192,43 @@ class ScreenTargetNavigatorTest {
         assertFalse(navigator.perform(node,AirAction.NEXT_ITEM,1L))
         assertEquals(0,clicked)
     }
+    @Suppress("DEPRECATION")
+    @Test fun uniqueCollectionRowFollowsAnInsertionAndUpdatesHighlightBounds() {
+        var clicks = 0
+        val original = target("Account A") { clicks++ }.apply {
+            collectionItemInfo = AccessibilityNodeInfo.CollectionItemInfo.obtain(0,1,0,1,false)
+        }
+        val firstRoot = container()
+        shadowOf(firstRoot).addChild(original)
+        val highlight = VisibleHighlight()
+        val navigator = ScreenTargetNavigator(highlight)
+        assertTrue(navigator.perform(firstRoot, AirAction.NEXT_ITEM, 1L))
+        val movedRoot = container()
+        shadowOf(movedRoot).addChild(target("Account B") { fail("Wrong row clicked") }.apply {
+            collectionItemInfo = AccessibilityNodeInfo.CollectionItemInfo.obtain(0,1,0,1,false)
+        })
+        val moved = target("Account A") { clicks++ }.apply {
+            setBoundsInScreen(Rect(10,120,100,210))
+            collectionItemInfo = AccessibilityNodeInfo.CollectionItemInfo.obtain(1,1,0,1,false)
+        }
+        shadowOf(movedRoot).addChild(moved)
+        assertTrue(navigator.refresh(movedRoot,1L))
+        assertTrue(navigator.perform(movedRoot,AirAction.SELECT_ITEM,1L))
+        assertEquals(1,clicks)
+    }
+
+    @Suppress("DEPRECATION")
+    @Test fun duplicateCollectionRowsCannotBeConfirmed() {
+        val root = container()
+        val row = target("Same account") { fail("Ambiguous row clicked") }.apply {
+            collectionItemInfo = AccessibilityNodeInfo.CollectionItemInfo.obtain(0,1,0,1,false)
+        }
+        shadowOf(root).addChild(row)
+        val navigator = ScreenTargetNavigator(VisibleHighlight())
+        assertTrue(navigator.perform(root,AirAction.NEXT_ITEM,1L))
+        shadowOf(root).addChild(target("Same account") { fail("Ambiguous row clicked") }.apply {
+            collectionItemInfo = AccessibilityNodeInfo.CollectionItemInfo.obtain(1,1,0,1,false)
+        })
+        assertFalse(navigator.perform(root,AirAction.SELECT_ITEM,1L))
+    }
 }

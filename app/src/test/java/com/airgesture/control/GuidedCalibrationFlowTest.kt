@@ -111,6 +111,36 @@ class GuidedCalibrationFlowTest {
         assertFalse(PointerCalibrationStore(activity).enabled())
     }
 
+    @Test fun ownedFreshGesturesCaptureAndSaveOnlyAfterExplicitPalmConfirmation() = withActivity { activity ->
+        AirRuntime.setForegroundContext(ForegroundContextPolicy.evaluate(activity.packageName, MainActivity::class.java.name))
+        invoke(activity, "startCalibration")
+        val method = MainActivity::class.java.getDeclaredMethod("processCalibrationGesture", CalibrationGestureFrame::class.java).apply { isAccessible = true }
+        var time = android.os.SystemClock.uptimeMillis()
+        fun frame(x: Float, y: Float, distance: Float = .7f, pose: String = "None") {
+            time += 100
+            org.robolectric.shadows.ShadowSystemClock.advanceBy(java.time.Duration.ofMillis(100))
+            method.invoke(activity, CalibrationGestureFrame(time, AirRuntime.actionEpoch, "Left:1", x, y, distance, 0f, pose))
+        }
+        for ((x,y) in listOf(.8f to .2f,.2f to .2f,.2f to .8f,.8f to .8f)) {
+            repeat(5) { frame(x,y) }; frame(x,y,.1f)
+        }
+        assertEquals(4,session(activity).sampleCount())
+        assertFalse(PointerCalibrationStore(activity).enabled())
+        repeat(11) { frame(.5f,.5f,pose="Open_Palm") }
+        assertTrue(PointerCalibrationStore(activity).enabled())
+        assertEquals(PointerCalibrationSession.State.IDLE,session(activity).state())
+        assertEquals(ControlMode.READY,AirRuntime.controlMode)
+    }
+
+    @Test fun wrongEpochAndStaleCalibrationGesturesCannotAdvance() = withActivity { activity ->
+        invoke(activity,"startCalibration")
+        val method = MainActivity::class.java.getDeclaredMethod("processCalibrationGesture", CalibrationGestureFrame::class.java).apply { isAccessible = true }
+        val now = android.os.SystemClock.uptimeMillis()
+        repeat(8) { method.invoke(activity, CalibrationGestureFrame(now,AirRuntime.actionEpoch-1,"Left:1",.8f,.2f,.1f,0f,"Open_Palm")) }
+        assertEquals(0,session(activity).sampleCount())
+        assertFalse(PointerCalibrationStore(activity).enabled())
+    }
+
     private fun invoke(activity: MainActivity, method: String) {
         MainActivity::class.java.getDeclaredMethod(method).apply { isAccessible = true }.invoke(activity)
     }

@@ -50,21 +50,21 @@ class AppSearchActivity : Activity() {
         selected = 0; adapter.clear(); adapter.addAll(shown.map { it.label }); adapter.notifyDataSetChanged()
         if (shown.isNotEmpty()) list.setItemChecked(0, true)
     }
-    internal fun control(action: AirAction): Boolean {
+    internal fun control(action: AirAction, record: (ActionDispatchOutcome) -> Unit = AirRuntime::recordActionDispatchOutcome): Boolean {
         when (action) {
             AirAction.SCROLL_UP, AirAction.PREVIOUS_ITEM -> selected = (selected - 1).coerceAtLeast(0)
             AirAction.SCROLL_DOWN, AirAction.NEXT_ITEM -> selected = (selected + 1).coerceAtMost((shown.size - 1).coerceAtLeast(0))
-            AirAction.SWIPE_RIGHT, AirAction.SELECT_ITEM -> { launchSelected(); return true }
-            AirAction.SWIPE_LEFT -> { finish(); AirRuntime.recordActionDispatchOutcome(ActionDispatchOutcome.COMPLETED); return true }
+            AirAction.SWIPE_RIGHT, AirAction.SELECT_ITEM -> { launchSelected(record); return true }
+            AirAction.SWIPE_LEFT -> { finish(); record(ActionDispatchOutcome.COMPLETED); return true }
             else -> return false
         }
         if (shown.isNotEmpty()) { list.setItemChecked(selected, true); list.smoothScrollToPosition(selected) }
-        AirRuntime.recordActionDispatchOutcome(ActionDispatchOutcome.COMPLETED)
+        record(ActionDispatchOutcome.COMPLETED)
         return true
     }
-    private fun launchSelected() {
+    private fun launchSelected(record: (ActionDispatchOutcome) -> Unit = AirRuntime::recordActionDispatchOutcome) {
         val app = shown.getOrNull(selected) ?: run {
-            AirRuntime.recordActionDispatchOutcome(ActionDispatchOutcome.PLATFORM_UNAVAILABLE)
+            record(ActionDispatchOutcome.PLATFORM_UNAVAILABLE)
             return
         }
         val outcome = try {
@@ -78,7 +78,7 @@ class AppSearchActivity : Activity() {
         } catch (_: RuntimeException) {
             ActionDispatchOutcome.EXECUTION_FAILED
         }
-        AirRuntime.recordActionDispatchOutcome(outcome)
+        record(outcome)
         if (outcome == ActionDispatchOutcome.SUBMITTED) finish()
     }
     override fun onResume() { super.onResume(); active = WeakReference(this) }

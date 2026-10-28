@@ -104,6 +104,27 @@ class HandOwnershipTrackerTest {
         )
     }
 
+    @Test fun briefMissingHandPreservesIdentityButNeverSelectsAMissingHand() {
+        val tracker = HandOwnershipTracker()
+        val first = tracker.select(listOf(observation(0,"Left",.2f,.4f)), ControlHandPreference.EITHER,0L)
+        assertNull(tracker.select(emptyList(), ControlHandPreference.EITHER,100L))
+        assertNull(tracker.select(emptyList(), ControlHandPreference.EITHER,200L))
+        val recovered = tracker.select(listOf(observation(0,"Left",.21f,.4f)), ControlHandPreference.EITHER,300L)
+        assertEquals(first?.ownerId, recovered?.ownerId)
+    }
+
+    @Test fun missingFramesDoNotExtendOwnershipAndOppositeHandCannotRecoverIt() {
+        val tracker = HandOwnershipTracker()
+        val first = tracker.select(listOf(observation(0,"Left",.2f,.4f)), ControlHandPreference.EITHER,0L)
+        tracker.select(emptyList(), ControlHandPreference.EITHER,100L)
+        assertNull(tracker.select(listOf(observation(0,"Right",.2f,.4f)), ControlHandPreference.EITHER,200L))
+        val next = tracker.select(listOf(observation(0,"Left",.2f,.4f)), ControlHandPreference.EITHER,300L)
+        org.junit.Assert.assertNotEquals(first?.ownerId, next?.ownerId)
+        tracker.select(emptyList(), ControlHandPreference.EITHER,400L)
+        val expired = tracker.select(listOf(observation(0,"Left",.2f,.4f)), ControlHandPreference.EITHER,900L)
+        org.junit.Assert.assertNotEquals(next?.ownerId, expired?.ownerId)
+    }
+
     private fun observation(index: Int, handedness: String, x: Float, y: Float) =
         HandObservation(index, handedness, x, y, palmSize = 0.12f)
 }

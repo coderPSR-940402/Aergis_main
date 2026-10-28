@@ -33,4 +33,10 @@ class ScreenSelectionStateTest {
         assertNull(state.confirm(listOf("b"), "old"))
         assertNull(state.move(emptyList(), "old", false))
     }
+    @Test fun duplicateIdentityCannotBeRetainedOrConfirmed() {
+        val state = ScreenSelectionState()
+        state.move(listOf("unique"), "window", true)
+        org.junit.Assert.assertNull(state.retain(listOf("unique", "unique"), "window"))
+        org.junit.Assert.assertNull(state.confirm(listOf("unique"), "window"))
+    }
 }

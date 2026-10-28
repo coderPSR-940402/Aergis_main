@@ -330,4 +330,16 @@
     <string name="touch_free_preset_help">Fill unassigned poses with next item, previous item, select, scrolling, app search, system panels, motion control and pointer toggle. Existing assignments stay unchanged. Review the mappings below and practise the poses before use.</string>
     <string name="touch_free_preset_complete">All navigation setup actions have a gesture assigned. Existing mappings were kept.</string>
     <string name="touch_free_preset_missing">Still unassigned: %1$s. Assign these actions to gestures below. Existing mappings were kept.</string>
+    <string name="calibration_touch_free">Touch-free: aim steadily at each corner, then pinch thumb to middle finger once. After four corners, hold an open palm for 1 second to save. Hold a closed fist for 1.2 seconds to cancel. Actions stay disarmed.</string>
+    <string name="calibration_wrong_corner">Corner not captured. Follow the indicated corner order and keep opposite edges aligned. Release the pinch, aim steadily, then try again.</string>
+    <string name="action_feedback_message">%1$s · %2$s</string>
+    <string name="feedback_requested">Waiting for Android</string>
+    <string name="feedback_submitted">Submitted to Android</string>
+    <string name="feedback_input_finished">Android finished input</string>
+    <string name="feedback_executed">Executed</string>
+    <string name="feedback_cancelled">Input cancelled</string>
+    <string name="feedback_blocked">Blocked by control or screen safety</string>
+    <string name="feedback_rejected">Rejected or input busy</string>
+    <string name="feedback_unavailable">Target or capability unavailable</string>
+    <string name="feedback_failed">Action failed</string>
 </resources>

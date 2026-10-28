@@ -38,6 +38,17 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    // Production and rollback use their own monotonic version namespace. Signing
+    // occurs in a separate job: no private key or password is exposed to Gradle.
+    providers.environmentVariable("AERGIS_PRODUCTION_VERSION_CODE").orNull?.let { value ->
+        val code = value.toInt()
+        require(code in 2_000_000_001..2_100_000_000) { "Invalid production version code" }
+        defaultConfig.versionCode = code
+        val name = providers.environmentVariable("AERGIS_PRODUCTION_VERSION_NAME").get()
+        require(name.matches(Regex("[0-9A-Za-z.+-]+"))) { "Invalid production version name" }
+        defaultConfig.versionName = name
+    }
+
     buildFeatures { compose = true; buildConfig = true }
 
     testOptions {

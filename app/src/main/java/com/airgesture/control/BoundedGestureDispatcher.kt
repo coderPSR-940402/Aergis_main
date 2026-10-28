@@ -13,6 +13,7 @@ internal class BoundedGestureDispatcher(
     private val permitted: (Long) -> Boolean,
     private val record: (ActionDispatchOutcome) -> Unit
 ) {
+    private var activeRecord = record
     private var generation = 0L
     @Volatile private var active: Long? = null
     val isBusy: Boolean get() = active != null
@@ -27,9 +28,10 @@ internal class BoundedGestureDispatcher(
         }
     }
 
-    fun submit(gesture: GestureDescription, requestEpoch: Long) {
-        if (!permitted(requestEpoch)) { record(ActionDispatchOutcome.POLICY_DENIED); return }
-        if (active != null) { record(ActionDispatchOutcome.PLATFORM_REJECTED); return }
+    fun submit(gesture: GestureDescription, requestEpoch: Long, requestRecord: (ActionDispatchOutcome) -> Unit = record) {
+        if (!permitted(requestEpoch)) { requestRecord(ActionDispatchOutcome.POLICY_DENIED); return }
+        if (active != null) { requestRecord(ActionDispatchOutcome.PLATFORM_REJECTED); return }
+        activeRecord = requestRecord
         val token = ++generation
         active = token
         epoch = requestEpoch
@@ -61,7 +63,7 @@ internal class BoundedGestureDispatcher(
         })
         // Rejection is not cancellation evidence. Keep the original command
         // occupied until its own callback; never retry or permit overlapping input.
-        if (!accepted) record(ActionDispatchOutcome.PLATFORM_REJECTED)
+        if (!accepted) activeRecord(ActionDispatchOutcome.PLATFORM_REJECTED)
     }
 
     private fun submitToPlatform(gesture: GestureDescription,
@@ -77,6 +79,6 @@ internal class BoundedGestureDispatcher(
         active = null
         cancelling = false
         handler.removeCallbacks(watchdog)
-        record(outcome)
+        activeRecord(outcome)
     }
 }

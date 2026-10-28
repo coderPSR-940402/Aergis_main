@@ -13,10 +13,19 @@ import android.util.DisplayMetrics
 import android.view.ViewConfiguration
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
+import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.collect
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
 class AirAccessibilityService : AccessibilityService() {
+    private val feedbackScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var feedbackOverlay: ActionFeedbackOverlay? = null
+    private var currentFeedbackId = 0L // Main-thread synchronous dispatch context only.
+    private var dragFeedbackId = 0L
+    private fun recordOutcome(outcome: ActionDispatchOutcome) = AirRuntime.recordActionFeedback(outcome, currentFeedbackId)
     private val mainHandler = Handler(Looper.getMainLooper())
     private val boundedInput = BoundedGestureDispatcher(mainHandler,
         dispatch = { gesture, callback -> dispatchGesture(gesture, callback, mainHandler) },
@@ -29,7 +38,7 @@ class AirAccessibilityService : AccessibilityService() {
         permitted = { epoch -> AirRuntime.pointerEnabled && isActionAllowed(AirAction.POINTER_DRAG, epoch) },
         record = { outcome ->
             if (outcome != ActionDispatchOutcome.SUBMITTED) precisionDragActive = false
-            AirRuntime.recordActionDispatchOutcome(outcome)
+            AirRuntime.recordActionFeedback(outcome, dragFeedbackId)
         })
     val nativeTouchInFlight: Boolean get() = boundedInput.isBusy || precisionDrag.isBusy
     private val updateScheduled = AtomicBoolean(false)
@@ -60,6 +69,13 @@ class AirAccessibilityService : AccessibilityService() {
         instance = this
         pointerOverlay = PointerOverlay(this)
         trackingMirror = TrackingMirrorOverlay(this)
+        feedbackOverlay = ActionFeedbackOverlay(this)
+        feedbackScope.launch {
+            AirRuntime.state.map { Triple(it.actionFeedback, it.running, it.foregroundContext.safety) }
+                .distinctUntilChanged().collect { (feedback, running, safety) ->
+                    feedbackOverlay?.show(if (running && safety == ForegroundSafety.SAFE) feedback else null)
+                }
+        }
         AirRuntime.setForegroundContext(ForegroundContextPolicy.evaluate(null, null))
     }
 
@@ -150,8 +166,10 @@ class AirAccessibilityService : AccessibilityService() {
         expectedEpoch: Long = AirRuntime.actionEpoch) {
         val settings = tuning.bounded()
         if (action == AirAction.NONE) return
+        val feedbackId = AirRuntime.beginActionFeedback(action)
+        fun recordOutcome(outcome: ActionDispatchOutcome) = AirRuntime.recordActionFeedback(outcome, feedbackId)
         if (Build.VERSION.SDK_INT < action.minimumSdk) {
-            AirRuntime.recordActionDispatchOutcome(ActionDispatchOutcome.PLATFORM_REJECTED)
+            recordOutcome(ActionDispatchOutcome.PLATFORM_REJECTED)
             return
         }
         val requestedHotspot = visibleHotspot
@@ -161,7 +179,7 @@ class AirAccessibilityService : AccessibilityService() {
                 .put("visiblePixelX", requestedHotspot?.point?.x).put("visiblePixelY", requestedHotspot?.point?.y))
         }
         if (!isActionAllowed(action, expectedEpoch, origin)) {
-            AirRuntime.recordActionDispatchOutcome(ActionDispatchOutcome.POLICY_DENIED)
+            recordOutcome(ActionDispatchOutcome.POLICY_DENIED)
             return
         }
         val dispatchEpoch = expectedEpoch
@@ -171,34 +189,35 @@ class AirAccessibilityService : AccessibilityService() {
         val display = screenSize()
         val target = if (action.usesPointerTouch) {
             requestedHotspot?.takeIf { it.epoch == dispatchEpoch }?.point ?: run {
-                AirRuntime.recordActionDispatchOutcome(ActionDispatchOutcome.POLICY_DENIED)
+                recordOutcome(ActionDispatchOutcome.POLICY_DENIED)
                 return
             }
         } else display.map(.5f, .5f)
         val targetX = target.x
         val targetY = target.y
         mainHandler.post {
+            currentFeedbackId = feedbackId
             // Safety state can change while this action waits for the main thread
             // (for example, after a disarm or protected-screen event). Check
             // again immediately before injecting instead of trusting the frame-time
             // decision above.
             if (!isActionAllowed(action, dispatchEpoch, origin) ||
                 (action.usesPointerTouch && pointerGeneration != pointerCommandGeneration.get())) {
-                AirRuntime.recordActionDispatchOutcome(ActionDispatchOutcome.POLICY_DENIED)
+                recordOutcome(ActionDispatchOutcome.POLICY_DENIED)
                 return@post
             }
             if (precisionDrag.isBusy && action !in setOf(AirAction.POINTER_DRAG, AirAction.TOGGLE_POINTER, AirAction.CALIBRATE_POINTER)) {
-                AirRuntime.recordActionDispatchOutcome(ActionDispatchOutcome.PLATFORM_REJECTED)
+                recordOutcome(ActionDispatchOutcome.PLATFORM_REJECTED)
                 return@post
             }
             if (action == AirAction.SELECT_ITEM && boundedInput.isBusy) {
-                AirRuntime.recordActionDispatchOutcome(ActionDispatchOutcome.PLATFORM_REJECTED)
+                recordOutcome(ActionDispatchOutcome.PLATFORM_REJECTED)
                 return@post
             }
-            if (AppSearchActivity.active.get()?.control(action) == true) return@post
+            if (AppSearchActivity.active.get()?.control(action, ::recordOutcome) == true) return@post
             val nativeTouch = action.usesPointerTouch || action in setOf(AirAction.SCROLL_UP, AirAction.SCROLL_DOWN, AirAction.SWIPE_LEFT, AirAction.SWIPE_RIGHT)
             if (nativeTouch && boundedInput.isBusy) {
-                AirRuntime.recordActionDispatchOutcome(ActionDispatchOutcome.PLATFORM_REJECTED)
+                recordOutcome(ActionDispatchOutcome.PLATFORM_REJECTED)
                 return@post
             }
             if (action !in setOf(AirAction.NEXT_ITEM, AirAction.PREVIOUS_ITEM, AirAction.SELECT_ITEM)) {
@@ -209,7 +228,7 @@ class AirAccessibilityService : AccessibilityService() {
                 AirAction.NONE, AirAction.ARM_MOTION -> Unit
                 AirAction.CALIBRATE_POINTER -> {
                     cancelPointerTouch()
-                    PlatformActions(this).execute(action)
+                    PlatformActions(this, ::recordOutcome).execute(action)
                 }
                 AirAction.TOGGLE_POINTER -> {
                     val enabled = !AirRuntime.pointerEnabled
@@ -217,27 +236,28 @@ class AirAccessibilityService : AccessibilityService() {
                     AirRuntime.pointerEnabled = enabled // Revokes queued actions through the epoch.
                     cancelPointerTouch()
                     updatePointer(AirRuntime.pointerX, AirRuntime.pointerY, false)
-                    AirRuntime.recordActionDispatchOutcome(ActionDispatchOutcome.COMPLETED)
+                    recordOutcome(ActionDispatchOutcome.COMPLETED)
                 }
                 AirAction.NEXT_ITEM, AirAction.PREVIOUS_ITEM, AirAction.SELECT_ITEM -> {
                     val accepted = screenNavigator.perform(rootInActiveWindow, action, dispatchEpoch)
                     mainHandler.removeCallbacks(selectionGuard)
                     selectionEpoch = dispatchEpoch
                     if (action != AirAction.SELECT_ITEM && accepted) mainHandler.postDelayed(selectionGuard, 100L)
-                    AirRuntime.recordActionDispatchOutcome(if (accepted) ActionDispatchOutcome.SUBMITTED else ActionDispatchOutcome.PLATFORM_UNAVAILABLE)
+                    recordOutcome(if (accepted) ActionDispatchOutcome.SUBMITTED else ActionDispatchOutcome.PLATFORM_UNAVAILABLE)
                 }
                 AirAction.FOCUS_NEXT, AirAction.FOCUS_PREVIOUS, AirAction.ACTIVATE_FOCUSED -> {
                     val accepted = runCatching { AccessibleNavigation.perform(rootInActiveWindow, action) }.getOrDefault(false)
-                    AirRuntime.recordActionDispatchOutcome(if (accepted) ActionDispatchOutcome.SUBMITTED else ActionDispatchOutcome.PLATFORM_REJECTED)
+                    recordOutcome(if (accepted) ActionDispatchOutcome.SUBMITTED else ActionDispatchOutcome.PLATFORM_REJECTED)
                 }
                 AirAction.POINTER_DRAG -> {
+                    dragFeedbackId = feedbackId
                     if (!precisionDrag.isBusy)
                         precisionDrag.update(target, false, dispatchEpoch, SystemClock.uptimeMillis())
                     precisionDragActive = !precisionDragActive
                     precisionDrag.update(target, precisionDragActive, dispatchEpoch, SystemClock.uptimeMillis())
                 }
                 AirAction.APP_SEARCH, AirAction.WEB_SEARCH, AirAction.WIFI_CONTROLS,
-                AirAction.BLUETOOTH_SETTINGS, AirAction.ROTATION_TOGGLE -> PlatformActions(this).execute(action)
+                AirAction.BLUETOOTH_SETTINGS, AirAction.ROTATION_TOGGLE -> PlatformActions(this, ::recordOutcome).execute(action)
                 AirAction.SWIPE_LEFT -> performHorizontalSwipe(true, dispatchEpoch)
                 AirAction.SWIPE_RIGHT -> performHorizontalSwipe(false, dispatchEpoch)
                 AirAction.TAP -> performClickAt(targetX, targetY, dispatchEpoch)
@@ -311,7 +331,7 @@ class AirAccessibilityService : AccessibilityService() {
         // Semantic scrolling works on lists away from screen centre and avoids a
         // synthetic touch. Unsupported or ambiguous windows retain the bounded swipe.
         if (AccessibleScroll.perform(rootInActiveWindow, up)) {
-            AirRuntime.recordActionDispatchOutcome(ActionDispatchOutcome.SUBMITTED)
+            recordOutcome(ActionDispatchOutcome.SUBMITTED)
             return
         }
         val display = screenSize()
@@ -346,7 +366,7 @@ class AirAccessibilityService : AccessibilityService() {
             check(!audio.isVolumeFixed)
             repeat(steps) { audio.adjustStreamVolume(AudioManager.STREAM_MUSIC, direction, AudioManager.FLAG_SHOW_UI) }
         }
-        AirRuntime.recordActionDispatchOutcome(if (result.isSuccess) ActionDispatchOutcome.SUBMITTED
+        recordOutcome(if (result.isSuccess) ActionDispatchOutcome.SUBMITTED
             else ActionDispatchOutcome.PLATFORM_REJECTED)
     }
 
@@ -358,20 +378,21 @@ class AirAccessibilityService : AccessibilityService() {
             audio.dispatchMediaKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_UP, keyCode, 0))
         }
         // AudioManager acknowledges submission, not whether a player handled the key.
-        AirRuntime.recordActionDispatchOutcome(if (result.isSuccess) ActionDispatchOutcome.SUBMITTED
+        recordOutcome(if (result.isSuccess) ActionDispatchOutcome.SUBMITTED
             else ActionDispatchOutcome.PLATFORM_REJECTED)
     }
 
     private fun recordGlobalAction(action: Int) {
         val accepted = performGlobalAction(action)
-        AirRuntime.recordActionDispatchOutcome(
+        recordOutcome(
             if (accepted) ActionDispatchOutcome.COMPLETED
             else ActionDispatchOutcome.PLATFORM_REJECTED
         )
     }
 
     private fun dispatchGestureWithOutcome(gesture: GestureDescription, epoch: Long) {
-        boundedInput.submit(gesture, epoch)
+        val id = currentFeedbackId
+        boundedInput.submit(gesture, epoch) { AirRuntime.recordActionFeedback(it, id) }
     }
 
     @Suppress("DEPRECATION")
@@ -417,6 +438,7 @@ class AirAccessibilityService : AccessibilityService() {
     }
 
     override fun onInterrupt() {
+        feedbackOverlay?.close()
         mainHandler.removeCallbacksAndMessages(null)
         screenNavigator.clear()
         boundedInput.cancel()
@@ -432,6 +454,9 @@ class AirAccessibilityService : AccessibilityService() {
     }
 
     override fun onDestroy() {
+        feedbackScope.cancel()
+        feedbackOverlay?.close()
+        feedbackOverlay = null
         mainHandler.removeCallbacksAndMessages(null)
         screenNavigator.clear()
         boundedInput.cancel()

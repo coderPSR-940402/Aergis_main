@@ -9,7 +9,8 @@ import android.view.Surface
 import android.view.WindowManager
 
 /** Public Android capabilities only; submission is not proof of visible completion. */
-internal class PlatformActions(private val context: Context) {
+internal class PlatformActions(private val context: Context,
+    private val record: (ActionDispatchOutcome) -> Unit = AirRuntime::recordActionDispatchOutcome) {
     fun execute(action: AirAction) {
         val outcome = try {
             val submitted = when (action) {
@@ -33,7 +34,7 @@ internal class PlatformActions(private val context: Context) {
         } catch (_: RuntimeException) {
             ActionDispatchOutcome.EXECUTION_FAILED
         }
-        AirRuntime.recordActionDispatchOutcome(outcome)
+        record(outcome)
     }
     private fun launch(intent: Intent): Boolean {
         context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))

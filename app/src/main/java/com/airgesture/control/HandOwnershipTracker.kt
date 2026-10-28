@@ -23,6 +23,8 @@ internal class HandOwnershipTracker(
     private var velocityX = 0f
     private var velocityY = 0f
     private var lastTimestampMs = Long.MIN_VALUE
+    private var lastSeenAt = Long.MIN_VALUE
+    private var lastPreference: ControlHandPreference? = null
 
     fun select(
         observations: List<HandObservation>,
@@ -30,12 +32,17 @@ internal class HandOwnershipTracker(
         timestampMs: Long
     ): Selection? {
         if (timestampMs <= lastTimestampMs) return null
+        if (lastPreference != preference || (owner != null && timestampMs - lastSeenAt > 500L)) {
+            owner = null; velocityX = 0f; velocityY = 0f
+        }
+        lastPreference = preference
         val candidates = observations.filter { observation ->
             preference == ControlHandPreference.EITHER ||
                 observation.handedness.equals(preference.name, ignoreCase = true)
         }
         if (candidates.isEmpty()) {
-            clearOwnership(timestampMs)
+            // Missing detections retain only bounded motion identity, never a selection.
+            lastTimestampMs = timestampMs
             return null
         }
 
@@ -69,6 +76,7 @@ internal class HandOwnershipTracker(
         updateMotion(prior, selected, timestampMs)
         owner = selected
         lastTimestampMs = timestampMs
+        lastSeenAt = timestampMs
         return Selection(selected.index, "${selected.handedness}:$generation")
     }
 
@@ -77,6 +85,8 @@ internal class HandOwnershipTracker(
         velocityX = 0f
         velocityY = 0f
         lastTimestampMs = Long.MIN_VALUE
+        lastSeenAt = Long.MIN_VALUE
+        lastPreference = null
     }
 
     private fun continuityScore(
@@ -84,7 +94,7 @@ internal class HandOwnershipTracker(
         candidate: HandObservation,
         timestampMs: Long
     ): Float {
-        val elapsedSeconds = ((timestampMs - lastTimestampMs).coerceAtLeast(1L)) / 1000f
+        val elapsedSeconds = ((timestampMs - lastSeenAt).coerceAtLeast(1L)) / 1000f
         val predictionSeconds = elapsedSeconds.coerceAtMost(MAX_PREDICTION_SECONDS)
         val predictedX = previous.centerX + velocityX * predictionSeconds
         val predictedY = previous.centerY + velocityY * predictionSeconds
@@ -94,6 +104,8 @@ internal class HandOwnershipTracker(
         ).toFloat()
         val sizeRatio = candidate.palmSize / previous.palmSize.coerceAtLeast(MIN_PALM_SIZE)
         val normalizedSizeDelta = abs(sizeRatio - 1f)
+        // A return after loss must agree with the retained handedness as well as geometry.
+        if (lastTimestampMs > lastSeenAt && candidate.handedness != previous.handedness) return Float.POSITIVE_INFINITY
         val handednessPenalty = if (candidate.handedness == previous.handedness) 0f else HANDEDNESS_PENALTY
         if (centerDistance > maxCenterDistance || normalizedSizeDelta > maxPalmSizeRatio) {
             return Float.POSITIVE_INFINITY
@@ -113,7 +125,7 @@ internal class HandOwnershipTracker(
             velocityY = 0f
             return
         }
-        val elapsedSeconds = ((timestampMs - lastTimestampMs).coerceAtLeast(1L)) / 1000f
+        val elapsedSeconds = ((timestampMs - lastSeenAt).coerceAtLeast(1L)) / 1000f
         val observedVelocityX = (selected.centerX - previous.centerX) / elapsedSeconds
         val observedVelocityY = (selected.centerY - previous.centerY) / elapsedSeconds
         velocityX = velocityX * VELOCITY_SMOOTHING + observedVelocityX * (1f - VELOCITY_SMOOTHING)
