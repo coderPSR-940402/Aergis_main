@@ -11,9 +11,15 @@ Device evidence remains in EVIDENCE_LEDGER; the current PR has no device accepta
 
 Validation: pure core JUnit, Android/Robolectric/Compose regressions, Python release-policy tests, lint and both APK builds in CI. Review sensitive action authority, accessibility identity, calibration persistence and signing boundaries. Keep PR unmerged; physical acceptance and production credentials remain separate requirements.
 
-Implementation checks: 80 production-core JUnit tests pass (Android-only APIs use
-host stubs); 16 Python tests pass. Regression failures first reproduced identity
+Implementation checks: 88 production-core JUnit tests pass (Android-only APIs use
+host stubs); 17 Python tests pass. Regression failures first reproduced identity
 loss, opposite-hand takeover and duplicate-selection retention. Added native
 regressions cover calibration confirmation, epoch rejection, dynamic-row movement,
-duplicate rows and request-specific native callbacks. Full Android CI is pending.
+duplicate rows and request-specific native callbacks. First Android CI compiled the app and ran 540 tests; it exposed three recovery
+assertions. The short-occlusion identity expectation now follows the requested
+motion-retention contract, while the expired-history first frame fails closed.
+Cursor catch-up retains IDLE for its first recovery frame, then held contact
+remains AIMING without replay; native tests now assert both. A separate stale-aim
+regression first failed, then passed with the pre-contact trust deadline.
+The corrected full Android CI is pending.
 Private production signing and exact-APK device acceptance remain unverified.

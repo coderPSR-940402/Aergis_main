@@ -32,7 +32,13 @@ internal class HandOwnershipTracker(
         timestampMs: Long
     ): Selection? {
         if (timestampMs <= lastTimestampMs) return null
-        if (lastPreference != preference || (owner != null && timestampMs - lastSeenAt > 500L)) {
+        if (owner != null && timestampMs - lastSeenAt > 500L) {
+            // Expired motion history cannot validate an immediate replacement.
+            clearOwnership(timestampMs)
+            lastPreference = preference
+            return null
+        }
+        if (lastPreference != preference) {
             owner = null; velocityX = 0f; velocityY = 0f
         }
         lastPreference = preference

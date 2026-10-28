@@ -743,4 +743,17 @@ class AirAccessibilityServiceDispatchTest {
         shadowOf(Looper.getMainLooper()).idle()
         assertEquals(1, shadow.gesturesDispatched.size)
     }
+    @Test fun lateNativeCompletionCannotRelabelANewerAction() {
+        service.dispatch(AirAction.TAP)
+        shadowOf(Looper.getMainLooper()).idle()
+        val touch = shadow.gesturesDispatched.single()
+        service.dispatch(AirAction.HOME)
+        shadowOf(Looper.getMainLooper()).idle()
+        val latest = AirRuntime.state.value.actionFeedback
+        val completedBefore = AirRuntime.state.value.actionDispatchTelemetry.completed
+        assertEquals(AirAction.HOME,latest?.action)
+        touch.callback()!!.onCompleted(touch.description())
+        assertEquals(latest,AirRuntime.state.value.actionFeedback)
+        assertEquals(completedBefore+1L,AirRuntime.state.value.actionDispatchTelemetry.completed)
+    }
 }

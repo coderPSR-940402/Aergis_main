@@ -22,13 +22,14 @@ internal class TouchFreeCalibration {
     private var previous: CalibrationGestureFrame? = null
     private var aim: CalibrationGestureFrame? = null
     private var stableAt: Long? = null
+    private var lastOpenAt: Long? = null
     private var heldPose: String? = null
     private var heldSince: Long? = null
 
     fun start() { active = true; corners.clear(); resetEvidence() }
     fun stop() { active = false; corners.clear(); resetEvidence() }
     fun resetEvidence() {
-        previous = null; aim = null; stableAt = null
+        previous = null; aim = null; stableAt = null; lastOpenAt = null
         heldPose = null; heldSince = null; contact.reset()
     }
     fun manualSample(x: Float, y: Float) {
@@ -60,13 +61,15 @@ internal class TouchFreeCalibration {
         val clicked = contact.processFrame(frame.distance, frame.timestampMs, frame.depth)
         if (clicked) {
             aim = null; stableAt = null
-            if (!stable || capturedAim == null) return null
+            val freshAim = lastOpenAt?.let { frame.timestampMs - it in 0L..350L } == true
+            if (!stable || capturedAim == null || !freshAim) return null
             if (!ordered(capturedAim.x, capturedAim.y)) return Event.WrongCorner
             corners.add(capturedAim.x to capturedAim.y)
             return Event.Capture(capturedAim.x, capturedAim.y)
         }
         // Freeze pre-contact aim. Finger movement during the pinch cannot move the corner.
         if (frame.distance >= .32f) {
+            lastOpenAt = frame.timestampMs
             if (capturedAim == null || hypot(frame.x - capturedAim.x, frame.y - capturedAim.y) > .035f) {
                 aim = frame; stableAt = frame.timestampMs
             }
@@ -77,9 +80,9 @@ internal class TouchFreeCalibration {
         val first = corners.firstOrNull() ?: return true
         val last = corners.last()
         return when (corners.size) {
-            1 -> x <= first.first - .08f && abs(y - first.second) <= .08f
-            2 -> y >= last.second + .08f && abs(x - last.first) <= .08f
-            3 -> x >= last.first + .08f && abs(y - last.second) <= .08f && abs(x - first.first) <= .08f
+            1 -> x <= first.first - .12f && abs(y - first.second) <= .08f
+            2 -> y >= maxOf(first.second, last.second) + .12f && abs(x - last.first) <= .08f
+            3 -> x >= last.first + .12f && abs(y - last.second) <= .08f && abs(x - first.first) <= .08f
             else -> false
         }
     }

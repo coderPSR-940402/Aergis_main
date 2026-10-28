@@ -450,7 +450,9 @@ class MainActivity : ComponentActivity() {
             AirRuntime.state.value.foregroundContext.safety == ForegroundSafety.SAFE &&
             frame != null && frame.epoch == AirRuntime.actionEpoch &&
             android.os.SystemClock.uptimeMillis() - frame.observedAtMs in 0L..350L
-        when (val event = touchFreeCalibration.update(if (safe) frame else null)) {
+        val event = touchFreeCalibration.update(if (safe) frame else null)
+        if (frame != null && frame.epoch != AirRuntime.actionEpoch) { touchFreeCalibration.resetEvidence(); return }
+        when (event) {
             is TouchFreeCalibration.Event.Capture -> {
                 if (calibrationSession.addSample(event.x, event.y)) {
                     calibrationState = calibrationSession.state()

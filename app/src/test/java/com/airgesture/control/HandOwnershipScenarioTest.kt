@@ -14,7 +14,7 @@ import org.junit.Test
 class HandOwnershipScenarioTest {
 
     @Test
-    fun occlusionStartsNewOwnershipGeneration() {
+    fun briefOcclusionRetainsOnlyMotionOwnershipGeneration() {
         val tracker = HandOwnershipTracker()
         val before = tracker.select(listOf(hand(0, "Left", 0.4f, 0.4f)), EITHER, 0L)
         assertNull(tracker.select(emptyList(), EITHER, 33L))
@@ -22,8 +22,8 @@ class HandOwnershipScenarioTest {
 
         assertNotNull(before)
         assertNotNull(after)
-        // A reappearing hand must not inherit the pre-occlusion owner id.
-        assertNotEquals(before?.ownerId, after?.ownerId)
+        // Action state is independently revoked by the engine on the missing frame.
+        assertEquals(before?.ownerId, after?.ownerId)
     }
 
     @Test

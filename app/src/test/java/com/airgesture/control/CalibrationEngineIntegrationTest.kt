@@ -427,9 +427,11 @@ class CalibrationEngineIntegrationTest {
         publish(closed, 1600L, delayMs = 601L)
         assertEquals(PointerInteractionPhase.IDLE, AirRuntime.pointerInteraction)
         publish(closed, 1800L, delayMs = 500L)
-        assertEquals("Recovery must observe open fingers again", PointerInteractionPhase.AIMING, AirRuntime.pointerInteraction)
-        AirRuntime.controlMode = ControlMode.PAUSED
+        assertEquals("Catch-up frame must not restore touch authority", PointerInteractionPhase.IDLE, AirRuntime.pointerInteraction)
         publish(closed, 2000L, delayMs = 500L)
+        assertEquals("Held contact cannot replay after catch-up", PointerInteractionPhase.AIMING, AirRuntime.pointerInteraction)
+        AirRuntime.controlMode = ControlMode.PAUSED
+        publish(closed, 2200L, delayMs = 500L)
         assertEquals(PointerInteractionPhase.IDLE, AirRuntime.pointerInteraction)
         assertFalse(AirRuntime.pointerTracking)
     }
@@ -877,6 +879,22 @@ class CalibrationEngineIntegrationTest {
         this[17] = NormalizedLandmark.create(0.6f, 0.5f, 0f)
         this[8] = NormalizedLandmark.create(0.5f, 0.65f, 0f)
         this[12] = NormalizedLandmark.create(0.55f, 0.65f, 0f)
+    }
+
+    @Test fun disarmedCalibrationPublishesOnlyFreshOwnedEvidenceAndStopRevokesIt() {
+        AirRuntime.controlMode = ControlMode.READY
+        publish(hand(),1000L,delayMs=100L)
+        val frame = AirRuntime.state.value.calibrationGesture
+        assertEquals(1000L,frame?.timestampMs)
+        assertEquals(AirRuntime.actionEpoch,frame?.epoch)
+        assertFalse(AirRuntime.pointerTracking)
+        publish(hand(),1200L,delayMs=500L)
+        org.junit.Assert.assertNull(AirRuntime.state.value.calibrationGesture)
+        assertTrue("Manual preview remains independent of action age",AirRuntime.rawPointerSnapshot().tracking)
+        publish(hand(),1400L,delayMs=100L)
+        org.junit.Assert.assertNotNull(AirRuntime.state.value.calibrationGesture)
+        engine.stop()
+        org.junit.Assert.assertNull(AirRuntime.state.value.calibrationGesture)
     }
 
     private fun publish(landmarks: List<NormalizedLandmark>, timestamp: Long, rawHandedness: String = "Left", gestureName: String = "None", delayMs: Long = 0L, measuredAgeMs: Long? = null, gestureScore: Float = .99f, includeGesture: Boolean = true, rotationDegrees: Int = 0) {

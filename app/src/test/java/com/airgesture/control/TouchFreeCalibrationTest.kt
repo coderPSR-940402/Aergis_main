@@ -47,4 +47,9 @@ class TouchFreeCalibrationTest {
         assertEquals(TouchFreeCalibration.Event.Cancel, frame(pose="Closed_Fist",epoch=2))
         assertNull(frame(pose="Closed_Fist",epoch=2))
     }
+    @Test fun approachingContactCannotKeepAnOldAimAliveIndefinitely() {
+        input.start(); repeat(5) { frame() }
+        repeat(8) { frame(distance=.25f) }
+        assertNull(frame(distance=.1f))
+    }
 }

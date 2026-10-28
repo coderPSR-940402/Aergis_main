@@ -88,7 +88,7 @@ def sign():
         if not 100 <= len(raw) <= 10_000_000:
             raise ValueError('Invalid production keystore size')
         key.write_bytes(raw); key.chmod(0o600)
-        command = [str(tools/'apksigner'), 'sign', '--ks', str(key), '--ks-key-alias', os.environ['PRODUCTION_KEY_ALIAS'],
+        command = [str(tools/'apksigner'), 'sign', '--v4-signing-enabled', 'false', '--ks', str(key), '--ks-key-alias', os.environ['PRODUCTION_KEY_ALIAS'],
                    '--ks-pass', 'env:PRODUCTION_STORE_PASSWORD', '--key-pass', 'env:PRODUCTION_KEY_PASSWORD',
                    '--out', str(signed), str(apk)]
         result = subprocess.run(command, capture_output=True)

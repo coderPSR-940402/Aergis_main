@@ -13,8 +13,9 @@ import org.robolectric.annotation.Config
 @Config(sdk=[35])
 class ScreenTargetNavigatorTest {
     private class VisibleHighlight : ScreenTargetHighlight {
+        var lastBounds: Rect? = null
         override var isVisible = false
-        override fun show(target: Rect): Boolean { isVisible=true; return true }
+        override fun show(target: Rect): Boolean { lastBounds=Rect(target); isVisible=true; return true }
         override fun hide() { isVisible=false }
     }
     @Suppress("DEPRECATION")
@@ -213,6 +214,7 @@ class ScreenTargetNavigatorTest {
         }
         shadowOf(movedRoot).addChild(moved)
         assertTrue(navigator.refresh(movedRoot,1L))
+        assertEquals(Rect(10,120,100,210),highlight.lastBounds)
         assertTrue(navigator.perform(movedRoot,AirAction.SELECT_ITEM,1L))
         assertEquals(1,clicks)
     }

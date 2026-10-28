@@ -790,6 +790,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
     }
 
     private fun resetTrackingState() {
+        AirRuntime.setCalibrationGesture(null)
         fingertipPatch.reset()
         reacquireFrom = null
         resetPointerTouch()
