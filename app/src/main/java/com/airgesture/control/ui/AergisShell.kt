@@ -111,7 +111,7 @@ private fun SessionLabel(inputEnabled: Boolean) {
 @Composable
 private fun ActionFeedbackBanner() {
     val flow = remember { AirRuntime.state.map { it.actionFeedback }.distinctUntilChanged() }
-    val feedback by flow.collectAsStateWithLifecycle(initialValue = AirRuntime.state.value.actionFeedback)
+    val feedback by flow.collectAsStateWithLifecycle(initialValue = null)
     var visible by remember { mutableStateOf(false) }
     LaunchedEffect(feedback) {
         visible = feedback?.visibleAt(android.os.SystemClock.uptimeMillis()) == true
