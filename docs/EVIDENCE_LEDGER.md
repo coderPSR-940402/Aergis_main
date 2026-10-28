@@ -11,27 +11,30 @@ and synthesize a click. Two added production-interpreter tests reproduce this on
 that head: 80-degree pitch of an open hand and depth-separated fingertip overlap.
 This is a code-reproduced regression, not a new device observation.
 
-Keep projected thumb-middle contact but veto new contact when fingertip depth
+Keep projected thumb-middle contact but veto new contact when combined image/depth
 separation reaches the existing 0.32 clearly-open boundary. Normalize against the
 same projected palm width; estimated palm depth never enlarges the denominator.
-Depth disagreement below that boundary remains tolerated. Depth alone never rearms
+Smaller combined separation remains tolerated. Depth alone never rearms
 an already consumed click or grants projected opening evidence. Invalid depth
 units reset pending confirmation. No contact/release constant or time threshold
-is changed; applying the existing release boundary to depth is a new conservative
-eligibility rule, not device-calibrated proof of physical contact.
+is changed; applying the existing release boundary to spatial separation is a new
+conservative eligibility rule, not device-calibrated proof of physical contact.
 
 MediaPipe z remains in unrotated sensor-width units after the app's x/y rotation.
 Convert z to upright image-height units using 1 for 90/270-degree buffers and the
 upright width/height ratio for 0/180. Preserve pointer x/y, filters and calibration.
 Reference: [MediaPipe hand landmarks](https://github.com/google-ai-edge/mediapipe/blob/master/docs/solutions/hands.md#multi_hand_landmarks).
 
-Host verification: the two new negatives fail before the correction; all 47 selected
+Host verification: the two new negatives fail before the correction; a third
+rigid-pitch case rejects combining .17 image/.294 depth into apparent contact
+(unchanged spatial separation .34). The depth-only veto failed that case;
+combining both components in the open veto corrects it; all 48 selected
 production-core JUnit tests pass afterward, including all earlier contact positives,
-palm roll, timing, release, held-contact and anchoring tests. A table of all eight
-rounded projected/depth contact ratios from the earlier CLICK segment remains
-eligible: depth separations span 0.166–0.307 palm widths. This preserves measured
-eligibility; it does not prove recovered intended clicks. Thirteen Python tooling
-tests pass. Native regressions cover blocked depth-separated overlap, correct
+palm roll, timing, release, held-contact and anchoring tests. A table of eight
+rounded projected/depth candidate ratios from the earlier CLICK segment keeps seven
+eligible. The .145 image/.307 depth candidate is rejected: combined separation is
+.340, above the open boundary. These are eligibility checks, not recovered-click
+or accuracy claims. Thirteen Python tooling tests pass. Native regressions cover blocked depth-separated overlap, correct
 quarter-turn depth units and valid contact recovery; full Android CI is required.
 
 Scope: pinch geometry, confirmation eligibility and the engine's depth-unit input.

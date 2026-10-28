@@ -88,6 +88,22 @@ class ProjectedPinchContactTest {
         assertFalse(interpreter.processFrame(overlap, 1200L)!!.isClickEngaged)
     }
 
+    @Test fun combinedImageAndDepthSeparationCannotBypassTheOpenBoundary() {
+        val open = pose(false).apply {
+            this[4] = Point3D(.5f, .366f)
+            this[12] = Point3D(.5f, .434f)
+        }
+        val tilted = open.map {
+            val dy = it.y - .5f
+            Point3D(it.x, .5f + dy * .5f, dy * .8660254f)
+        }
+        val interpreter = GestureInterpreter()
+        interpreter.processFrame(open, 1000L)
+        // Rigid 60-degree pitch: image=.17 and depth=.2944 are separately below
+        // .32, but the unchanged physical separation is .34 palm widths.
+        assertFalse(interpreter.processFrame(tilted, 1100L)!!.isClickEngaged)
+    }
+
     @Test fun depthDisagreementDuringAHeldClickCannotRearmIt() {
         val interpreter = GestureInterpreter()
         interpreter.processFrame(pose(false), 1000L)
@@ -101,8 +117,8 @@ class ProjectedPinchContactTest {
     @Test fun recordedContactScaleDepthDisagreementStillAllowsOneClick() {
         val interpreter = GestureInterpreter()
         interpreter.processFrame(pose(false), 1000L)
-        val contact = pose(true).apply { this[4] = Point3D(.5f, .4f, -.0614f) }
-        // 0.307 palm widths in depth is below the existing clearly-open boundary.
+        val contact = pose(true).apply { this[4] = Point3D(.5f, .4f, -.0566f) }
+        // Image=.10, depth=.283: combined separation is about .300 palm widths.
         assertTrue(interpreter.processFrame(contact, 1100L)!!.isClickEngaged)
         assertFalse(interpreter.processFrame(contact, 1200L)!!.isClickEngaged)
     }
@@ -116,18 +132,20 @@ class ProjectedPinchContactTest {
         assertFalse(interpreter.processFrame(separated, 1100L, aspectRatio = .75f, depthScale = 1f)!!.isClickEngaged)
     }
 
-    @Test fun allEightRecordedProjectedContactRatiosRemainEligible() {
+    @Test fun recordedCandidatesRetainEligibilityExceptClearlySeparatedOverlap() {
         // Rounded aggregate ratios, not private landmarks. Each pair is image/depth
         // separation in projected-palm units from the earlier CLICK segment.
-        for ((image, depth) in listOf(.120f to .166f, .149f to .170f,
-            .166f to .192f, .137f to .219f, .092f to .269f,
-            .170f to .250f, .145f to .307f, .128f to .283f)) {
+        for ((image, depth, eligible) in listOf(Triple(.120f, .166f, true),
+            Triple(.149f, .170f, true), Triple(.166f, .192f, true),
+            Triple(.137f, .219f, true), Triple(.092f, .269f, true),
+            Triple(.170f, .250f, true), Triple(.145f, .307f, false),
+            Triple(.128f, .283f, true))) {
             val interpreter = GestureInterpreter()
             interpreter.processFrame(pose(false), 1000L)
             val contact = pose(true).apply {
                 this[4] = Point3D(.52f - image * .2f, .4f, -depth * .2f)
             }
-            assertTrue("image=$image, depth=$depth",
+            assertEquals("image=$image, depth=$depth", eligible,
                 interpreter.processFrame(contact, 1100L)!!.isClickEngaged)
             assertFalse(interpreter.processFrame(contact, 1200L)!!.isClickEngaged)
         }

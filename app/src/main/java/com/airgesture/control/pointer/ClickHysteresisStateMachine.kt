@@ -1,5 +1,7 @@
 package com.airgesture.control.pointer
 
+import kotlin.math.hypot
+
 /** Thumb-middle contact. Tracking must observe separation before accepting a click. */
 class ClickHysteresisStateMachine(
     private val engageThreshold: Float = 0.18f,
@@ -41,10 +43,10 @@ class ClickHysteresisStateMachine(
         if (!observedOpen || coolingDown) return false
 
         // Projection can hide separation when the hand tilts. Use the existing
-        // clearly-open boundary to veto depth-separated contact, tolerating the
+        // clearly-open boundary to veto spatially separated contact, tolerating the
         // smaller inferred-z discrepancies seen at visible contact. A depth refit
         // never rearms a consumed click or supplies projected opening evidence.
-        if (depthSeparation >= releaseThreshold) {
+        if (hypot(dNorm, depthSeparation) >= releaseThreshold) {
             currentState = State.IDLE
             contactSince = null
             contactSampleIntervalMs = 0L
