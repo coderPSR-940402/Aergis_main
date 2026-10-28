@@ -63,7 +63,8 @@ internal class BoundedGestureDispatcher(
         })
         // Rejection is not cancellation evidence. Keep the original command
         // occupied until its own callback; never retry or permit overlapping input.
-        if (!accepted) activeRecord(ActionDispatchOutcome.PLATFORM_REJECTED)
+        // This attempt failed; the original command still owns its eventual outcome.
+        if (!accepted) record(ActionDispatchOutcome.PLATFORM_REJECTED)
     }
 
     private fun submitToPlatform(gesture: GestureDescription,

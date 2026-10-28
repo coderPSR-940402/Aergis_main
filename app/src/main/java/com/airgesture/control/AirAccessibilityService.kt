@@ -39,7 +39,7 @@ class AirAccessibilityService : AccessibilityService() {
         record = { outcome ->
             if (outcome != ActionDispatchOutcome.SUBMITTED) precisionDragActive = false
             AirRuntime.recordActionFeedback(outcome, dragFeedbackId)
-        })
+        }, recordCancellationRejection = AirRuntime::recordActionDispatchOutcome)
     val nativeTouchInFlight: Boolean get() = boundedInput.isBusy || precisionDrag.isBusy
     private val updateScheduled = AtomicBoolean(false)
     private val pendingVersion = AtomicLong(0L)

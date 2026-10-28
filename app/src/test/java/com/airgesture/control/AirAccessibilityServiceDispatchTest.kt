@@ -756,4 +756,18 @@ class AirAccessibilityServiceDispatchTest {
         assertEquals(latest,AirRuntime.state.value.actionFeedback)
         assertEquals(completedBefore+1L,AirRuntime.state.value.actionDispatchTelemetry.completed)
     }
+    @Test fun rejectedDragCancellationRetainsPendingFeedbackUntilNativeAcknowledgement() {
+        service.dispatch(AirAction.POINTER_DRAG)
+        shadowOf(Looper.getMainLooper()).idle()
+        val down = shadow.gesturesDispatched.single()
+        assertEquals(ActionDispatchOutcome.SUBMITTED,AirRuntime.state.value.actionFeedback?.outcome)
+        shadow.setCanDispatchGestures(false)
+        service.cancelPointerTouch()
+        shadowOf(Looper.getMainLooper()).idle()
+        assertTrue(service.nativeTouchInFlight)
+        assertEquals(ActionDispatchOutcome.SUBMITTED,AirRuntime.state.value.actionFeedback?.outcome)
+        down.callback()!!.onCancelled(down.description())
+        assertFalse(service.nativeTouchInFlight)
+        assertEquals(ActionDispatchOutcome.CANCELLED,AirRuntime.state.value.actionFeedback?.outcome)
+    }
 }

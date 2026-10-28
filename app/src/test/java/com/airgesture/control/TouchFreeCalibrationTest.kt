@@ -57,4 +57,19 @@ class TouchFreeCalibrationTest {
         for ((x,y) in listOf(.8f to .2f,.2f to .2f,.2f to .8f,.8f to .8f)) corner(x,y)
         repeat(15) { assertNull(frame(distance=.1f,pose="Open_Palm")) }
     }
+    @Test fun cancellationPoseCannotCaptureBeforeItCancels() {
+        input.start()
+        repeat(5) { frame() }
+        repeat(12) { assertNull(frame(distance=.1f,pose="Closed_Fist")) }
+        assertEquals(TouchFreeCalibration.Event.Cancel,frame(distance=.1f,pose="Closed_Fist"))
+        assertNull(frame())
+    }
+
+    @Test fun interruptedCancellationRequiresFreshAimBeforeCapture() {
+        input.start()
+        repeat(5) { frame() }
+        frame(distance=.5f,pose="Closed_Fist")
+        assertNull(frame(distance=.1f))
+        assertTrue(corner(.8f,.2f) is TouchFreeCalibration.Event.Capture)
+    }
 }

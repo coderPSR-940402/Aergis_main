@@ -11,7 +11,8 @@ internal class PrecisionDragController(
     private val handler: Handler,
     private val dispatch: (GestureDescription, AccessibilityService.GestureResultCallback) -> Boolean,
     private val permitted: (Long) -> Boolean,
-    private val record: (ActionDispatchOutcome) -> Unit
+    private val record: (ActionDispatchOutcome) -> Unit,
+    private val recordCancellationRejection: (ActionDispatchOutcome) -> Unit = record
 ) {
     val isBusy: Boolean get() = stroke != null
     private var cancelling = false
@@ -155,7 +156,7 @@ internal class PrecisionDragController(
                 record(ActionDispatchOutcome.CANCELLED)
             }
         })
-        if (!accepted) record(ActionDispatchOutcome.PLATFORM_REJECTED)
+        if (!accepted) recordCancellationRejection(ActionDispatchOutcome.PLATFORM_REJECTED)
     }
 
     private fun safeDispatch(gesture: GestureDescription, callback: AccessibilityService.GestureResultCallback): Boolean =

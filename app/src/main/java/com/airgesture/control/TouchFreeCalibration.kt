@@ -55,6 +55,11 @@ internal class TouchFreeCalibration {
             stop()
             return if (pose == "Open_Palm") Event.Confirm else Event.Cancel
         }
+        if (pose == "Closed_Fist") {
+            // Cancellation owns this pose. Its thumb/middle contact is not a corner.
+            contact.reset(); aim = null; stableAt = null; lastOpenAt = null
+            return null
+        }
         if (corners.size >= 4) return null
         val capturedAim = aim
         val stable = stableAt?.let { frame.timestampMs - it >= 300L } == true

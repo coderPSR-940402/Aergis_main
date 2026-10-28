@@ -39,4 +39,13 @@ class ScreenSelectionStateTest {
         org.junit.Assert.assertNull(state.retain(listOf("unique", "unique"), "window"))
         org.junit.Assert.assertNull(state.confirm(listOf("unique"), "window"))
     }
+    @Test fun navigationSkipsAmbiguousRowsAndCanReachUniqueTargets() {
+        val state = ScreenSelectionState()
+        val keys = listOf("duplicate","duplicate","safe A","safe B")
+        assertEquals("safe A",state.move(keys,"window",true))
+        assertEquals("safe B",state.move(keys,"window",true))
+        assertEquals("safe A",state.move(keys,"window",false))
+        assertEquals("safe A",state.confirm(keys,"window"))
+        assertNull(state.move(listOf("duplicate","duplicate"),"window",false))
+    }
 }

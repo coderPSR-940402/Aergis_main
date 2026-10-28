@@ -102,4 +102,15 @@ class BoundedGestureDispatcherTest {
         assertEquals(listOf(ActionDispatchOutcome.PLATFORM_REJECTED),second)
         assertTrue(outcomes.isEmpty())
     }
+    @Test fun rejectedCancelDoesNotReplaceOriginalRequestOutcome() {
+        var feedback = ActionFeedback(1,AirAction.TAP,updatedAtMs=android.os.SystemClock.uptimeMillis())
+        input.submit(gesture(),epoch) { feedback = feedback.result(1,it,android.os.SystemClock.uptimeMillis()) }
+        accepted = false
+        input.cancel()
+        assertTrue(input.isBusy)
+        assertNull(feedback.outcome)
+        assertEquals(listOf(ActionDispatchOutcome.PLATFORM_REJECTED),outcomes)
+        calls[0].second.onCompleted(calls[0].first)
+        assertEquals(ActionDispatchOutcome.COMPLETED,feedback.outcome)
+    }
 }

@@ -233,4 +233,19 @@ class ScreenTargetNavigatorTest {
         })
         assertFalse(navigator.perform(root,AirAction.SELECT_ITEM,1L))
     }
+    @Suppress("DEPRECATION")
+    @Test fun replacingCollectionContainerRevokesIdenticalRowContent() {
+        var clicks = 0
+        val root = container()
+        val list = container().apply { viewIdResourceName = "com.example.safe:id/inbox" }
+        val row = target("Delete account A") { clicks++ }.apply {
+            collectionItemInfo = AccessibilityNodeInfo.CollectionItemInfo.obtain(0,1,0,1,false)
+        }
+        shadowOf(root).addChild(list); shadowOf(list).addChild(row)
+        val navigator = ScreenTargetNavigator(VisibleHighlight())
+        assertTrue(navigator.perform(root,AirAction.NEXT_ITEM,1L))
+        list.viewIdResourceName = "com.example.safe:id/archive"
+        assertFalse(navigator.perform(root,AirAction.SELECT_ITEM,1L))
+        assertEquals(0,clicks)
+    }
 }

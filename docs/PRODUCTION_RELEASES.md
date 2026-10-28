@@ -69,3 +69,13 @@ restore app data automatically.
 A private production certificate cannot update an installation signed with the
 public preview certificate. Plan the initial migration separately; this pipeline
 never uninstalls the preview app or clears its settings to bypass Android checks.
+
+## Signing smoke coverage
+
+Normal CI also runs the signing CLI against a disposable SDK-built fixture APK
+and a newly generated ephemeral test certificate. It checks real signing,
+signature verification, metadata/checksums, wrong private signer, public preview
+pin, provenance rejection and temporary-key cleanup. Fixtures live outside the
+workspace artifact paths and are deleted; they are never releases or install
+candidates. This does not configure production credentials, exercise the manual
+production workflow end to end, install an APK, or verify device/data rollback.

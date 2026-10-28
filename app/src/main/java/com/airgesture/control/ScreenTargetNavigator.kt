@@ -24,13 +24,18 @@ internal class ScreenTargetNavigator(private val highlight: ScreenTargetHighligh
             val targets = ArrayList<Target>()
             val identities = HashMap<String, String>()
             val semanticIdentities = HashMap<String, String>()
+            val rowScopes = HashMap<String, String>()
             var visited = 0
-            fun visit(node: AccessibilityNodeInfo, path: String, itemPath: String?): String {
+            fun visit(node: AccessibilityNodeInfo, path: String, itemPath: String?, parentScope: String = ""): String {
                 obtained.add(node)
                 check(++visited <= 512) { "Window too large for bounded target scan" }
                 if (!node.isVisibleToUser || !node.isEnabled || node.isPassword) return ""
                 val bounds = Rect(); node.getBoundsInScreen(bounds)
                 val rowPath = if (node.collectionItemInfo != null) path else itemPath
+                if (node.collectionItemInfo != null) rowScopes[path] = parentScope
+                val ownScope = ScreenTargetKey.of(path, node.viewIdResourceName,
+                    node.className?.toString().orEmpty(), node.text, node.contentDescription)
+                val scope = "${parentScope.length}:$parentScope${ownScope.length}:$ownScope"
                 // Reserve pre-order navigation before collecting the visible subtree.
                 val targetIndex = if (node.isClickable && !bounds.isEmpty) {
                     targets.add(Target("", node, bounds, rowPath ?: "root", path, rowPath != null)); targets.lastIndex
@@ -43,7 +48,7 @@ internal class ScreenTargetNavigator(private val highlight: ScreenTargetHighligh
                 val identity = buildString {
                     append(ownIdentity.length).append(':').append(ownIdentity)
                     for (i in 0 until node.childCount) node.getChild(i)?.let {
-                        val child = visit(it, "$path/$i", rowPath)
+                        val child = visit(it, "$path/$i", rowPath, scope)
                         append(child.length).append(':').append(child)
                         val childSemantic = semanticIdentities["$path/$i"].orEmpty()
                         semantic.append(childSemantic.length).append(':').append(childSemantic)
@@ -69,7 +74,7 @@ internal class ScreenTargetNavigator(private val highlight: ScreenTargetHighligh
                 if (explicitRow) {
                     val container = checkNotNull(semanticIdentities[row])
                     val local = target.path.removePrefix(row)
-                    val parent = row.substringBeforeLast('/', "root")
+                    val parent = checkNotNull(rowScopes[row])
                     // Row identity and within-row control path survive insertion/movement.
                     // A duplicate identity is rejected by retain/confirm; never guess a row.
                     targets[i] = target.copy(key = ScreenTargetKey.of(local, target.node.viewIdResourceName,
