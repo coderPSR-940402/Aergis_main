@@ -13,6 +13,43 @@ import org.robolectric.annotation.Config
 @RunWith(org.robolectric.RobolectricTestRunner::class)
 @Config(sdk = [35])
 class GuidedCalibrationFlowTest {
+    @Test fun gestureIntentStartsGuidedCaptureWithoutStartingCameraAndIsConsumedOnce() {
+        val context = RuntimeEnvironment.getApplication() as Context
+        val request = android.content.Intent(context, MainActivity::class.java).setAction(MainActivity.ACTION_OPEN_CALIBRATION)
+        val controller = Robolectric.buildActivity(MainActivity::class.java, request).setup()
+        try {
+            val activity = controller.get()
+            assertEquals(PointerCalibrationSession.State.COLLECTING, session(activity).state())
+            assertEquals(ControlMode.READY, AirRuntime.controlMode)
+            assertEquals(android.content.Intent.ACTION_MAIN, activity.intent.action)
+            assertNull(org.robolectric.Shadows.shadowOf(activity).nextStartedService)
+            AirRuntime.setRawPointerState(.2f, .2f, true)
+            invoke(activity, "captureCalibrationSample")
+            // Re-delivery of the consumed intent must not reset an in-progress draft.
+            controller.newIntent(activity.intent)
+            assertEquals(1, session(activity).sampleCount())
+            controller.newIntent(android.content.Intent(context, MainActivity::class.java).setAction(MainActivity.ACTION_OPEN_CALIBRATION))
+            assertEquals(0, session(activity).sampleCount())
+            assertEquals(PointerCalibrationSession.State.COLLECTING, session(activity).state())
+            assertFalse(PointerCalibrationStore(activity).enabled())
+        } finally { controller.pause().stop().destroy() }
+    }
+
+    @Test fun recreationDoesNotReplayCalibrationOrOverwriteTheSavedProfile() {
+        val context = RuntimeEnvironment.getApplication() as Context
+        val original = PointerCalibrationProfile.COMFORTABLE_REACH
+        PointerCalibrationStore(context).save(original)
+        val request = android.content.Intent(context, MainActivity::class.java).setAction(MainActivity.ACTION_OPEN_CALIBRATION)
+        val controller = Robolectric.buildActivity(MainActivity::class.java, request).setup()
+        try {
+            controller.recreate()
+            assertEquals(android.content.Intent.ACTION_MAIN, controller.get().intent.action)
+            assertEquals(PointerCalibrationSession.State.IDLE, session(controller.get()).state())
+            assertEquals(original, PointerCalibrationStore(context).profile())
+            assertNotEquals(ControlMode.ARMED, AirRuntime.controlMode)
+        } finally { controller.pause().stop().destroy() }
+    }
+
     @Before fun setup() {
         val context = RuntimeEnvironment.getApplication() as Context
         context.getSharedPreferences("aergis_calibration", Context.MODE_PRIVATE).edit().clear().commit()

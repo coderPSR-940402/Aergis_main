@@ -21,6 +21,29 @@ import org.robolectric.annotation.GraphicsMode
 class NativeProductUiTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
 
+    @Test fun externalCalibrationRequestNavigatesExistingShellAndIsHandledOnce() {
+        val request = androidx.compose.runtime.mutableStateOf<AergisDestination?>(null)
+        var handled = 0
+        compose.setContent {
+            AergisTheme {
+                AergisShell(true, initialDestination = AergisDestination.SETTINGS,
+                    onEntering = { if (it.disarmsOnEntry) AirRuntime.controlMode = ControlMode.READY },
+                    requestedDestination = request.value,
+                    onDestinationHandled = { handled++; request.value = null }) { destination, _ ->
+                    Text("Screen: ${destination.name}")
+                }
+            }
+        }
+        compose.onNodeWithText("Screen: SETTINGS").assertIsDisplayed()
+        compose.runOnIdle { AirRuntime.controlMode = ControlMode.ARMED; request.value = AergisDestination.CALIBRATION }
+        compose.onNodeWithText("Screen: CALIBRATION").assertIsDisplayed()
+        compose.runOnIdle {
+            assertEquals(ControlMode.READY, AirRuntime.controlMode)
+            assertEquals(1, handled)
+            assertNull(request.value)
+        }
+    }
+
     @Test fun nestedRehearsalNavigationRestoresDisarmedAndBackReturnsToOrigin() {
         AirRuntime.controlMode = ControlMode.READY
         val restoration = StateRestorationTester(compose)

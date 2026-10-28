@@ -140,12 +140,14 @@ class AirAccessibilityService : AccessibilityService() {
         }
     }
 
-    internal fun dispatchPointerTap() = dispatch(AirAction.TAP, origin = ActionOrigin.POINTER)
+    internal fun dispatchPointerTap(expectedEpoch: Long = AirRuntime.actionEpoch) =
+        dispatch(AirAction.TAP, origin = ActionOrigin.POINTER, expectedEpoch = expectedEpoch)
 
     fun dispatch(action: AirAction, tuning: GestureTuning = GestureTuning()) =
         dispatch(action, tuning, ActionOrigin.GESTURE)
 
-    private fun dispatch(action: AirAction, tuning: GestureTuning = GestureTuning(), origin: ActionOrigin) {
+    private fun dispatch(action: AirAction, tuning: GestureTuning = GestureTuning(), origin: ActionOrigin,
+        expectedEpoch: Long = AirRuntime.actionEpoch) {
         val settings = tuning.bounded()
         if (action == AirAction.NONE) return
         if (Build.VERSION.SDK_INT < action.minimumSdk) {
@@ -158,11 +160,11 @@ class AirAccessibilityService : AccessibilityService() {
                 .put("target", DiagnosticFrameData.pointer(AirRuntime.pointerSnapshot())).put("epoch", AirRuntime.actionEpoch)
                 .put("visiblePixelX", requestedHotspot?.point?.x).put("visiblePixelY", requestedHotspot?.point?.y))
         }
-        if (!isActionAllowed(action, origin = origin)) {
+        if (!isActionAllowed(action, expectedEpoch, origin)) {
             AirRuntime.recordActionDispatchOutcome(ActionDispatchOutcome.POLICY_DENIED)
             return
         }
-        val dispatchEpoch = AirRuntime.actionEpoch
+        val dispatchEpoch = expectedEpoch
         val pointerGeneration = pointerCommandGeneration.get()
         // Gesture recognition runs off the main thread. Snapshot the target now;
         // otherwise a queued click can land wherever the cursor moved later.
@@ -185,7 +187,7 @@ class AirAccessibilityService : AccessibilityService() {
                 AirRuntime.recordActionDispatchOutcome(ActionDispatchOutcome.POLICY_DENIED)
                 return@post
             }
-            if (precisionDrag.isBusy && action !in setOf(AirAction.POINTER_DRAG, AirAction.TOGGLE_POINTER)) {
+            if (precisionDrag.isBusy && action !in setOf(AirAction.POINTER_DRAG, AirAction.TOGGLE_POINTER, AirAction.CALIBRATE_POINTER)) {
                 AirRuntime.recordActionDispatchOutcome(ActionDispatchOutcome.PLATFORM_REJECTED)
                 return@post
             }
@@ -205,6 +207,10 @@ class AirAccessibilityService : AccessibilityService() {
             if (nativeTouch) { coordinateInput = action.usesPointerTouch; nativeOrigin = origin }
             when (action) {
                 AirAction.NONE, AirAction.ARM_MOTION -> Unit
+                AirAction.CALIBRATE_POINTER -> {
+                    cancelPointerTouch()
+                    PlatformActions(this).execute(action)
+                }
                 AirAction.TOGGLE_POINTER -> {
                     val enabled = !AirRuntime.pointerEnabled
                     ActionMappingStore(this).setPointerEnabled(enabled)

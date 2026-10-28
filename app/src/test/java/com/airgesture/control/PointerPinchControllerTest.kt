@@ -5,6 +5,18 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class PointerPinchControllerTest {
+    @Test fun refitUsesPreviousTargetForAtMost350msAndCannotRenewItsOwnTrust() {
+        val c = PointerPinchController()
+        c.update(p(.4f, .5f), false, false, 1000L)
+        assertEquals(p(.4f, .5f), c.refitAnchor(1033L))
+        c.update(p(.9f, .9f), true, false, 1033L, positionTrusted = false)
+        assertEquals(p(.4f, .5f), c.refitAnchor(1350L))
+        assertNull(c.refitAnchor(1351L))
+        assertNull(c.refitAnchor(999L))
+        c.reset()
+        assertNull(c.refitAnchor(1100L))
+    }
+
     @Test fun ordinaryAimingPassesTheSelectedFilterPositionThroughExactly() {
         val controller = PointerPinchController()
         for (point in listOf(p(0.1f, 0.2f), p(0.9f, 0.95f), p(0.5f, 0.4f))) {

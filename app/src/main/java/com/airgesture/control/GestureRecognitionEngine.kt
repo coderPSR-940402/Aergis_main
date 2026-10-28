@@ -15,6 +15,8 @@ import com.google.mediapipe.tasks.vision.core.RunningMode
 import com.google.mediapipe.tasks.vision.gesturerecognizer.GestureRecognizer
 import com.google.mediapipe.tasks.vision.gesturerecognizer.GestureRecognizer.GestureRecognizerOptions
 import com.google.mediapipe.tasks.vision.gesturerecognizer.GestureRecognizerResult
+import com.google.mediapipe.tasks.vision.handlandmarker.HandLandmarker
+import java.nio.ByteBuffer
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** On-device MediaPipe gesture and hand-landmark inference. */
@@ -40,6 +42,11 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
     private var lastPointerActionEpoch: Long? = null
     private val poseEvidenceEvaluator = PoseGeometryEvidenceEvaluator()
     private var recognizer: GestureRecognizer? = null
+    private var recognizerDelegate = "UNAVAILABLE"
+    private var handLandmarker: HandLandmarker? = null
+    private var handLandmarkerDelegate = "UNAVAILABLE"
+    private var handModelBuffer: ByteBuffer? = null
+    private var handLandmarkerUnavailable = false
     private var activeDelegate = "UNAVAILABLE"
     private val lineageComparison = PointerLineageComparison()
     private var lastPointerOwnerId: String? = null
@@ -88,6 +95,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         val diagnosticStartedAt = SystemClock.uptimeMillis()
         var diagnosticResult: GestureRecognizerResult? = null
         var diagnosticError: String? = null
+        var handOnlyInference = false
         diagnosticTrace = if (TestingTools.needsFrames()) org.json.JSONObject() else null
         lastPipelineAgeMs = -1L
         try {
@@ -115,8 +123,14 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 metrics.recordOutOfOrderSkip()
                 return
             }
-            ensureRecognizer(analysisStartUptime)
-            val currentRecognizer = recognizer ?: return
+            val landmarksOnly = HandInferencePolicy.landmarksOnly(AirRuntime.gesturesEnabled, AirRuntime.controlMode)
+            ensureRecognizer(analysisStartUptime, landmarksOnly)
+            val currentLandmarker = if (landmarksOnly && !handLandmarkerUnavailable) handLandmarker else null
+            val currentRecognizer = if (currentLandmarker == null) recognizer else null
+            if (currentLandmarker == null && currentRecognizer == null) return
+            activeDelegate = if (currentLandmarker != null) handLandmarkerDelegate else recognizerDelegate
+            handOnlyInference = currentLandmarker != null
+            diagnosticTrace?.put("inferenceMode", if (currentLandmarker != null) "LANDMARKS_ONLY" else "GESTURE_RECOGNIZER")
             if (closed.get()) return
             lastSubmittedTimestampMs = timestamp
             val preStart = SystemClock.uptimeMillis()
@@ -128,12 +142,16 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 val imageProcessingOptions = ImageProcessingOptions.builder()
                     .setRotationDegrees(image.rotationDegrees)
                     .build()
-                val result = currentRecognizer.recognizeForVideo(
-                    mpImage,
-                    imageProcessingOptions,
-                    timestamp
-                )
+                val result = if (currentLandmarker != null) LandmarkOnlyGestureResult(
+                    currentLandmarker.detectForVideo(mpImage, imageProcessingOptions, timestamp))
+                else currentRecognizer!!.recognizeForVideo(mpImage, imageProcessingOptions, timestamp)
                 val inferenceEnd = SystemClock.uptimeMillis()
+                if (currentLandmarker != null && !HandInferencePolicy.landmarksOnly(AirRuntime.gesturesEnabled, AirRuntime.controlMode)) {
+                    // Commands were enabled during inference. Do not publish missing
+                    // classifier evidence into the new authority epoch.
+                    synchronized(this) { if (!closed.get()) resetTrackingState() }
+                    return
+                }
                 diagnosticResult = result
                 frameAspectRatio = CameraCoordinateTransform.uprightAspectRatio(image.width, image.height, image.rotationDegrees)
                 currentPixels = image
@@ -157,6 +175,10 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             Log.e(TAG, "Gesture recognition failed for frame", t)
             runCatching { recognizer?.close() }
             recognizer = null
+            runCatching { handLandmarker?.close() }
+            handLandmarker = null
+            handModelBuffer = null
+            if (handOnlyInference) handLandmarkerUnavailable = true
             recognizerFailureCount = (recognizerFailureCount + 1).coerceAtMost(MAX_RETRY_FAILURES)
             nextRecognizerRetryAt = SystemClock.uptimeMillis() +
                 VisionRetryPolicy.delayForFailure(recognizerFailureCount)
@@ -180,9 +202,19 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         }
     }
 
-    private fun ensureRecognizer(now: Long) {
-        if (recognizer != null || closed.get() || now < nextRecognizerRetryAt) return
-        recognizer = createRecognizerWithGpuFallback()
+    private fun ensureRecognizer(now: Long, landmarksOnly: Boolean = false) {
+        if (closed.get() || now < nextRecognizerRetryAt) return
+        if (landmarksOnly && !handLandmarkerUnavailable && handLandmarker == null) {
+            runCatching { handLandmarker = createHandLandmarker() }.onFailure {
+                handLandmarkerUnavailable = true
+                handModelBuffer = null
+                Log.w(TAG, "Optional hand-only path unavailable; preserving full recognizer", it)
+            }
+        }
+        if ((!landmarksOnly || handLandmarker == null) && recognizer == null) {
+            recognizer = createRecognizerWithGpuFallback()
+            recognizerDelegate = activeDelegate
+        }
         recognizerFailureCount = 0
         nextRecognizerRetryAt = 0L
         synchronized(this) {
@@ -191,6 +223,20 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 AirRuntime.visionError = null
             }
         }
+    }
+
+    private fun createHandLandmarker(): HandLandmarker {
+        val model = handModelBuffer ?: HandModelBundle.extract(context.assets.open(MODEL_ASSET)).also { handModelBuffer = it }
+        fun create(delegate: Delegate): HandLandmarker {
+            val options = HandLandmarker.HandLandmarkerOptions.builder()
+                .setBaseOptions(BaseOptions.builder().setModelAssetBuffer(model.duplicate().apply { rewind() })
+                    .setDelegate(delegate).build())
+                .setRunningMode(RunningMode.VIDEO).setNumHands(MAX_HANDS)
+                .setMinHandDetectionConfidence(.45f).setMinHandPresenceConfidence(.4f)
+                .setMinTrackingConfidence(.4f).build()
+            return HandLandmarker.createFromOptions(context, options).also { handLandmarkerDelegate = delegate.name }
+        }
+        return runCatching { create(Delegate.GPU) }.getOrElse { create(Delegate.CPU) }
     }
 
     private fun createRecognizerWithGpuFallback(): GestureRecognizer {
@@ -318,10 +364,11 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         }
         if (handSelection != null) {
             val directionalEnabled = RegisteredGesture.entries.any { it.isDirectionalGun && mappings.mapping(it) != AirAction.NONE }
-            val directional = if (directionalEnabled) LandmarkGestureRecognizer.recognizeDirectional(reusablePointsList, frameAspectRatio) else null
+            val generic = LandmarkGestureRecognizer.recognize(reusablePointsList, frameAspectRatio)
+            val directional = if (directionalEnabled) LandmarkGestureRecognizer.recognizeDirectional(reusablePointsList, frameAspectRatio, generic) else null
             val custom = directional?.takeIf {
                 it.name == "Double_Gun_Ambiguous" || RegisteredGesture.fromSignal(it.name)?.let { pose -> mappings.mapping(pose) != AirAction.NONE } == true
-            } ?: LandmarkGestureRecognizer.recognize(reusablePointsList, frameAspectRatio)
+            } ?: generic
             custom?.let {
                 gestureName = it.name
                 gestureScore = it.score
@@ -329,7 +376,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         }
         AirRuntime.lastGesture = gestureName
         val selectedPoseEvidence = if (selectedHand != null) {
-            poseEvidenceEvaluator.evaluate(reusablePointsList, frameAspectRatio)
+            poseEvidenceEvaluator.evaluateGesture(reusablePointsList, RegisteredGesture.fromSignal(gestureName), frameAspectRatio)
         } else {
             null
         }
@@ -393,11 +440,6 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         // Pinch control follows the visible cursor, while classifier commands retain the
         // stricter 350 ms rule. Ordered results over 600 ms old are rejected above; a gap
         // over 350 ms cannot carry a pointer-touch transaction into the next sample.
-        val pointerTouchTracking = freshness.gapMs <= 350L && !mappingChanged && !ownerChanged && !filterChanged &&
-            CommandTrackingEligibility.isEligible(controlSafe, handSelection != null,
-                AirRuntime.pointerEnabled, indexTip != null,
-                if (selectedHand != null) poseEvidenceEvaluator.evaluatePointer(reusablePointsList, frameAspectRatio) else null)
-        diagnosticTrace?.put("pointerTouchAllowed", pointerTouchTracking && AirRuntime.pointerClickingEnabled)
         // A pause/resume or permission/owner change between frames must not preserve
         // an open/contact history and replay it in the new authority epoch.
         if (lastPointerActionEpoch != AirRuntime.actionEpoch) {
@@ -405,6 +447,15 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             resetPointerTouch()
             lastPointerActionEpoch = AirRuntime.actionEpoch
         }
+        val pointerEpoch = AirRuntime.actionEpoch
+        // Only a target from this authority epoch may bridge a brief index refit.
+        val refitAnchor = pinchPointer.refitAnchor(timestamp)
+        val pointerTouchTracking = freshness.gapMs <= 350L && !mappingChanged && !ownerChanged && !filterChanged &&
+            CommandTrackingEligibility.isEligible(controlSafe, handSelection != null,
+                AirRuntime.pointerEnabled, indexTip != null,
+                if (selectedHand != null) poseEvidenceEvaluator.evaluatePointer(reusablePointsList,
+                    frameAspectRatio, requireIndexTip = refitAnchor == null) else null)
+        diagnosticTrace?.put("pointerTouchAllowed", pointerTouchTracking && AirRuntime.pointerClickingEnabled)
         val motionWasActive = directMotion.active
         val motionCenter = reusablePointsList.getOrNull(0)?.let { Point3D(1f - it.x, it.y, it.z) }
         val motionScale = if (reusablePointsList.size > 17)
@@ -420,16 +471,22 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             // Upright height equals sensor width for quarter-turn buffers.
             val depthScale = if (rotationDegrees == 90 || rotationDegrees == 270) 1f else frameAspectRatio
             val processed = interpreter.processFrame(reusablePointsList, timestamp,
-                actionsAllowed = touchAllowed, aspectRatio = frameAspectRatio, depthScale = depthScale) ?: run {
+                actionsAllowed = touchAllowed, aspectRatio = frameAspectRatio, depthScale = depthScale,
+                allowIndexRefit = touchAllowed && refitAnchor != null) ?: run {
                 handlePointerGap(observedAtMs, pointerActive, landmarks.size <= 1,
                     "NON_FINITE_OR_MISSING_TIP", PointerFeedback.INVALID_TIP)
                 return
             }
             AirRuntime.recordPoseEvidence(processed.poseEvidence)
             val rawTip = reusablePointsList[INDEX_TIP]
+            val tipUsable = rawTip.x in 0f..1f && rawTip.y in 0f..1f
             val mappedTip = pointerMapper.map(rawTip.x, rawTip.y, frameCalibration)
             val currentPoint = pointerMapper.map(processed.smoothedX, processed.smoothedY, frameCalibration)
-            val comparison = lineageComparison.update(mappedTip, currentPoint, timestamp)
+            val comparison = if (tipUsable) lineageComparison.update(mappedTip, currentPoint, timestamp)
+                else lineageComparison.latest ?: run {
+                    handlePointerGap(observedAtMs, pointerActive, false, "INVALID_TIP", PointerFeedback.INVALID_TIP)
+                    return
+                }
             val targetCandidate = comparison.selected(filterMode)
             val fromFallback = reacquireFrom
             val candidate = if (fromFallback != null) {
@@ -441,14 +498,23 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                     reacquireFrom = if (fraction == 1f) null else it
                 }
             } else targetCandidate
-            val trusted = filterMode != PointerFilterMode.PRECISION || comparison.precisionTrusted
-            AirRuntime.setRawPointerState(rawTip.x, rawTip.y, trusted)
+            val trusted = tipUsable && (filterMode != PointerFilterMode.PRECISION || comparison.precisionTrusted)
+            val anchorProtected = !trusted && refitAnchor != null && touchAllowed && processed.poseEvidence.accepted &&
+                (processed.isPinchApproaching || processed.isPinchPressed)
+            val targetTrusted = trusted || anchorProtected
+            if (AirRuntime.actionEpoch != pointerEpoch) { resetTrackingState(); return }
+            if (!tipUsable && !anchorProtected) {
+                handlePointerGap(observedAtMs, pointerActive, false, "INVALID_TIP", PointerFeedback.INVALID_TIP)
+                return
+            }
+            if (tipUsable) AirRuntime.setRawPointerState(rawTip.x, rawTip.y, trusted)
+            else AirRuntime.rawPointerSnapshot().let { AirRuntime.setRawPointerState(it.x, it.y, false) }
             val stabilized = if (dragging && pointerTouchTracking && trusted) {
                 AirRuntime.pointerInteraction = PointerInteractionPhase.DRAGGING
                 candidate
-            } else if (touchAllowed && processed.poseEvidence.accepted && trusted) {
-                val interaction = pinchPointer.update(candidate, processed.isPinchApproaching,
-                    processed.isPinchPressed, timestamp)
+            } else if (touchAllowed && processed.poseEvidence.accepted && targetTrusted) {
+                val interaction = pinchPointer.update(if (anchorProtected) refitAnchor!! else candidate,
+                    processed.isPinchApproaching, processed.isPinchPressed, timestamp, positionTrusted = trusted)
                 pinchInProgress = processed.isPinchApproaching || processed.isClickEngaged
                 AirRuntime.pointerInteraction = interaction.phase
                 interaction.point
@@ -458,7 +524,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 pinchInProgress = true
                 val heldPoint = AirRuntime.pointerSnapshot().let { PointerCoordinateMapper.Point(it.x, it.y) }
                 if (!processed.isPinchPressed) {
-                    pinchPointer.update(heldPoint, false, false, timestamp)
+                    pinchPointer.update(heldPoint, false, false, timestamp, positionTrusted = false)
                     AirRuntime.pointerInteraction = PointerInteractionPhase.AIMING
                 }
                 heldPoint
@@ -477,7 +543,8 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 ?.put("pointerInteraction", AirRuntime.pointerInteraction.name)
                 ?.put("thumbMiddleDistance", DiagnosticFrameData.number(processed.normalizedDistance))
                 ?.put("pinchPressed", processed.isPinchPressed)
-                ?.put("cursorVisible", true)?.put("pointerRejection", if (trusted) "NONE" else "POINTER_OUTLIER")
+                ?.put("cursorVisible", true)?.put("anchorProtected", anchorProtected)
+                ?.put("pointerRejection", if (trusted) "NONE" else if (anchorProtected) "PINCH_ANCHOR_REFIT" else "POINTER_OUTLIER")
                 ?.put("pointerRejectionDetail", org.json.JSONObject()
                     .put("reason", comparison.precisionRejection.name)
                     .put("jumpDistance", DiagnosticFrameData.number(comparison.precisionJumpDistance))
@@ -503,14 +570,15 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 lastPointerObservedAt = observedAtMs
                 PipelineMetrics.shared.recordAcceptedPointer(SystemClock.uptimeMillis())
             } else {
+                if (anchorProtected) pointerVisibility.record(stabilized, observedAtMs)
                 PipelineMetrics.shared.recordRejection("POINTER_OUTLIER_${comparison.precisionRejection.name}")
             }
-            AirRuntime.pointerFeedback = if (trusted) PointerFeedback.TRACKING else PointerFeedback.COASTING
-            AirRuntime.setPointerState(stabilized.x, stabilized.y, trusted)
+            AirRuntime.pointerFeedback = if (targetTrusted) PointerFeedback.TRACKING else PointerFeedback.COASTING
+            AirRuntime.setPointerState(stabilized.x, stabilized.y, targetTrusted)
             // Recognition initiates one bounded tap. Release only rearms. The same
             // frame's pinch evidence excludes the classifier before its dispatch gate.
-            if (touchAllowed && trusted && processed.isClickEngaged) {
-                AirAccessibilityService.instance?.dispatchPointerTap()
+            if (touchAllowed && targetTrusted && processed.isClickEngaged) {
+                AirAccessibilityService.instance?.dispatchPointerTap(pointerEpoch)
             }
 
             // Pointer travel and held contact never dispatch scrolling or drag.
@@ -751,7 +819,10 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
     /** Call on the analyzer executor, after any synchronous inference has finished. */
     override fun close() {
         stop()
-        try { recognizer?.close() } finally { recognizer = null }
+        try { recognizer?.close() } finally {
+            recognizer = null
+            try { handLandmarker?.close() } finally { handLandmarker = null; handModelBuffer = null }
+        }
         nextRecognizerRetryAt = 0L
     }
 

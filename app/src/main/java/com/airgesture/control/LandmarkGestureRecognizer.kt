@@ -5,8 +5,9 @@ import kotlin.math.sqrt
 
 /** Five additional poses from the owned hand. Ambiguous bends produce no custom evidence. */
 internal object LandmarkGestureRecognizer {
-    fun recognizeDirectional(points: List<Point3D>, aspect: Float): GestureSignal? {
-        val generic = recognize(points, aspect) ?: return null
+    fun recognizeDirectional(points: List<Point3D>, aspect: Float,
+        recognized: GestureSignal? = recognize(points, aspect)): GestureSignal? {
+        val generic = recognized ?: return null
         if (generic.name != RegisteredGesture.THUMB_INDEX_MIDDLE.signalName) return null
         val dx = -((points[8].x - points[5].x) + (points[12].x - points[9].x)) * aspect
         val dy = (points[8].y - points[5].y) + (points[12].y - points[9].y)
@@ -20,12 +21,16 @@ internal object LandmarkGestureRecognizer {
     }
 
     fun recognize(points: List<Point3D>, aspect: Float): GestureSignal? {
-        if (points.size != 21 || !aspect.isFinite() || aspect <= 0f ||
-            points.any { !it.x.isFinite() || !it.y.isFinite() || !it.z.isFinite() || it.x !in 0f..1f || it.y !in 0f..1f }) return null
-        fun distance(a: Int, b: Int) = points[a].distance2DTo(points[b], aspect)
+        if (points.size != 21 || !aspect.isFinite() || aspect <= 0f) return null
+        fun usable(i: Int) = points[i].let {
+            it.x.isFinite() && it.y.isFinite() && it.z.isFinite() && it.x in 0f..1f && it.y in 0f..1f
+        }
+        fun distance(a: Int, b: Int) = if (usable(a) && usable(b))
+            points[a].distance2DTo(points[b], aspect) else Float.NaN
         val scale = maxOf(distance(5, 17), distance(0, 9))
-        if (scale < .025f) return null
+        if (!scale.isFinite() || scale < .025f) return null
         fun straight(a: Int, b: Int, c: Int): Float {
+            if (!usable(a) || !usable(b) || !usable(c)) return Float.NaN
             val ux = (points[a].x - points[b].x) * aspect
             val uy = points[a].y - points[b].y
             val vx = (points[c].x - points[b].x) * aspect
@@ -61,6 +66,7 @@ internal object LandmarkGestureRecognizer {
             down.take(3).all { it } && up[3] && thumbIn -> RegisteredGesture.PINKY_ONLY
             else -> null
         }
-        return pose?.let { GestureSignal(it.signalName, .85f) }
+        return pose?.takeIf { gesture -> GestureLandmarkRequirements.joints(gesture).all(::usable) }
+            ?.let { GestureSignal(it.signalName, .85f) }
     }
 }

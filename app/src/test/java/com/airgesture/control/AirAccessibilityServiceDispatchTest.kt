@@ -281,6 +281,32 @@ class AirAccessibilityServiceDispatchTest {
         assertEquals(ActionDispatchOutcome.CANCELLED, telemetry.lastOutcome)
     }
 
+    @Test fun explicitSourceEpochCannotBeReplacedByCurrentPointerAuthority() {
+        val sourceEpoch = AirRuntime.actionEpoch
+        AirRuntime.invalidatePendingActions()
+        service.updatePointer(.5f, .5f, true)
+        shadowOf(Looper.getMainLooper()).idle()
+        service.dispatchPointerTap(sourceEpoch)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertTrue(shadow.gesturesDispatched.isEmpty())
+        assertEquals(ActionDispatchOutcome.POLICY_DENIED, AirRuntime.state.value.actionDispatchTelemetry.lastOutcome)
+    }
+
+    @Test fun calibrationOpensWithoutPointerAndRevokesActionAuthority() {
+        AirRuntime.pointerEnabled = false
+        AirRuntime.setPointerState(.5f, .5f, false)
+        val epoch = AirRuntime.actionEpoch
+        service.dispatch(AirAction.CALIBRATE_POINTER)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(ControlMode.READY, AirRuntime.controlMode)
+        assertTrue(AirRuntime.actionEpoch > epoch)
+        val launched = shadowOf(service).nextStartedActivity
+        assertEquals(MainActivity.ACTION_OPEN_CALIBRATION, launched?.action)
+        assertEquals(MainActivity::class.java.name, launched?.component?.className)
+        assertTrue(shadow.gesturesDispatched.isEmpty())
+        assertEquals(ActionDispatchOutcome.SUBMITTED, AirRuntime.state.value.actionDispatchTelemetry.lastOutcome)
+    }
+
     @Test fun pointerTapWorksWhenCommandsOffButToggleInvalidatesQueuedTap() {
         AirRuntime.gesturesEnabled = false
         service.updatePointer(.5f,.5f,true)

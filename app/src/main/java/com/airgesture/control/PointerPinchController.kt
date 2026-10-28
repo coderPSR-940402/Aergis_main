@@ -21,9 +21,15 @@ internal class PointerPinchController(
     private var guardedRelease = false
     private var releaseGuardUntil = 0L
     private var releaseGuardPoint: PointerCoordinateMapper.Point? = null
+    private var lastTrustedAt: Long? = null
+
+    fun refitAnchor(timestampMs: Long): PointerCoordinateMapper.Point? = lastTrustedAt?.let {
+        if (timestampMs >= it && timestampMs - it <= 350L) lastPoint else null
+    }
 
     fun update(candidate: PointerCoordinateMapper.Point, approaching: Boolean, pressed: Boolean,
-        timestampMs: Long): Result {
+        timestampMs: Long, positionTrusted: Boolean = true): Result {
+        if (positionTrusted) lastTrustedAt = timestampMs
         var phase = PointerInteractionPhase.AIMING
         val point = if (approaching || pressed) {
             clearRelease()
@@ -73,6 +79,7 @@ internal class PointerPinchController(
     }
 
     fun reset() {
+        lastTrustedAt = null
         lastPoint = null
         anchor = null
         clearRelease()

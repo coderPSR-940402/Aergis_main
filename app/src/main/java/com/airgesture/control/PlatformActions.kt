@@ -14,6 +14,11 @@ internal class PlatformActions(private val context: Context) {
         val outcome = try {
             val submitted = when (action) {
                 AirAction.APP_SEARCH -> launch(Intent(context, AppSearchActivity::class.java))
+                AirAction.CALIBRATE_POINTER -> {
+                    AirRuntime.controlMode = ControlMode.READY
+                    launch(Intent(context, MainActivity::class.java).setAction(MainActivity.ACTION_OPEN_CALIBRATION)
+                        .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP))
+                }
                 AirAction.WEB_SEARCH -> launch(Intent(Intent.ACTION_WEB_SEARCH))
                 AirAction.WIFI_CONTROLS -> launch(Intent(Settings.ACTION_WIFI_SETTINGS))
                 AirAction.BLUETOOTH_SETTINGS -> launch(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))

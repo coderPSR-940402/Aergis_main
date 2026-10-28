@@ -109,7 +109,7 @@ internal fun ActionMappingPicker(
 private fun actionGroupRes(action: AirAction): Int = when {
     action == AirAction.NONE -> R.string.product_group_off
     action == AirAction.ARM_MOTION -> R.string.product_group_motion
-    action.usesPointerTouch || action == AirAction.TOGGLE_POINTER -> R.string.product_group_pointer
+    action.usesPointerTouch || action in setOf(AirAction.TOGGLE_POINTER, AirAction.CALIBRATE_POINTER) -> R.string.product_group_pointer
     action in setOf(AirAction.APP_SEARCH, AirAction.WEB_SEARCH, AirAction.MEDIA_PLAY_PAUSE, AirAction.MEDIA_NEXT, AirAction.MEDIA_PREVIOUS) -> R.string.product_group_media
     action in setOf(AirAction.VOLUME_UP, AirAction.VOLUME_DOWN, AirAction.SCREENSHOT, AirAction.LOCK_SCREEN,
         AirAction.WIFI_CONTROLS, AirAction.BLUETOOTH_SETTINGS, AirAction.ROTATION_TOGGLE) -> R.string.product_group_device
@@ -158,5 +158,6 @@ internal fun actionLabel(action: AirAction): String = stringResource(when (actio
     AirAction.FOCUS_PREVIOUS -> R.string.action_focus_previous
     AirAction.ACTIVATE_FOCUSED -> R.string.action_activate_focused
     AirAction.TOGGLE_POINTER -> R.string.action_toggle_pointer
+    AirAction.CALIBRATE_POINTER -> R.string.action_calibrate_pointer
     AirAction.NONE -> R.string.action_disabled
 })

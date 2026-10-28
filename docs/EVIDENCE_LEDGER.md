@@ -1,7 +1,65 @@
 # Aergis Evidence Ledger and Decision Log
 
 
-## Current continuation — 2026-10-28: depth-separated overlap veto
+## Current continuation — 2026-10-28: five touchless-runtime improvements
+
+Base: PR #74 `e825204c8915afb716a9f9760b2536e6c10f7bb3`, CI #330 successful;
+main/build reference `a53596b`. The owner requested all five following changes.
+No new device evidence or acceptance has arrived for the new implementation.
+
+- Visibility: explicit joint masks per gesture and conservative neutral evidence.
+  Unused DIP joints no longer veto poses; thumb-base requirements depend on the
+  gesture. Every distinguishing fingertip/bend and palm anchor remains required.
+  Existing full evaluator and canned index-bone readiness rules are preserved;
+  landmark poses use their own angle/extension validation. Custom geometry is
+  computed once and reused for directional identity.
+- Capture: native CameraX RGBA replaces Java per-pixel YUV conversion on the primary
+  path. Request only advertised FAST noise/edge modes, with absent/unsupported
+  Camera2 metadata leaving defaults. Existing 640x480 preference, advertised <=60 FPS
+  selection, rate-bind fallback, KEEP_ONLY_LATEST and owned-buffer lifetime remain.
+  Native conversion changes processing cost and may change low-light noise; actual
+  frame age/FPS and tracking quality must be measured on A54, not inferred from CI.
+- Inference: armed commands-off sessions lazily use the exact hand-landmarker
+  submodel from the existing pinned bundle. Every commands-on session and rehearsal
+  retains full GestureRecognizer classification. Cached models run on the same
+  single worker; only one task runs per frame. Missing classifier labels are empty,
+  never invented confident neutral. Initialization/runtime failure falls back to
+  the full recognizer. Both models close on the existing worker lifecycle.
+  The extractor reproduces all 7,819,105 pinned submodel bytes; SHA-256:
+  `1c454b1f487e6a9f46d1e2cda05454c00189735d250e427d3b472e30c843ede1`.
+- Pinch: a previously trusted frozen target can bridge <=350 ms of index refit only
+  with fresh owned thumb/middle/palm geometry and an actual confirmed pinch. Refits
+  cannot refresh that trust clock, move the target, seed image tracking or provide
+  raw calibration samples. Epoch/owner/mapping/filter/disable/pause/hand-loss resets
+  revoke the anchor. Native pointer dispatch receives the original source epoch.
+- Calibration: append CALIBRATE_POINTER without renaming/reassigning old actions.
+  Its backend cancels native pointer touch, disarms and opens/reuses MainActivity,
+  starting the existing guided capture once. No camera auto-start or auto-arming.
+  Existing corner capture/review/Save/Cancel controls and stored-profile protections
+  remain the workflow; this is gesture-triggered entry, not automatic corner capture.
+
+Verification before Android CI: 63 selected production-core JUnit tests, 13 Python
+checks, exact pinned-submodel extraction, XML parsing and whitespace checks pass.
+New unused-joint and explicitly authorized index-refit cases were observed failing
+before their corrections. Native tests cover actual partial-hand command dispatch
+and neutral/rearm, one anchored tap across precision/NaN refits, the 350 ms bound,
+pause/epoch rejection, camera request options, absent classifier categories,
+calibration cold/warm/recreation entry and native Compose destination requests.
+These Android tests and APK/lint checks await CI; no device result is claimed.
+
+Author self-review only, honoring the single-agent instruction. Sensitive areas:
+recognition geometry, CameraX processing/format, MediaPipe task selection/lifetime,
+pointer-action authority and calibration entry. Pointer x/y transforms, filter
+algorithms, calibration math/profile storage and native touch implementation retain
+baseline contracts. Full-plan detail: `docs/superpowers/plans/2026-10-28-touchless-runtime.md`.
+
+Acceptance remains exact-APK A54 operation: intended AND unintended gestures with
+partial hands, low-light color/noise and delivery timing, optional GPU path/fallback,
+commands-on/off transitions, index refits/expiry and safety/owner changes, then
+mapped calibration from pointer-off mode. Do not merge/promote from CI alone.
+
+
+## Previous continuation — 2026-10-28: depth-separated overlap veto
 
 Re-evaluation of PR #74 head `1bfb87c55a6eb43ebffdc176d27bf05d8638e2b0`
 (CI #328 successful) found a missing negative case in the projected-contact change.

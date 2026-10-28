@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="action_calibrate_pointer">Calibrate pointer</string>
     <string name="app_name">Aergis</string>
     <string name="accessibility_description">Aergis uses accessibility gestures to perform configured device actions.</string>
     <string name="app_tagline">Air gesture control • 0.10.0-preview</string>

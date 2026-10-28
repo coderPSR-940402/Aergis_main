@@ -45,6 +45,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 class MainActivity : ComponentActivity() {
+    private var requestedDestination by mutableStateOf<AergisDestination?>(null)
     private var pointerEnabled by mutableStateOf(true)
     private var gesturesEnabled by mutableStateOf(true)
     private var pointerClickingEnabled by mutableStateOf(true)
@@ -129,7 +130,22 @@ class MainActivity : ComponentActivity() {
         pendingZip = savedInstanceState?.getString("testing_pending_zip")?.let(::File)
         refreshSettings()
         TestingTools.restoreLatest(this)
+        handleCalibrationIntent(intent)
         setContent { AirGestureScreen() }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleCalibrationIntent(intent)
+    }
+
+    private fun handleCalibrationIntent(request: Intent) {
+        if (request.action != ACTION_OPEN_CALIBRATION) return
+        // Consume once: recreation restores the route without restarting capture.
+        request.action = Intent.ACTION_MAIN
+        startCalibration()
+        requestedDestination = AergisDestination.CALIBRATION
     }
 
     override fun onResume() {
@@ -300,7 +316,9 @@ class MainActivity : ComponentActivity() {
             AergisShell(
                 gesturesEnabled || (pointerEnabled && pointerClickingEnabled),
                 initialDestination = if (accessibilityEnabled && cameraAllowed) AergisDestination.CONTROL else AergisDestination.WELCOME,
-                onEntering = { if (it.disarmsOnEntry) AirRuntime.controlMode = ControlMode.READY }
+                onEntering = { if (it.disarmsOnEntry) AirRuntime.controlMode = ControlMode.READY },
+                requestedDestination = requestedDestination,
+                onDestinationHandled = { requestedDestination = null; editingName = null }
             ) { destination, navigate ->
                 when (destination) {
                     AergisDestination.CONTROL -> ControlScreen(
@@ -715,5 +733,9 @@ class MainActivity : ComponentActivity() {
             stringResource(R.string.ui_mapping_pointer_restriction) else null
         GestureMappingRow(source, stringResource(gestureLabelRes(source)), actionLabel(current),
             stringResource(gestureHelpRes(source)), restriction) { onEdit(source) }
+    }
+
+    companion object {
+        const val ACTION_OPEN_CALIBRATION = "com.airgesture.control.OPEN_CALIBRATION"
     }
 }

@@ -6,6 +6,17 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class GestureInterpreterThumbMiddleTest {
+    @Test fun explicitlyAuthorizedIndexRefitCannotVetoVisibleThumbMiddleContact() {
+        val interpreter = GestureInterpreter()
+        interpreter.processFrame(pose(closed = false), 1000L)
+        val refit = pose(closed = true).apply { this[8] = Point3D(Float.NaN, Float.NaN, Float.NaN) }
+        val result = interpreter.processFrame(refit, 1100L, allowIndexRefit = true)
+        assertNotNull(result)
+        assertTrue(result!!.isClickEngaged)
+        assertTrue(result.smoothedX.isFinite())
+        assertFalse(interpreter.processFrame(refit, 1200L, allowIndexRefit = true)!!.isClickEngaged)
+    }
+
     @Test fun contactConfirmsOnceAndKeepsPressedStateUntilRelease() {
         val interpreter = GestureInterpreter()
         interpreter.processFrame(pose(closed = false), 1L)

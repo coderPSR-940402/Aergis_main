@@ -660,6 +660,84 @@ class CalibrationEngineIntegrationTest {
         }
     }
 
+    @Test fun trustedAnchorSurvivesBriefIndexJumpAndMissingTipWithoutRepeatingTap() {
+        withMappedBackService { shadow ->
+            AirRuntime.gesturesEnabled = false
+            TestingTools.setFilterMode(PointerFilterMode.PRECISION)
+            val looper = org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper())
+            repeat(4) { publish(hand(), 1000L + it * 100L); looper.idle() }
+            val target = AirRuntime.pointerSnapshot()
+            val contact = hand().toMutableList().apply {
+                this[4] = NormalizedLandmark.create(.56f, .65f, 0f)
+                this[8] = NormalizedLandmark.create(.95f, .05f, 0f)
+            }
+            publish(contact, 1400L); looper.idle()
+            assertTrue(AirRuntime.pointerTracking)
+            assertEquals(target.x, AirRuntime.pointerX, .0001f)
+            assertEquals(target.y, AirRuntime.pointerY, .0001f)
+            assertEquals("A rejected index jump cannot consume an otherwise valid anchored tap", 1, shadow.gesturesDispatched.size)
+            val tap = shadow.gesturesDispatched.single()
+            tap.callback()!!.onCompleted(tap.description())
+            contact[8] = NormalizedLandmark.create(Float.NaN, Float.NaN, Float.NaN)
+            publish(contact, 1500L); looper.idle()
+            publish(contact, 1600L); looper.idle()
+            assertTrue(AirRuntime.pointerTracking)
+            assertFalse("Refits grant no raw calibration evidence", AirRuntime.rawPointerSnapshot().tracking)
+            assertEquals(1, shadow.gesturesDispatched.size)
+            publish(contact, 1700L); looper.idle()
+            assertFalse("The protected target must expire without trusted tip recovery", AirRuntime.pointerTracking)
+            assertEquals(1, shadow.gesturesDispatched.size)
+            contact[8] = hand()[8]
+            publish(contact, 1800L); looper.idle()
+            assertEquals("Reacquired closed contact cannot replay", 1, shadow.gesturesDispatched.size)
+        }
+    }
+
+    @Test fun pauseCannotLendAnOldAnchorToANewClosedContact() {
+        withMappedBackService { shadow ->
+            val looper = org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper())
+            repeat(4) { publish(hand(), 1000L + it * 100L); looper.idle() }
+            val approach = hand().toMutableList().apply { this[4] = NormalizedLandmark.create(.60f, .65f, 0f) }
+            publish(approach, 1400L); looper.idle()
+            AirRuntime.controlMode = ControlMode.PAUSED
+            AirRuntime.controlMode = ControlMode.ARMED
+            approach[4] = NormalizedLandmark.create(.56f, .65f, 0f)
+            approach[8] = NormalizedLandmark.create(Float.NaN, Float.NaN, Float.NaN)
+            publish(approach, 1500L); looper.idle()
+            assertTrue(shadow.gesturesDispatched.isEmpty())
+            assertFalse(AirRuntime.pointerTracking)
+        }
+    }
+
+    @Test fun partialCustomPoseCanExecuteAndRearmWithoutUnusedJointVisibility() {
+        withMappedBackService { shadow ->
+            AirRuntime.pointerEnabled = false
+            val context = RuntimeEnvironment.getApplication() as Context
+            val prefs = context.getSharedPreferences("aergis_mappings", Context.MODE_PRIVATE)
+            val previous = prefs.getString("gesture_FOUR_FINGERS", null)
+            try {
+                ActionMappingStore(context).setMapping(RegisteredGesture.FOUR_FINGERS, AirAction.BACK)
+                val custom = LandmarkGestureRecognizerTest.pose(RegisteredGesture.FOUR_FINGERS).map {
+                    NormalizedLandmark.create(it.x, it.y, it.z)
+                }.toMutableList().apply { this[7] = NormalizedLandmark.create(1.1f, .5f, 0f) }
+                val neutral = custom.toMutableList().apply {
+                    // Ambiguous bends produce no custom pose, while ownership stays identical.
+                    for (tip in listOf(8, 12, 16, 20))
+                        this[tip] = NormalizedLandmark.create(custom[tip - 3].x() + .10f, .39f, 0f)
+                }
+                primeClassifier(neutral)
+                val looper = org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper())
+                repeat(6) { publish(custom, 1300L + it * 100L); looper.idle() }
+                assertEquals(1, shadow.globalActionsPerformed.size)
+                repeat(4) { publish(neutral, 2000L + it * 100L); looper.idle() }
+                repeat(6) { publish(custom, 2400L + it * 100L); looper.idle() }
+                assertEquals("Confident neutral with the same usable joints can rearm", 2, shadow.globalActionsPerformed.size)
+            } finally {
+                prefs.edit().apply { if (previous == null) remove("gesture_FOUR_FINGERS") else putString("gesture_FOUR_FINGERS", previous) }.commit()
+            }
+        }
+    }
+
     private fun withMappedBackService(block: (org.robolectric.shadows.ShadowAccessibilityService) -> Unit) {
         val context = RuntimeEnvironment.getApplication() as Context
         val prefs = context.getSharedPreferences("aergis_mappings", Context.MODE_PRIVATE)
