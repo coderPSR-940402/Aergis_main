@@ -619,6 +619,47 @@ class CalibrationEngineIntegrationTest {
         }
     }
 
+    @Test fun depthSeparatedProjectedContactCannotReachNativeDispatch() {
+        withMappedBackService { shadow ->
+            AirRuntime.gesturesEnabled = false
+            val looper = org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper())
+            repeat(4) { publish(hand(), 1000L + it * 100L); looper.idle() }
+            val overlap = hand().toMutableList().apply {
+                this[4] = NormalizedLandmark.create(.55f, .65f, -.08f)
+            }
+            repeat(4) { publish(overlap, 1400L + it * 100L); looper.idle() }
+            assertTrue("The pointer must still track without granting contact authority", AirRuntime.pointerTracking)
+            assertTrue("Visible overlap with clear depth separation cannot tap", shadow.gesturesDispatched.isEmpty())
+        }
+    }
+
+    @Test fun quarterTurnContactVetoUsesUnrotatedSensorDepthUnits() {
+        withMappedBackService { shadow ->
+            AirRuntime.gesturesEnabled = false
+            GestureRecognitionEngine::class.java.getDeclaredField("frameAspectRatio")
+                .apply { isAccessible = true }.set(engine, .75f)
+            val looper = org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper())
+            fun sensor(points: List<NormalizedLandmark>) = points.map {
+                // Inverse of the 270-degree x/y rotation; z stays in sensor-width units.
+                NormalizedLandmark.create(1f - it.y(), it.x(), it.z())
+            }
+            repeat(4) { publish(sensor(hand()), 1000L + it * 100L, rotationDegrees = 270); looper.idle() }
+            val separated = hand().toMutableList().apply {
+                this[4] = NormalizedLandmark.create(.55f, .65f, -.051f)
+            }
+            publish(sensor(separated), 1400L, rotationDegrees = 270); looper.idle()
+            assertTrue(AirRuntime.pointerTracking)
+            assertTrue(".051 / .15 is .34, not .255: reject this contact", shadow.gesturesDispatched.isEmpty())
+            val contact = separated.toMutableList().apply {
+                this[4] = NormalizedLandmark.create(.55f, .65f, -.035f)
+            }
+            publish(sensor(contact), 1500L, rotationDegrees = 270); looper.idle()
+            assertEquals("A smaller depth discrepancy still permits observed contact", 1, shadow.gesturesDispatched.size)
+            val tap = shadow.gesturesDispatched.single()
+            tap.callback()!!.onCompleted(tap.description())
+        }
+    }
+
     private fun withMappedBackService(block: (org.robolectric.shadows.ShadowAccessibilityService) -> Unit) {
         val context = RuntimeEnvironment.getApplication() as Context
         val prefs = context.getSharedPreferences("aergis_mappings", Context.MODE_PRIVATE)
@@ -760,7 +801,7 @@ class CalibrationEngineIntegrationTest {
         this[12] = NormalizedLandmark.create(0.55f, 0.65f, 0f)
     }
 
-    private fun publish(landmarks: List<NormalizedLandmark>, timestamp: Long, rawHandedness: String = "Left", gestureName: String = "None", delayMs: Long = 0L, measuredAgeMs: Long? = null, gestureScore: Float = .99f, includeGesture: Boolean = true) {
+    private fun publish(landmarks: List<NormalizedLandmark>, timestamp: Long, rawHandedness: String = "Left", gestureName: String = "None", delayMs: Long = 0L, measuredAgeMs: Long? = null, gestureScore: Float = .99f, includeGesture: Boolean = true, rotationDegrees: Int = 0) {
         val hands = if (landmarks.isEmpty()) emptyList() else listOf(
             LandmarkProto.NormalizedLandmarkList.newBuilder().addAllLandmark(landmarks.map {
                 LandmarkProto.NormalizedLandmark.newBuilder().setX(it.x()).setY(it.y()).setZ(it.z()).build()
@@ -788,12 +829,12 @@ class CalibrationEngineIntegrationTest {
                 "publishWithAge", GestureRecognizerResult::class.java, java.lang.Long.TYPE,
                 java.lang.Long.TYPE, java.lang.Integer.TYPE, java.lang.Long.TYPE
             ).apply { isAccessible = true }
-            method.invoke(engine, result, timestamp, timestamp + delayMs, 0, measuredAgeMs)
+            method.invoke(engine, result, timestamp, timestamp + delayMs, rotationDegrees, measuredAgeMs)
             return
         }
         val method = GestureRecognitionEngine::class.java.getDeclaredMethod(
             "publish", GestureRecognizerResult::class.java, java.lang.Long.TYPE, java.lang.Long.TYPE, java.lang.Integer.TYPE
         ).apply { isAccessible = true }
-        method.invoke(engine, result, timestamp, timestamp + delayMs, 0)
+        method.invoke(engine, result, timestamp, timestamp + delayMs, rotationDegrees)
     }
 }

@@ -416,7 +416,11 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         if (pointerActive && indexTip != null) {
             val dragging = AirAccessibilityService.instance?.precisionDragActive == true
             val touchAllowed = pointerTouchTracking && AirRuntime.pointerClickingEnabled && !motionWasActive && !dragging && reacquireFrom == null
-            val processed = interpreter.processFrame(reusablePointsList, timestamp, actionsAllowed = touchAllowed, aspectRatio = frameAspectRatio) ?: run {
+            // toUpright rotates x/y but preserves MediaPipe's sensor-width z.
+            // Upright height equals sensor width for quarter-turn buffers.
+            val depthScale = if (rotationDegrees == 90 || rotationDegrees == 270) 1f else frameAspectRatio
+            val processed = interpreter.processFrame(reusablePointsList, timestamp,
+                actionsAllowed = touchAllowed, aspectRatio = frameAspectRatio, depthScale = depthScale) ?: run {
                 handlePointerGap(observedAtMs, pointerActive, landmarks.size <= 1,
                     "NON_FINITE_OR_MISSING_TIP", PointerFeedback.INVALID_TIP)
                 return

@@ -37,7 +37,8 @@ class GestureInterpreter(
         return GestureDecision(mappings?.mapping(gesture) ?: gesture.defaultAction, signal.score)
     }
 
-    fun processFrame(landmarks: List<Point3D>, timestampMs: Long, actionsAllowed: Boolean = true, aspectRatio: Float = 1f): ProcessedGestureResult? {
+    fun processFrame(landmarks: List<Point3D>, timestampMs: Long, actionsAllowed: Boolean = true,
+        aspectRatio: Float = 1f, depthScale: Float = aspectRatio): ProcessedGestureResult? {
         if (landmarks.size <= KinematicValidator.INDEX_TIP) {
             resetActions()
             return null
@@ -65,7 +66,8 @@ class GestureInterpreter(
                 poseEvidence
             )
         }
-        val clickState = clickStateMachine.processFrame(dNorm, timestampMs)
+        val depthSeparation = validator.calculateNormalizedFingerDepthDistance(landmarks, aspectRatio, depthScale)
+        val clickState = clickStateMachine.processFrame(dNorm, timestampMs, depthSeparation)
         val approaching = clickStateMachine.isPointerLocked
         val pressed = clickStateMachine.getCurrentState() == ClickHysteresisStateMachine.State.CLICKED
         val swipeState = if (approaching) {

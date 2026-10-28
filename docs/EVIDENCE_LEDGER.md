@@ -1,7 +1,54 @@
 # Aergis Evidence Ledger and Decision Log
 
 
-## Current continuation — 2026-10-27: projected thumb-middle contact
+## Current continuation — 2026-10-28: depth-separated overlap veto
+
+Re-evaluation of PR #74 head `1bfb87c55a6eb43ebffdc176d27bf05d8638e2b0`
+(CI #328 successful) found a missing negative case in the projected-contact change.
+Existing palm-roll coverage rotated fingers along the same axis as palm width.
+Rigid pitch along the perpendicular axis can hide open-finger separation in depth
+and synthesize a click. Two added production-interpreter tests reproduce this on
+that head: 80-degree pitch of an open hand and depth-separated fingertip overlap.
+This is a code-reproduced regression, not a new device observation.
+
+Keep projected thumb-middle contact but veto new contact when fingertip depth
+separation reaches the existing 0.32 clearly-open boundary. Normalize against the
+same projected palm width; estimated palm depth never enlarges the denominator.
+Depth disagreement below that boundary remains tolerated. Depth alone never rearms
+an already consumed click or grants projected opening evidence. Invalid depth
+units reset pending confirmation. No contact/release constant or time threshold
+is changed; applying the existing release boundary to depth is a new conservative
+eligibility rule, not device-calibrated proof of physical contact.
+
+MediaPipe z remains in unrotated sensor-width units after the app's x/y rotation.
+Convert z to upright image-height units using 1 for 90/270-degree buffers and the
+upright width/height ratio for 0/180. Preserve pointer x/y, filters and calibration.
+Reference: [MediaPipe hand landmarks](https://github.com/google-ai-edge/mediapipe/blob/master/docs/solutions/hands.md#multi_hand_landmarks).
+
+Host verification: the two new negatives fail before the correction; all 47 selected
+production-core JUnit tests pass afterward, including all earlier contact positives,
+palm roll, timing, release, held-contact and anchoring tests. A table of all eight
+rounded projected/depth contact ratios from the earlier CLICK segment remains
+eligible: depth separations span 0.166–0.307 palm widths. This preserves measured
+eligibility; it does not prove recovered intended clicks. Thirteen Python tooling
+tests pass. Native regressions cover blocked depth-separated overlap, correct
+quarter-turn depth units and valid contact recovery; full Android CI is required.
+
+Scope: pinch geometry, confirmation eligibility and the engine's depth-unit input.
+CameraX, MediaPipe model/delegate/mode, pointer filters, x/y transforms, calibration,
+accessibility execution and lifecycle are unchanged by this correction. Existing
+PR #74 navigation remains intact. Main/build reference stays `a53596b`.
+
+Residual risks: monocular depth can still underestimate separation or overestimate
+true contact. Severe foreshortening and false projected release remain device
+acceptance cases. The existing rejection of untrusted pointer positions must not
+be bypassed to recover a consumed click. Pipeline delay and whole-hand gesture
+rejection are not solved here. The latest recording still identifies CI #327;
+there is no device acceptance for #328 or this correction. Do not promote either
+as a functional baseline or merge without exact-APK physical acceptance.
+
+
+## Previous continuation — 2026-10-27: projected thumb-middle contact
 
 - Main and automatic build reference resolve to `a53596b2d2c25ced3026d42a31d9b10b60225b5f`.
   Preserve PR #74's navigation changes at `1bb69d4e637b43ec3d5eb5fa746242d29f7e8703`;

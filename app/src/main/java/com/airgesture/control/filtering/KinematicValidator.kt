@@ -1,5 +1,7 @@
 package com.airgesture.control.filtering
 
+import kotlin.math.abs
+
 class KinematicValidator {
 
     companion object {
@@ -32,6 +34,19 @@ class KinematicValidator {
         val fingertipDistance = thumbTip.distance2DTo(middleTip, aspectRatio)
 
         return fingertipDistance / palmWidth
+    }
+
+    /** Depth can veto clearly separated fingertips; it never expands the palm scale.
+     * [depthScale] converts unchanged sensor-width z into upright image-height units.
+     * This differs from [aspectRatio] when the camera buffer is rotated 90/270 degrees.
+     */
+    fun calculateNormalizedFingerDepthDistance(landmarks: List<Point3D>, aspectRatio: Float = 1f,
+        depthScale: Float = aspectRatio): Float {
+        if (landmarks.size <= PINKY_MCP || !aspectRatio.isFinite() || aspectRatio <= 0f ||
+            !depthScale.isFinite() || depthScale <= 0f) return Float.NaN
+        val palmWidth = landmarks[INDEX_MCP].distance2DTo(landmarks[PINKY_MCP], aspectRatio)
+            .coerceAtLeast(MIN_PALM_WIDTH_PX)
+        return abs(landmarks[THUMB_TIP].z - landmarks[MIDDLE_TIP].z) * depthScale / palmWidth
     }
 
     fun validateAndConstrainIndexTip(
