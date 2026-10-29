@@ -4,6 +4,11 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class IndependentInputTest {
+    @Test fun mappedTapUsesSelectionWithTheCursorOffAndPreservesOtherMappings() {
+        assertEquals(AirAction.SELECT_ITEM, GestureActionPolicy.resolve(AirAction.TAP, false))
+        assertEquals(AirAction.TAP, GestureActionPolicy.resolve(AirAction.TAP, true))
+        assertEquals(AirAction.LONG_PRESS, GestureActionPolicy.resolve(AirAction.LONG_PRESS, false))
+    }
     @Test fun pointerAndMappedCommandsAreIndependentForEverySwitchCombination() {
         for (pointer in listOf(false, true)) for (click in listOf(false, true)) for (commands in listOf(false, true)) {
             assertEquals("pointer=$pointer click=$click commands=$commands", click,

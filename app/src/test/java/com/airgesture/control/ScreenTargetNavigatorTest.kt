@@ -12,6 +12,46 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk=[35])
 class ScreenTargetNavigatorTest {
+    @Test fun nativeClickConfirmationMatchesTheExactActivatedNodeAndRequestOnce() {
+        val node=target("Open") { }
+        val other=target("Other") { }
+        val events=mutableListOf<ScreenSelectionEvent>()
+        val navigator=ScreenTargetNavigator(VisibleHighlight(),events::add)
+        assertTrue(navigator.perform(node,AirAction.NEXT_ITEM,1L))
+        assertTrue(navigator.perform(node,AirAction.SELECT_ITEM,1L,42L))
+        @Suppress("DEPRECATION")
+        val event=android.view.accessibility.AccessibilityEvent.obtain(
+            android.view.accessibility.AccessibilityEvent.TYPE_VIEW_CLICKED)
+        shadowOf(event).setWindowId(node.windowId)
+        shadowOf(event).setSourceNode(other)
+        navigator.observe(event,1L)
+        assertEquals("activation_accepted",events.last().kind)
+        shadowOf(event).setSourceNode(node)
+        navigator.observe(event,1L)
+        assertEquals("activation_confirmed",events.last().kind)
+        assertEquals(42L,events.last().requestId)
+        val count=events.size
+        navigator.observe(event,1L)
+        assertEquals(count,events.size)
+        navigator.close()
+    }
+
+    @Test fun expiredOrRevokedActivationRecordsWhyItWasNotConfirmed() {
+        val node=target("Private label") { }
+        val events=mutableListOf<ScreenSelectionEvent>()
+        val navigator=ScreenTargetNavigator(VisibleHighlight(),events::add)
+        assertTrue(navigator.perform(node,AirAction.NEXT_ITEM,1L))
+        assertTrue(navigator.perform(node,AirAction.SELECT_ITEM,1L,42L))
+        navigator.expireActivation(2L)
+        assertEquals("activation_unconfirmed",events.last().kind)
+        assertEquals("selection_authority_changed",events.last().reason)
+        assertFalse(events.toString().contains("Private label"))
+        assertTrue(navigator.perform(node,AirAction.NEXT_ITEM,2L))
+        assertTrue(navigator.perform(node,AirAction.SELECT_ITEM,2L,43L))
+        navigator.expireActivation(2L,Long.MAX_VALUE)
+        assertEquals("no_matching_click_event",events.last().reason)
+        navigator.close()
+    }
     private class VisibleHighlight : ScreenTargetHighlight {
         var lastBounds: Rect? = null
         override var isVisible = false

@@ -128,7 +128,7 @@ internal object DiagnosticReport {
                 val evidence = summary.optJSONObject("actionEvidence")
                 var y = wrap(c, "Selection changes: ${evidence?.optJSONObject("selectionChanges") ?: "none recorded"}", 91f)
                 y = wrap(c, "Selection reasons: ${evidence?.optJSONObject("selectionReasons") ?: "none recorded"}", y + 8f)
-                y = wrap(c, "Each request is paired by its request ID. Completed selection movement records Aergis's target change; accepted activation records Android accepting ACTION_CLICK. Native input completion records its callback.", y + 12f)
+                y = wrap(c, "Each request is paired by its request ID. Completed movement records Aergis's target change. Accepted activation records Android accepting ACTION_CLICK; confirmed activation matches its click event to the selected node. Unconfirmed records a timeout or authority change. Native input completion records its callback.", y + 12f)
                 val actions = evidence?.optJSONObject("byAction")
                 for (action in actions?.keys()?.asSequence()?.sorted().orEmpty()) {
                     if (y > 670f) { text(c, "Further results are in summary.json and events.jsonl.", 36f, y); break }

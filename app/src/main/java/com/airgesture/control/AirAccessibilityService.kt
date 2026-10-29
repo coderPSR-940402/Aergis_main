@@ -58,7 +58,12 @@ class AirAccessibilityService : AccessibilityService() {
             .put("selectionEpoch", AirRuntime.state.value.selectionEpoch)
             .put("bounds", event.bounds?.let { org.json.JSONObject().put("left", it.left).put("top", it.top)
                 .put("right", it.right).put("bottom", it.bottom) } ?: org.json.JSONObject.NULL))
+        if (event.kind == "activation_confirmed" && event.requestId != null)
+            AirRuntime.recordActionFeedback(ActionDispatchOutcome.COMPLETED, event.requestId)
     } }
+    private val selectionActivationGuard = object : Runnable {
+        override fun run() { screenNavigator.expireActivation(AirRuntime.state.value.selectionEpoch) }
+    }
     private var selectionEpoch = -1L
     private val selectionGuard = object : Runnable {
         override fun run() {
@@ -260,6 +265,10 @@ class AirAccessibilityService : AccessibilityService() {
                     mainHandler.removeCallbacks(selectionGuard)
                     selectionEpoch = navigationEpoch
                     if (screenNavigator.hasSelection) mainHandler.postDelayed(selectionGuard, 100L)
+                    if (accepted && action == AirAction.SELECT_ITEM) {
+                        mainHandler.removeCallbacks(selectionActivationGuard)
+                        mainHandler.postDelayed(selectionActivationGuard, 1001L)
+                    }
                     recordOutcome(if (!accepted) ActionDispatchOutcome.PLATFORM_UNAVAILABLE
                         else if (action == AirAction.SELECT_ITEM) ActionDispatchOutcome.SUBMITTED else ActionDispatchOutcome.COMPLETED)
                 }
@@ -432,6 +441,7 @@ class AirAccessibilityService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
+        screenNavigator.observe(event, AirRuntime.state.value.selectionEpoch)
         if (event.packageName?.toString() == packageName) {
             // Output-only feedback/highlight windows are not foreground app changes.
             // In particular, showing command feedback must not erase the chosen target.
@@ -456,7 +466,8 @@ class AirAccessibilityService : AccessibilityService() {
 
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
         super.onConfigurationChanged(newConfig)
-        screenNavigator.clear()
+        screenNavigator.close()
+        mainHandler.removeCallbacks(selectionActivationGuard)
         boundedInput.cancel()
         precisionDragActive = false
         precisionDrag.cancel()
@@ -469,7 +480,7 @@ class AirAccessibilityService : AccessibilityService() {
     override fun onInterrupt() {
         feedbackOverlay?.close()
         mainHandler.removeCallbacksAndMessages(null)
-        screenNavigator.clear()
+        screenNavigator.close()
         boundedInput.cancel()
         precisionDragActive = false
         precisionDrag.cancel()
@@ -487,7 +498,7 @@ class AirAccessibilityService : AccessibilityService() {
         feedbackOverlay?.close()
         feedbackOverlay = null
         mainHandler.removeCallbacksAndMessages(null)
-        screenNavigator.clear()
+        screenNavigator.close()
         boundedInput.cancel()
         precisionDragActive = false
         precisionDrag.cancel()

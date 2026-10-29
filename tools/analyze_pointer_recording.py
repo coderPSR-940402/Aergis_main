@@ -116,6 +116,20 @@ def operational_summary(frames, events):
     def counts(records, field):
         return dict(collections.Counter(r[field] for r in records
                                        if isinstance(r.get(field), str)))
+    requests = {e['requestId']: e['action'] for e in events
+                if e.get('event') == 'action_requested' and type(e.get('requestId')) is int
+                and isinstance(e.get('action'), str)}
+    by_action = collections.defaultdict(collections.Counter)
+    unpaired = 0
+    for event in events:
+        if event.get('event') != 'action_outcome':
+            continue
+        request_id = event.get('requestId')
+        action = requests.get(request_id) if type(request_id) is int else None
+        if action is None or not isinstance(event.get('outcome'), str):
+            unpaired += 1
+        else:
+            by_action[action][event['outcome']] += 1
     return {
         'durationMs': max(times) - min(times) if len(times) >= 2 else None,
         'commands': {
@@ -125,7 +139,10 @@ def operational_summary(frames, events):
             'poseReasons': counts(frames, 'commandPoseReason'),
             'requestedActions': counts([e for e in events if e.get('event') == 'action_requested'], 'action'),
             'outcomes': counts([e for e in events if e.get('event') == 'action_outcome'], 'outcome'),
+            'outcomesByAction': {action: dict(outcomes) for action, outcomes in by_action.items()},
+            'unpairedOutcomes': unpaired,
         },
+        'selectionEvents': counts([e for e in events if e.get('event') == 'selection_changed'], 'kind'),
         'pipelineTimingMs': {key: {'samples': len(values), 'median': statistics.median(values),
             'p95': sorted(values)[math.ceil(.95 * len(values)) - 1]} for key, values in timings.items()},
     }

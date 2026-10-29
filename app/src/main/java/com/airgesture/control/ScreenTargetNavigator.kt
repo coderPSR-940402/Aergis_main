@@ -2,6 +2,8 @@ package com.airgesture.control
 
 import android.graphics.Rect
 import android.view.accessibility.AccessibilityNodeInfo
+import android.view.accessibility.AccessibilityEvent
+import android.os.SystemClock
 
 internal data class ScreenSelectionEvent(val kind: String, val selectionId: Long?, val bounds: Rect?,
     val reason: String, val requestId: Long?)
@@ -13,6 +15,39 @@ internal class ScreenTargetNavigator(private val highlight: ScreenTargetHighligh
     private var sequence = 0L
     private var selectedKey: String? = null
     private var selectedBounds: Rect? = null
+    private data class Activation(val node: AccessibilityNodeInfo, val event: ScreenSelectionEvent,
+        val epoch: Long, val windowId: Int, val deadline: Long)
+    private var activation: Activation? = null
+    fun expireActivation(epoch: Long, now: Long = SystemClock.uptimeMillis()) {
+        val pending = activation ?: return
+        if (pending.epoch != epoch || now > pending.deadline)
+            endActivation(if (pending.epoch != epoch) "selection_authority_changed" else "no_matching_click_event")
+    }
+    fun observe(event: AccessibilityEvent, epoch: Long) {
+        expireActivation(epoch)
+        val pending = activation ?: return
+        if (event.eventType != AccessibilityEvent.TYPE_VIEW_CLICKED || event.windowId != pending.windowId) return
+        val source = runCatching { event.source }.getOrNull() ?: return
+        try {
+            if (source == pending.node && source.packageName == pending.node.packageName) {
+                record(pending.event.copy(kind = "activation_confirmed", reason = "android_view_clicked"))
+                releaseActivation()
+            }
+        } catch (_: RuntimeException) { /* Stale event nodes cannot confirm activation. */ }
+        finally { recycle(source) }
+    }
+    fun close() { clear(); endActivation("observation_ended") }
+    private fun endActivation(reason: String) {
+        activation?.let { record(it.event.copy(kind = "activation_unconfirmed", reason = reason)) }
+        releaseActivation()
+    }
+    private fun releaseActivation() { activation?.node?.let(::recycle); activation = null }
+    private fun recycle(node: AccessibilityNodeInfo) {
+        if (android.os.Build.VERSION.SDK_INT < 33) {
+            @Suppress("DEPRECATION")
+            runCatching { node.recycle() }
+        }
+    }
     val hasSelection: Boolean get() = selectedKey != null
     private fun selected(target: Target, requestId: Long?) {
         val changed = selectedKey != target.key
@@ -133,7 +168,17 @@ internal class ScreenTargetNavigator(private val highlight: ScreenTargetHighligh
                 }
                 state.confirm(keys, context)
                 val authorized = canActivate()
-                val accepted = visible && target != null && authorized && target.node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                val accepted = if (visible && target != null && authorized) {
+                    endActivation("superseded_by_new_activation")
+                    @Suppress("DEPRECATION")
+                    val copy = AccessibilityNodeInfo.obtain(target.node)
+                    activation = Activation(copy, ScreenSelectionEvent("activation_accepted", sequence,
+                        Rect(target.bounds), "android_click_accepted", requestId), epoch, root.windowId,
+                        SystemClock.uptimeMillis() + 1000L)
+                    try { target.node.performAction(AccessibilityNodeInfo.ACTION_CLICK) }
+                    catch (_: RuntimeException) { false }
+                } else false
+                if (!accepted) releaseActivation()
                 record(ScreenSelectionEvent(if (accepted) "activation_accepted" else "activation_rejected",
                     selectedKey?.let { sequence }, target?.bounds ?: selectedBounds,
                     when { !authorized -> "action_authority_changed"; !visible -> "highlight_not_drawn"; target == null -> "target_missing_or_changed"

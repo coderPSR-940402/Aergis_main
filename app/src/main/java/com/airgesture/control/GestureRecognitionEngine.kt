@@ -692,7 +692,8 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         // Keep recognition identity separate from action availability. A disabled,
         // unknown or pointer-restricted pose is not neutral. Only an actual confident
         // MediaPipe None category may supply release evidence (missing categories score 0).
-        val decision = interpreter.interpret(GestureSignal(gestureName, gestureScore))
+        val mappedDecision = interpreter.interpret(GestureSignal(gestureName, gestureScore))
+        val decision = mappedDecision.copy(action = GestureActionPolicy.resolve(mappedDecision.action, pointerActive))
         val retainClassifierReadiness = actionsFresh && !mappingChanged && !ownerChanged && !filterChanged &&
             CommandTrackingEligibility.canRetainReadiness(controlSafe, handSelection != null,
                 AirRuntime.pointerEnabled, indexTip != null, selectedPoseEvidence)

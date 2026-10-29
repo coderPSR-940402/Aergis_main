@@ -29,3 +29,11 @@ The initial complete Android unit step passed in CI #337. Subsequent author revi
 - Require another visible confirmation when the target moves during the confirmation scan; keep its safety guard running.
 - Record unchanged navigation at boundaries explicitly, and record pre-inference expired frames without converting their pixels.
 Each path has a native regression. The resulting source needs the next full CI run before being treated as build-verified.
+
+## Native activation observation and mapping follow-through
+
+Continuation based on `db1f2de`: preserve its selection-specific epoch, inference switching, owner recovery and activation race checks. A mapped TAP now resolves to SELECT_ITEM when the pointer is disabled, without rewriting the saved mapping or enabling other coordinate commands. The pinch switch remains independent of mapped commands.
+
+After an accepted selection click, retain one bounded, output-only node copy for up to one second. Only a TYPE_VIEW_CLICKED event with the same native node, package, window and selection epoch records activation_confirmed and completes that request's feedback. Timeout, supersession, settings/safety change or lifecycle closure records activation_unconfirmed with a reason. No retry or extra Android action is injected. This observes Android node clicks, not business-level application success. Native completion still uses its original callback.
+
+The Python recording analyzer now groups selection events and pairs delayed action outcomes by request ID; legacy unpaired events stay unpaired. New regressions cover mapped-click resolution, exact-node/request matching, once-only confirmation and stale-epoch/timeout rejection. These additions were self-reviewed without subagents. The earlier overlapping local draft was reconciled rather than applied over the newer branch.

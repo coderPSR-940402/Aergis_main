@@ -9,6 +9,26 @@ def frame(time, x=.2, segment='STATIONARY', **extra):
 
 
 class RecordingAnalysisTest(unittest.TestCase):
+    def test_request_ids_pair_late_outcomes_and_selection_events_without_guessing(self):
+        events = [
+            dict(event='action_requested', requestId=1, action='TAP'),
+            dict(event='action_requested', requestId=2, action='NEXT_ITEM'),
+            dict(event='action_outcome', requestId=2, outcome='COMPLETED'),
+            dict(event='action_outcome', requestId=1, outcome='COMPLETED'),
+            dict(event='action_outcome', requestId=99, outcome='CANCELLED'),
+            dict(event='action_outcome', outcome='SUBMITTED'),
+            dict(event='selection_changed', kind='CHANGED', selectionId=3),
+            dict(event='selection_changed', kind='UNCHANGED', selectionId=3),
+            dict(event='selection_changed', kind='ACTIVATION_ACCEPTED', selectionId=3),
+            dict(event='selection_changed', kind='ACTIVATION_CONFIRMED', selectionId=3),
+        ]
+        result = analyze([], events, {})
+        self.assertEqual({'TAP': {'COMPLETED': 1}, 'NEXT_ITEM': {'COMPLETED': 1}},
+                         result['commands']['outcomesByAction'])
+        self.assertEqual(2, result['commands']['unpairedOutcomes'])
+        self.assertEqual({'CHANGED': 1, 'UNCHANGED': 1, 'ACTIVATION_ACCEPTED': 1,
+                          'ACTIVATION_CONFIRMED': 1}, result['selectionEvents'])
+
     def analyze(self, frames):
         return analyze(frames, [], {})
 
