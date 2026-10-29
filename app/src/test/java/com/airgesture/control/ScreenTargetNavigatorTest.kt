@@ -187,6 +187,37 @@ class ScreenTargetNavigatorTest {
         assertEquals(events.first().selectionId, events.last().selectionId)
     }
 
+    @Test fun revokedAuthorityDuringTheWindowScanCannotActivateTheTarget() {
+        var clicks = 0
+        val node = target("Open") { clicks++ }
+        val navigator = ScreenTargetNavigator(VisibleHighlight())
+        assertTrue(navigator.perform(node, AirAction.NEXT_ITEM, 1L))
+        assertFalse(navigator.perform(node, AirAction.SELECT_ITEM, 1L, 1L) { false })
+        assertEquals(0, clicks)
+    }
+
+    @Test fun changedBoundsAtConfirmationNeedAFreshHighlightedConfirmation() {
+        var clicks = 0
+        val node = target("Open") { clicks++ }
+        val navigator = ScreenTargetNavigator(VisibleHighlight())
+        assertTrue(navigator.perform(node, AirAction.NEXT_ITEM, 1L))
+        node.setBoundsInScreen(Rect(10,120,100,210))
+        assertFalse(navigator.perform(node, AirAction.SELECT_ITEM, 1L))
+        assertEquals(0, clicks)
+        assertTrue(navigator.perform(node, AirAction.SELECT_ITEM, 1L))
+        assertEquals(1, clicks)
+    }
+
+    @Test fun navigationAtTheBoundaryRecordsNoMovementExplicitly() {
+        val events = mutableListOf<ScreenSelectionEvent>()
+        val navigator = ScreenTargetNavigator(VisibleHighlight(), events::add)
+        val node = target("Only item") { }
+        assertTrue(navigator.perform(node, AirAction.NEXT_ITEM, 1L, 1L))
+        assertTrue(navigator.perform(node, AirAction.NEXT_ITEM, 1L, 2L))
+        assertEquals(listOf("selected", "unchanged"), events.map { it.kind })
+        assertEquals("navigation_boundary", events.last().reason)
+    }
+
     @Test fun actualNodeClickOccursOnlyOnceAfterVisibleSelection() {
         var clicked=0; val node=target("Open") { clicked++ }
         val highlight=VisibleHighlight(); val navigator=ScreenTargetNavigator(highlight)

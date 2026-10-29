@@ -277,6 +277,21 @@ class CalibrationEngineIntegrationTest {
         })
     }
 
+    @Test fun expiredCameraFramesRevokeActionsWithoutConstructingEitherNativeModel() {
+        org.robolectric.shadows.ShadowSystemClock.advanceBy(java.time.Duration.ofSeconds(2))
+        engine.cameraTimestampsRealtime = true
+        val lease = FrameBufferPool().acquire(4)!!
+        val frame = CapturedCameraFrame(RgbaFrameData(lease.buffer, 1, 1, 4, 4, 0, 1_000_000L, ""), 0L, 0L, lease)
+        val epoch = AirRuntime.actionEpoch
+        try {
+            engine.analyze(frame)
+            for (field in listOf("recognizer", "handLandmarker")) assertNull(
+                GestureRecognitionEngine::class.java.getDeclaredField(field).apply { isAccessible = true }.get(engine))
+            assertTrue(AirRuntime.actionEpoch > epoch)
+            assertFalse(AirRuntime.pointerTracking)
+        } finally { frame.close() }
+    }
+
     @Test fun hiddenPointerBriefLossPreservesTheControllingOwner() {
         AirRuntime.pointerEnabled = false
         publish(hand(), 1000L)

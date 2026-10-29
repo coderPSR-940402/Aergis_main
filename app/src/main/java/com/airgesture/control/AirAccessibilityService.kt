@@ -253,10 +253,13 @@ class AirAccessibilityService : AccessibilityService() {
                     recordOutcome(ActionDispatchOutcome.COMPLETED)
                 }
                 AirAction.NEXT_ITEM, AirAction.PREVIOUS_ITEM, AirAction.SELECT_ITEM -> {
-                    val accepted = screenNavigator.perform(rootInActiveWindow, action, AirRuntime.state.value.selectionEpoch, feedbackId)
+                    val navigationEpoch = AirRuntime.state.value.selectionEpoch
+                    val accepted = screenNavigator.perform(rootInActiveWindow, action, navigationEpoch, feedbackId) {
+                        isActionAllowed(action, dispatchEpoch, origin) && AirRuntime.state.value.selectionEpoch == navigationEpoch
+                    }
                     mainHandler.removeCallbacks(selectionGuard)
-                    selectionEpoch = AirRuntime.state.value.selectionEpoch
-                    if (action != AirAction.SELECT_ITEM && accepted) mainHandler.postDelayed(selectionGuard, 100L)
+                    selectionEpoch = navigationEpoch
+                    if (screenNavigator.hasSelection) mainHandler.postDelayed(selectionGuard, 100L)
                     recordOutcome(if (!accepted) ActionDispatchOutcome.PLATFORM_UNAVAILABLE
                         else if (action == AirAction.SELECT_ITEM) ActionDispatchOutcome.SUBMITTED else ActionDispatchOutcome.COMPLETED)
                 }
@@ -429,6 +432,17 @@ class AirAccessibilityService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
+        if (event.packageName?.toString() == packageName) {
+            // Output-only feedback/highlight windows are not foreground app changes.
+            // In particular, showing command feedback must not erase the chosen target.
+            val active = rootInActiveWindow
+            val ownOverlayOverAnotherApp = active?.packageName?.toString()?.let { it != packageName } == true
+            if (Build.VERSION.SDK_INT < 33) {
+                @Suppress("DEPRECATION")
+                active?.recycle()
+            }
+            if (ownOverlayOverAnotherApp) return
+        }
         if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
             screenNavigator.clear()
             mainHandler.removeCallbacks(selectionGuard)

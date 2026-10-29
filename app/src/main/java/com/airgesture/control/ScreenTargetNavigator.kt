@@ -13,11 +13,13 @@ internal class ScreenTargetNavigator(private val highlight: ScreenTargetHighligh
     private var sequence = 0L
     private var selectedKey: String? = null
     private var selectedBounds: Rect? = null
+    val hasSelection: Boolean get() = selectedKey != null
     private fun selected(target: Target, requestId: Long?) {
         val changed = selectedKey != target.key
         if (changed) sequence++
-        if (changed || selectedBounds != target.bounds) record(ScreenSelectionEvent(
-            if (changed) "selected" else "moved", sequence, Rect(target.bounds), "target_retained", requestId))
+        if (changed || selectedBounds != target.bounds || requestId != null) record(ScreenSelectionEvent(
+            when { changed -> "selected"; selectedBounds != target.bounds -> "moved"; else -> "unchanged" },
+            sequence, Rect(target.bounds), if (!changed && selectedBounds == target.bounds) "navigation_boundary" else "target_retained", requestId))
         selectedKey = target.key
         selectedBounds = Rect(target.bounds)
     }
@@ -32,11 +34,13 @@ internal class ScreenTargetNavigator(private val highlight: ScreenTargetHighligh
         if (selectedKey == null) return false
         return update(root, null, epoch)
     }
-    fun perform(root: AccessibilityNodeInfo?, action: AirAction, epoch: Long, requestId: Long? = null): Boolean {
+    fun perform(root: AccessibilityNodeInfo?, action: AirAction, epoch: Long, requestId: Long? = null,
+        canActivate: () -> Boolean = { true }): Boolean {
         if (action !in setOf(AirAction.NEXT_ITEM, AirAction.PREVIOUS_ITEM, AirAction.SELECT_ITEM)) { clear(); return false }
-        return update(root, action, epoch, requestId)
+        return update(root, action, epoch, requestId, canActivate)
     }
-    private fun update(root: AccessibilityNodeInfo?, action: AirAction?, epoch: Long, requestId: Long? = null): Boolean {
+    private fun update(root: AccessibilityNodeInfo?, action: AirAction?, epoch: Long, requestId: Long? = null,
+        canActivate: () -> Boolean = { true }): Boolean {
         if (root == null) {
             if (action == AirAction.SELECT_ITEM) record(ScreenSelectionEvent("activation_rejected", selectedKey?.let { sequence },
                 selectedBounds, "no_active_window", requestId))
@@ -118,12 +122,21 @@ internal class ScreenTargetNavigator(private val highlight: ScreenTargetHighligh
                 else { clear("target_missing_or_changed", requestId); false }
             } else if (action == AirAction.SELECT_ITEM) {
                 val visible = highlight.isVisible
-                val key = state.confirm(keys, context)
+                val key = state.retain(keys, context)
                 val target = targets.singleOrNull { it.key == key }
-                val accepted = visible && target != null && target.node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                if (target != null && selectedBounds != target.bounds) {
+                    // A new location must be drawn before it can be confirmed.
+                    if (highlight.show(target.bounds)) selected(target, null) else clear("highlight_unavailable", requestId)
+                    record(ScreenSelectionEvent("activation_rejected", selectedKey?.let { sequence }, target.bounds,
+                        "target_moved_needs_confirmation", requestId))
+                    return false
+                }
+                state.confirm(keys, context)
+                val authorized = canActivate()
+                val accepted = visible && target != null && authorized && target.node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
                 record(ScreenSelectionEvent(if (accepted) "activation_accepted" else "activation_rejected",
                     selectedKey?.let { sequence }, target?.bounds ?: selectedBounds,
-                    when { !visible -> "highlight_not_drawn"; target == null -> "target_missing_or_changed"
+                    when { !authorized -> "action_authority_changed"; !visible -> "highlight_not_drawn"; target == null -> "target_missing_or_changed"
                         accepted -> "android_click_accepted"; else -> "android_click_rejected" }, requestId))
                 selectedKey = null; selectedBounds = null
                 highlight.hide()

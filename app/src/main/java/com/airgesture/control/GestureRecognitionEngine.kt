@@ -136,7 +136,11 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 synchronized(this) { if (!closed.get()) handlePointerGap(nowIn(source),
                     PointerTrackingPolicy.isActive(AirRuntime.pointerEnabled, AirRuntime.controlMode,
                         AirRuntime.state.value.foregroundContext.safety), true, "STALE_BEFORE_INFERENCE", PointerFeedback.VISION_REJECTED) }
+                lastSubmittedTimestampMs = timestamp
+                AirRuntime.recordVisionResult(freshnessPolicy.evaluate(timestamp, timestamp + frameAgeAtStart))
                 metrics.recordRejection("STALE_BEFORE_INFERENCE")
+                TestingTools.event("frame_skipped", org.json.JSONObject().put("reason", "STALE_BEFORE_INFERENCE")
+                    .put("resultTimestampMs", timestamp).put("ageMs", frameAgeAtStart))
                 return
             }
             val landmarksOnly = useLandmarksOnly()

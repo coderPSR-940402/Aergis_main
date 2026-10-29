@@ -20,3 +20,12 @@ Four reproduced host failures covered pointer-dependent click policy, hidden sel
 Added native regressions cover hidden pinch with an invalid index and commands off, held-contact loss, owner retention, actual node activation after epoch revocation, disarm rejection, highlight draw retention, moved target identity, selection event correlation, packed/padded capture, classifier rearming, report/recovery evidence and session presentation. The replacement-hand fixture now moves its palm, rather than representing a new hand solely by a classifier label flip.
 
 Author self-review only; no multi-agent review. Preserve the baseline and existing PR; no merge, baseline promotion or production publication. Device validation remains for the new APK's physical pinch comfort, second-hand/crossing behavior, dynamic Android targets, highlight rendering, inference switching and timing improvement. No measured speedup or new device success is claimed.
+
+## Final race review
+
+The initial complete Android unit step passed in CI #337. Subsequent author review added:
+- Ignore Aergis feedback/highlight window events over another app, preserving both its foreground safety state and target.
+- Recheck dispatch and selection authority immediately before ACTION_CLICK, after the bounded window scan.
+- Require another visible confirmation when the target moves during the confirmation scan; keep its safety guard running.
+- Record unchanged navigation at boundaries explicitly, and record pre-inference expired frames without converting their pixels.
+Each path has a native regression. The resulting source needs the next full CI run before being treated as build-verified.

@@ -105,6 +105,12 @@ class AirAccessibilityServiceDispatchTest {
         try {
             service.dispatch(AirAction.NEXT_ITEM); looper.idle()
             assertTrue(highlight.isVisible)
+            val ownOverlay = android.view.accessibility.AccessibilityEvent.obtain(
+                android.view.accessibility.AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED).apply {
+                packageName = service.packageName; className = "android.widget.TextView"
+            }
+            service.onAccessibilityEvent(ownOverlay)
+            assertTrue("Our feedback overlay must not erase another app's selected control", highlight.isVisible)
             AirRuntime.invalidatePendingActions(clearSelection = false)
             looper.idleFor(java.time.Duration.ofMillis(110))
             assertTrue(highlight.isVisible)
