@@ -63,9 +63,13 @@ internal class HandOwnershipTracker(
                 .sortedBy { (_, score) -> score }
             val best = scores.firstOrNull()
             val runnerUp = scores.getOrNull(1)
-            if (best == null ||
-                (runnerUp != null && runnerUp.second - best.second < ambiguityMargin)
-            ) {
+            if (runnerUp != null && best != null && runnerUp.second - best.second < ambiguityMargin) {
+                // No action evidence on ambiguous frames, but do not let the next
+                // frame acquire a different hand merely because two hands crossed.
+                lastTimestampMs = timestampMs
+                return null
+            }
+            if (best == null) {
                 null
             } else {
                 best.first
@@ -80,10 +84,10 @@ internal class HandOwnershipTracker(
         val prior = owner
         if (prior == null) generation++
         updateMotion(prior, selected, timestampMs)
-        owner = selected
+        owner = selected.copy(handedness = prior?.handedness ?: selected.handedness)
         lastTimestampMs = timestampMs
         lastSeenAt = timestampMs
-        return Selection(selected.index, "${selected.handedness}:$generation")
+        return Selection(selected.index, "${owner!!.handedness}:$generation")
     }
 
     fun reset() {

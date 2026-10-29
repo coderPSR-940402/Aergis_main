@@ -3,22 +3,45 @@ package com.airgesture.control
 import android.graphics.Rect
 import android.view.accessibility.AccessibilityNodeInfo
 
+internal data class ScreenSelectionEvent(val kind: String, val selectionId: Long?, val bounds: Rect?,
+    val reason: String, val requestId: Long?)
+
 /** Refresh nodes for every command; never click cached nodes or guess a coordinate. */
-internal class ScreenTargetNavigator(private val highlight: ScreenTargetHighlight) {
+internal class ScreenTargetNavigator(private val highlight: ScreenTargetHighlight,
+    private val record: (ScreenSelectionEvent) -> Unit = {}) {
     private val state = ScreenSelectionState()
+    private var sequence = 0L
+    private var selectedKey: String? = null
+    private var selectedBounds: Rect? = null
+    private fun selected(target: Target, requestId: Long?) {
+        val changed = selectedKey != target.key
+        if (changed) sequence++
+        if (changed || selectedBounds != target.bounds) record(ScreenSelectionEvent(
+            if (changed) "selected" else "moved", sequence, Rect(target.bounds), "target_retained", requestId))
+        selectedKey = target.key
+        selectedBounds = Rect(target.bounds)
+    }
     private data class Target(val key: String, val node: AccessibilityNodeInfo, val bounds: Rect,
         val containerPath: String, val path: String, val inCollection: Boolean)
-    fun clear() { state.clear(); highlight.hide() }
+    fun clear(reason: String = "selection_invalidated", requestId: Long? = null) {
+        if (selectedKey != null) record(ScreenSelectionEvent("cleared", sequence, selectedBounds, reason, requestId))
+        selectedKey = null; selectedBounds = null
+        state.clear(); highlight.hide()
+    }
     fun refresh(root: AccessibilityNodeInfo?, epoch: Long): Boolean {
-        if (!highlight.isVisible) { clear(); return false }
+        if (selectedKey == null) return false
         return update(root, null, epoch)
     }
-    fun perform(root: AccessibilityNodeInfo?, action: AirAction, epoch: Long): Boolean {
+    fun perform(root: AccessibilityNodeInfo?, action: AirAction, epoch: Long, requestId: Long? = null): Boolean {
         if (action !in setOf(AirAction.NEXT_ITEM, AirAction.PREVIOUS_ITEM, AirAction.SELECT_ITEM)) { clear(); return false }
-        return update(root, action, epoch)
+        return update(root, action, epoch, requestId)
     }
-    private fun update(root: AccessibilityNodeInfo?, action: AirAction?, epoch: Long): Boolean {
-        if (root == null) { clear(); return false }
+    private fun update(root: AccessibilityNodeInfo?, action: AirAction?, epoch: Long, requestId: Long? = null): Boolean {
+        if (root == null) {
+            if (action == AirAction.SELECT_ITEM) record(ScreenSelectionEvent("activation_rejected", selectedKey?.let { sequence },
+                selectedBounds, "no_active_window", requestId))
+            clear("no_active_window", requestId); return false
+        }
         val obtained = ArrayList<AccessibilityNodeInfo>()
         return try {
             val targets = ArrayList<Target>()
@@ -41,7 +64,8 @@ internal class ScreenTargetNavigator(private val highlight: ScreenTargetHighligh
                     targets.add(Target("", node, bounds, rowPath ?: "root", path, rowPath != null)); targets.lastIndex
                 } else -1
                 val ownIdentity = ScreenTargetKey.of(path, node.viewIdResourceName,
-                    bounds.toString(), node.text, node.contentDescription)
+                    "${node.className}:${node.isClickable}:${node.isFocusable}:${node.actionList.map { it.id }.sorted()}",
+                    node.text, node.contentDescription)
                 val semantic = StringBuilder(ScreenTargetKey.of("", node.viewIdResourceName,
                     "${node.className}:${node.isClickable}:${node.isFocusable}:${node.actionList.map { it.id }.sorted()}",
                     node.text, node.contentDescription))
@@ -90,18 +114,31 @@ internal class ScreenTargetNavigator(private val highlight: ScreenTargetHighligh
                 // Unrelated animations/content updates are not loss of this exact target.
                 val key = state.retain(keys, context)
                 val target = targets.singleOrNull { it.key == key }
-                if (target != null && highlight.show(target.bounds)) true else { clear(); false }
+                if (target != null && highlight.show(target.bounds)) { selected(target, requestId); true }
+                else { clear("target_missing_or_changed", requestId); false }
             } else if (action == AirAction.SELECT_ITEM) {
                 val visible = highlight.isVisible
                 val key = state.confirm(keys, context)
+                val target = targets.singleOrNull { it.key == key }
+                val accepted = visible && target != null && target.node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                record(ScreenSelectionEvent(if (accepted) "activation_accepted" else "activation_rejected",
+                    selectedKey?.let { sequence }, target?.bounds ?: selectedBounds,
+                    when { !visible -> "highlight_not_drawn"; target == null -> "target_missing_or_changed"
+                        accepted -> "android_click_accepted"; else -> "android_click_rejected" }, requestId))
+                selectedKey = null; selectedBounds = null
                 highlight.hide()
-                visible && key != null && targets.single { it.key == key }.node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                accepted
             } else {
                 val key = state.move(keys, context, action == AirAction.NEXT_ITEM)
                 val target = targets.firstOrNull { it.key == key }
-                if (target != null && highlight.show(target.bounds)) true else { clear(); false }
+                if (target != null && highlight.show(target.bounds)) { selected(target, requestId); true }
+                else { clear("target_missing_or_changed", requestId); false }
             }
-        } catch (_: RuntimeException) { clear(); false }
+        } catch (_: RuntimeException) {
+            if (action == AirAction.SELECT_ITEM) record(ScreenSelectionEvent("activation_rejected", selectedKey?.let { sequence },
+                selectedBounds, "window_scan_or_click_failed", requestId))
+            clear("window_scan_or_click_failed", requestId); false
+        }
         finally {
             if (android.os.Build.VERSION.SDK_INT < 33) obtained.forEach {
                 @Suppress("DEPRECATION")

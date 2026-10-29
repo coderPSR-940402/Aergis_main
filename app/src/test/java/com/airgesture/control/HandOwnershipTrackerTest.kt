@@ -125,6 +125,22 @@ class HandOwnershipTrackerTest {
         org.junit.Assert.assertNotEquals(next?.ownerId, expired?.ownerId)
     }
 
+    @Test fun temporaryHandednessRefitDoesNotChangeOwnerIdentity() {
+        val tracker = HandOwnershipTracker()
+        val first = tracker.select(listOf(observation(0,"Left",.4f,.4f)), ControlHandPreference.EITHER,0L)
+        val refit = tracker.select(listOf(observation(0,"Right",.405f,.4f)), ControlHandPreference.EITHER,33L)
+        assertEquals(first?.ownerId, refit?.ownerId)
+    }
+
+    @Test fun briefAmbiguityCannotTransferOwnershipToTheOtherHand() {
+        val tracker = HandOwnershipTracker()
+        val first = tracker.select(listOf(observation(0,"Left",.4f,.4f)), ControlHandPreference.EITHER,0L)
+        assertNull(tracker.select(listOf(observation(0,"Left",.44f,.4f), observation(1,"Left",.45f,.4f)), ControlHandPreference.EITHER,33L))
+        val recovered = tracker.select(listOf(observation(0,"Right",.8f,.4f), observation(1,"Left",.41f,.4f)), ControlHandPreference.EITHER,66L)
+        assertEquals(first?.ownerId, recovered?.ownerId)
+        assertEquals(1, recovered?.index)
+    }
+
     private fun observation(index: Int, handedness: String, x: Float, y: Float) =
         HandObservation(index, handedness, x, y, palmSize = 0.12f)
 }

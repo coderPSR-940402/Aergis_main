@@ -313,8 +313,8 @@
     <string name="action_focus_previous">Focus previous control</string>
     <string name="action_activate_focused">Activate focused control</string>
     <string name="motion_armed_help">Motion armed: hold still briefly, then move once. Expires in 3 seconds.</string>
-    <string name="pointer_clicking">Pointer clicking</string>
-    <string name="pointer_clicking_help">Thumb–middle contact taps the pointer target, independently of Gesture Commands.</string>
+    <string name="pointer_clicking">Pinch clicking</string>
+    <string name="pointer_clicking_help">Thumb–middle contact clicks once: tap the anchored target with the pointer on, or activate the highlighted item with it off. Works independently of Gesture Commands.</string>
     <string name="mapping_double_gun_left">Double finger gun left</string>
     <string name="mapping_double_gun_right">Double finger gun right</string>
     <string name="mapping_double_gun_up">Double finger gun up</string>

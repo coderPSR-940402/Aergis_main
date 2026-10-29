@@ -51,12 +51,19 @@ class AirAccessibilityService : AccessibilityService() {
     @Volatile private var visibleHotspot: VisibleHotspot? = null
     private var pointerOverlay: PointerOverlay? = null
     private var trackingMirror: TrackingMirrorOverlay? = null
-    private val screenNavigator by lazy { ScreenTargetNavigator(TargetHighlightOverlay(this)) }
+    private val screenNavigator by lazy { ScreenTargetNavigator(TargetHighlightOverlay(this)) { event ->
+        TestingTools.event("selection_changed", org.json.JSONObject().put("kind", event.kind)
+            .put("selectionId", event.selectionId ?: org.json.JSONObject.NULL)
+            .put("requestId", event.requestId ?: org.json.JSONObject.NULL).put("reason", event.reason)
+            .put("selectionEpoch", AirRuntime.state.value.selectionEpoch)
+            .put("bounds", event.bounds?.let { org.json.JSONObject().put("left", it.left).put("top", it.top)
+                .put("right", it.right).put("bottom", it.bottom) } ?: org.json.JSONObject.NULL))
+    } }
     private var selectionEpoch = -1L
     private val selectionGuard = object : Runnable {
         override fun run() {
-            if (selectionEpoch != AirRuntime.actionEpoch || !isActionAllowed(AirAction.NEXT_ITEM)) {
-                screenNavigator.clear(); selectionEpoch = -1L
+            if (selectionEpoch != AirRuntime.state.value.selectionEpoch || !selectionAllowed()) {
+                screenNavigator.clear("selection_authority_changed"); selectionEpoch = -1L
             } else mainHandler.postDelayed(this, 100L)
         }
     }
@@ -156,6 +163,12 @@ class AirAccessibilityService : AccessibilityService() {
         }
     }
 
+    internal fun dispatchSelectionPinch(expectedEpoch: Long = AirRuntime.actionEpoch) =
+        dispatch(AirAction.SELECT_ITEM, origin = ActionOrigin.POINTER, expectedEpoch = expectedEpoch)
+
+    private fun selectionAllowed(): Boolean = isActionAllowed(AirAction.NEXT_ITEM) ||
+        (!AirRuntime.pointerEnabled && isActionAllowed(AirAction.SELECT_ITEM, origin = ActionOrigin.POINTER))
+
     internal fun dispatchPointerTap(expectedEpoch: Long = AirRuntime.actionEpoch) =
         dispatch(AirAction.TAP, origin = ActionOrigin.POINTER, expectedEpoch = expectedEpoch)
 
@@ -168,15 +181,16 @@ class AirAccessibilityService : AccessibilityService() {
         if (action == AirAction.NONE) return
         val feedbackId = AirRuntime.beginActionFeedback(action)
         fun recordOutcome(outcome: ActionDispatchOutcome) = AirRuntime.recordActionFeedback(outcome, feedbackId)
-        if (Build.VERSION.SDK_INT < action.minimumSdk) {
-            recordOutcome(ActionDispatchOutcome.PLATFORM_REJECTED)
-            return
-        }
         val requestedHotspot = visibleHotspot
         if (TestingTools.state.value.status == RecordingStatus.RECORDING) {
             TestingTools.event("action_requested", org.json.JSONObject().put("action", action.name)
-                .put("target", DiagnosticFrameData.pointer(AirRuntime.pointerSnapshot())).put("epoch", AirRuntime.actionEpoch)
+                .put("target", DiagnosticFrameData.pointer(AirRuntime.pointerSnapshot())).put("epoch", expectedEpoch)
+                .put("requestId", feedbackId).put("origin", origin.name)
                 .put("visiblePixelX", requestedHotspot?.point?.x).put("visiblePixelY", requestedHotspot?.point?.y))
+        }
+        if (Build.VERSION.SDK_INT < action.minimumSdk) {
+            recordOutcome(ActionDispatchOutcome.PLATFORM_REJECTED)
+            return
         }
         if (!isActionAllowed(action, expectedEpoch, origin)) {
             recordOutcome(ActionDispatchOutcome.POLICY_DENIED)
@@ -239,11 +253,12 @@ class AirAccessibilityService : AccessibilityService() {
                     recordOutcome(ActionDispatchOutcome.COMPLETED)
                 }
                 AirAction.NEXT_ITEM, AirAction.PREVIOUS_ITEM, AirAction.SELECT_ITEM -> {
-                    val accepted = screenNavigator.perform(rootInActiveWindow, action, dispatchEpoch)
+                    val accepted = screenNavigator.perform(rootInActiveWindow, action, AirRuntime.state.value.selectionEpoch, feedbackId)
                     mainHandler.removeCallbacks(selectionGuard)
-                    selectionEpoch = dispatchEpoch
+                    selectionEpoch = AirRuntime.state.value.selectionEpoch
                     if (action != AirAction.SELECT_ITEM && accepted) mainHandler.postDelayed(selectionGuard, 100L)
-                    recordOutcome(if (accepted) ActionDispatchOutcome.SUBMITTED else ActionDispatchOutcome.PLATFORM_UNAVAILABLE)
+                    recordOutcome(if (!accepted) ActionDispatchOutcome.PLATFORM_UNAVAILABLE
+                        else if (action == AirAction.SELECT_ITEM) ActionDispatchOutcome.SUBMITTED else ActionDispatchOutcome.COMPLETED)
                 }
                 AirAction.FOCUS_NEXT, AirAction.FOCUS_PREVIOUS, AirAction.ACTIVATE_FOCUSED -> {
                     val accepted = runCatching { AccessibleNavigation.perform(rootInActiveWindow, action) }.getOrDefault(false)
@@ -418,8 +433,8 @@ class AirAccessibilityService : AccessibilityService() {
             screenNavigator.clear()
             mainHandler.removeCallbacks(selectionGuard)
             AirRuntime.setForegroundContext(ForegroundContextPolicy.evaluate(event.packageName, event.className))
-        } else if (!isActionAllowed(AirAction.NEXT_ITEM) ||
-            !screenNavigator.refresh(rootInActiveWindow, AirRuntime.actionEpoch)) {
+        } else if (selectionEpoch != AirRuntime.state.value.selectionEpoch || !selectionAllowed() ||
+            !screenNavigator.refresh(rootInActiveWindow, AirRuntime.state.value.selectionEpoch)) {
             screenNavigator.clear()
             mainHandler.removeCallbacks(selectionGuard)
         }

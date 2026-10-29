@@ -81,6 +81,45 @@ class AirAccessibilityServiceDispatchTest {
         AirRuntime.setPointerState(0f, 0f, tracking = false)
     }
 
+    @Test fun selectionSurvivesVisionRevocationButNotDisarmAndHiddenPinchClicksTheNode() {
+        @Suppress("DEPRECATION")
+        val node = android.view.accessibility.AccessibilityNodeInfo.obtain().apply {
+            isVisibleToUser = true; isEnabled = true; isClickable = true
+            packageName = "com.example.safe"; text = "Open"
+            setBoundsInScreen(android.graphics.Rect(10,10,100,100))
+        }
+        var clicks = 0
+        shadowOf(node).setOnPerformActionListener { action, _ ->
+            if (action == android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK) { clicks++; true } else false
+        }
+        val highlight = object : ScreenTargetHighlight {
+            override var isVisible = false
+            override fun show(target: android.graphics.Rect): Boolean { isVisible = true; return true }
+            override fun hide() { isVisible = false }
+        }
+        AirAccessibilityService::class.java.getDeclaredField("screenNavigator\$delegate").apply { isAccessible = true }
+            .set(service, lazyOf(ScreenTargetNavigator(highlight)))
+        shadow.setRootInActiveWindow(node)
+        AirRuntime.pointerEnabled = false
+        val looper = shadowOf(Looper.getMainLooper())
+        try {
+            service.dispatch(AirAction.NEXT_ITEM); looper.idle()
+            assertTrue(highlight.isVisible)
+            AirRuntime.invalidatePendingActions(clearSelection = false)
+            looper.idleFor(java.time.Duration.ofMillis(110))
+            assertTrue(highlight.isVisible)
+            service.dispatchSelectionPinch(); looper.idle()
+            assertEquals(1, clicks)
+            service.dispatchSelectionPinch(); looper.idle()
+            assertEquals(1, clicks)
+            service.dispatch(AirAction.NEXT_ITEM); looper.idle()
+            AirRuntime.controlMode = ControlMode.PAUSED
+            AirRuntime.controlMode = ControlMode.ARMED
+            service.dispatchSelectionPinch(); looper.idle()
+            assertEquals("Safety transitions must revoke selection even between guard polls", 1, clicks)
+        } finally { shadow.setRootInActiveWindow(null) }
+    }
+
     @Test fun pointerDisabledScrollUsesAvailableNodeWithoutInjectingATouch() {
         @Suppress("DEPRECATION")
         val node = android.view.accessibility.AccessibilityNodeInfo.obtain().apply {

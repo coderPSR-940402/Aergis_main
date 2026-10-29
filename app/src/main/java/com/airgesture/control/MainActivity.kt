@@ -324,7 +324,7 @@ class MainActivity : ComponentActivity() {
         val edit: (RegisteredGesture) -> Unit = { editingName = it.name }
         AergisTheme {
             AergisShell(
-                gesturesEnabled || (pointerEnabled && pointerClickingEnabled),
+                gesturesEnabled || pointerClickingEnabled,
                 initialDestination = if (accessibilityEnabled && cameraAllowed) AergisDestination.CONTROL else AergisDestination.WELCOME,
                 onEntering = { if (it.disarmsOnEntry) AirRuntime.controlMode = ControlMode.READY },
                 requestedDestination = requestedDestination,

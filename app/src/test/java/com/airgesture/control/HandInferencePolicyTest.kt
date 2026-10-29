@@ -4,6 +4,11 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class HandInferencePolicyTest {
+    @Test fun customOnlyMappingsCanUseLandmarksWhileCannedMappingsKeepClassifier() {
+        assertTrue(HandInferencePolicy.landmarksOnly(true, ControlMode.ARMED, classifierRequired = false))
+        assertFalse(HandInferencePolicy.landmarksOnly(true, ControlMode.ARMED, classifierRequired = true))
+        assertFalse(HandInferencePolicy.landmarksOnly(true, ControlMode.READY, classifierRequired = false))
+    }
     @Test fun enabledCommandsAlwaysRetainFullClassifierForEveryMode() {
         for (mode in ControlMode.entries) assertFalse(HandInferencePolicy.landmarksOnly(true, mode))
     }

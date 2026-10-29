@@ -20,6 +20,20 @@ class AirRuntimeTest {
         AirRuntime.pointerEnabled = true
     }
 
+    @Test fun briefVisionLossRevokesQueuedActionsButKeepsSelectionAuthority() {
+        val before = AirRuntime.state.value
+        AirRuntime.invalidatePendingActions(clearSelection = false)
+        assertTrue(AirRuntime.actionEpoch > before.actionEpoch)
+        assertEquals(before.selectionEpoch, AirRuntime.state.value.selectionEpoch)
+        AirRuntime.controlMode = ControlMode.OFF
+        val off = AirRuntime.state.value.selectionEpoch
+        AirRuntime.controlMode = ControlMode.ARMED
+        assertTrue(AirRuntime.state.value.selectionEpoch > off)
+        AirRuntime.invalidatePendingActions()
+        assertTrue(AirRuntime.state.value.selectionEpoch > off + 1L)
+        AirRuntime.controlMode = ControlMode.OFF
+    }
+
     @Test
     fun pointerStateIsClampedAndPublishedAsOneSnapshot() {
         AirRuntime.setPointerState(-0.5f, 1.5f, tracking = true)

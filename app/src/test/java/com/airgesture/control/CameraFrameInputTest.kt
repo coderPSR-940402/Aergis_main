@@ -15,6 +15,29 @@ import java.nio.ByteBuffer
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class CameraFrameInputTest {
+    @Test fun packedRgbaBulkCopyRetainsPixelsAfterSourceReuse() {
+        val pixels = byteArrayOf(1,2,3,4,5,6,7,8)
+        val source = ByteBuffer.wrap(pixels)
+        val plane = proxy(ImageProxy.PlaneProxy::class.java) { name -> when (name) {
+            "getBuffer" -> source; "getRowStride" -> 8; "getPixelStride" -> 4; else -> error(name)
+        } }
+        val info = proxy(ImageInfo::class.java) { name -> when (name) {
+            "getTimestamp" -> 123000000L; "getRotationDegrees" -> 0; else -> error(name)
+        } }
+        val image = proxy(ImageProxy::class.java) { name -> when (name) {
+            "getWidth" -> 2; "getHeight" -> 1; "getFormat" -> android.graphics.PixelFormat.RGBA_8888
+            "getPlanes" -> arrayOf(plane); "getImageInfo" -> info; "getCropRect" -> Rect(0,0,2,1)
+            else -> error(name)
+        } }
+        val frame = CameraFrameInput().capture(image, 150L, 200L)!!
+        try {
+            pixels.fill(0)
+            val copy = ByteArray(8).also { frame.data.buffer.duplicate().get(it) }
+            assertArrayEquals(byteArrayOf(1,2,3,4,5,6,7,8), copy)
+            assertEquals(0, source.position())
+        } finally { frame.close() }
+    }
+
     @Test fun ownedSnapshotSurvivesCameraReleaseWithPixelsAndMetadataIntact() {
         // Padding is deliberately not a pixel; last row has no trailing padding.
         val bytes = byteArrayOf(-1,0,0,-1, 0,-1,0,-1, 9,9,9,9, 0,0,-1,-1, -1,-1,-1,-1)

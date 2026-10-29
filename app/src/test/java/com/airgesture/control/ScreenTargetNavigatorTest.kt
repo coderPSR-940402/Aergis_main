@@ -163,6 +163,30 @@ class ScreenTargetNavigatorTest {
         assertFalse(highlight.isVisible)
         assertFalse(navigator.perform(node, AirAction.SELECT_ITEM, 1L))
     }
+    @Test fun boundsOnlyLayoutChangePreservesTheSameUnlabelledCollectionTarget() {
+        var clicks = 0
+        val root = container()
+        val node = target("Open account") { clicks++ }
+        shadowOf(root).addChild(node)
+        val navigator = ScreenTargetNavigator(VisibleHighlight())
+        assertTrue(navigator.perform(root, AirAction.NEXT_ITEM, 1L))
+        node.setBoundsInScreen(Rect(10,120,100,210))
+        assertTrue(navigator.refresh(root, 1L))
+        assertTrue(navigator.perform(root, AirAction.SELECT_ITEM, 1L))
+        assertEquals(1, clicks)
+    }
+
+    @Test fun selectionEventsRecordMovementAndActivationWithRequestIdentity() {
+        val events = mutableListOf<ScreenSelectionEvent>()
+        val node = target("Private label never logged") { }
+        val navigator = ScreenTargetNavigator(VisibleHighlight(), events::add)
+        assertTrue(navigator.perform(node, AirAction.NEXT_ITEM, 1L, 10L))
+        assertTrue(navigator.perform(node, AirAction.SELECT_ITEM, 1L, 11L))
+        assertEquals(listOf("selected", "activation_accepted"), events.map { it.kind })
+        assertEquals(listOf(10L, 11L), events.map { it.requestId })
+        assertEquals(events.first().selectionId, events.last().selectionId)
+    }
+
     @Test fun actualNodeClickOccursOnlyOnceAfterVisibleSelection() {
         var clicked=0; val node=target("Open") { clicked++ }
         val highlight=VisibleHighlight(); val navigator=ScreenTargetNavigator(highlight)

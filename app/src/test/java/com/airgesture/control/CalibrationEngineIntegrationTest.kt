@@ -123,7 +123,8 @@ class CalibrationEngineIntegrationTest {
     @Test
     fun replacingHandDoesNotInheritMotionFilterPosition() {
         publish(hand(), 1000L)
-        val other = hand().toMutableList().apply { this[8] = NormalizedLandmark.create(0.8f, 0.2f, 0f) }
+        val other = hand().map { NormalizedLandmark.create(it.x() + .3f, it.y(), it.z()) }
+            .toMutableList().apply { this[8] = NormalizedLandmark.create(0.8f, 0.2f, 0f) }
         publish(other, 1033L, "Right")
         val expected = PointerCoordinateMapper.map(0.8f, 0.2f)
         assertEquals(expected.x, AirRuntime.pointerX, 0.0001f)
@@ -274,6 +275,70 @@ class CalibrationEngineIntegrationTest {
             // 1.75 times palm width is a plausible extended index, not a broken pinch.
             this[8] = NormalizedLandmark.create(.4f, .15f, 0f)
         })
+    }
+
+    @Test fun hiddenPointerBriefLossPreservesTheControllingOwner() {
+        AirRuntime.pointerEnabled = false
+        publish(hand(), 1000L)
+        publish(hand(), 1100L)
+        val owner = GestureRecognitionEngine::class.java.getDeclaredField("lastPointerOwnerId").apply { isAccessible = true }
+        val first = owner.get(engine)
+        assertNotNull(first)
+        publish(emptyList(), 1200L)
+        publish(hand(), 1300L)
+        assertEquals(first, owner.get(engine))
+    }
+
+    @Test fun customOnlyInferenceStillRequiresClassifierNeutralAfterAnOccurrence() {
+        val mappings = ActionMappingStore(RuntimeEnvironment.getApplication())
+        val prior = RegisteredGesture.entries.associateWith(mappings::mapping)
+        try {
+            RegisteredGesture.entries.forEach { mappings.setMapping(it, AirAction.NONE) }
+            mappings.setMapping(RegisteredGesture.L_SHAPE, AirAction.HOME)
+            AirRuntime.gesturesEnabled = true
+            val policy = GestureRecognitionEngine::class.java.getDeclaredMethod("useLandmarksOnly").apply { isAccessible = true }
+            assertEquals(true, policy.invoke(engine))
+            val transaction = GestureRecognitionEngine::class.java.getDeclaredField("gestureTransaction")
+                .apply { isAccessible = true }.get(engine) as GestureTransactionStateMachine
+            transaction.process(GestureTransactionStateMachine.Input(AirAction.HOME, .99f, 1000L, true, "Left:1", "L_SHAPE"))
+            assertEquals(false, policy.invoke(engine))
+            transaction.process(GestureTransactionStateMachine.Input(AirAction.NONE, .99f, 1100L, true, "Left:1"))
+            transaction.process(GestureTransactionStateMachine.Input(AirAction.NONE, .99f, 1200L, true, "Left:1"))
+            assertEquals(true, policy.invoke(engine))
+            mappings.setMapping(RegisteredGesture.VICTORY, AirAction.BACK)
+            assertEquals(false, policy.invoke(engine))
+        } finally { prior.forEach { (gesture, action) -> mappings.setMapping(gesture, action) } }
+    }
+
+    @Test fun hiddenPointerPinchRequestsSelectionOnceEvenWithUntrackableIndexAndCommandsOff() {
+        val controller = org.robolectric.Robolectric.buildService(AirAccessibilityService::class.java).create()
+        val service = controller.get()
+        AirAccessibilityService::class.java.getDeclaredMethod("onServiceConnected")
+            .apply { isAccessible = true }.invoke(service)
+        AirRuntime.setForegroundContext(ForegroundContextState(safety = ForegroundSafety.SAFE))
+        AirRuntime.pointerEnabled = false
+        AirRuntime.gesturesEnabled = false
+        AirRuntime.resetActionDispatchTelemetry()
+        try {
+            val looper = org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper())
+            val open = hand().toMutableList().apply { this[8] = NormalizedLandmark.create(Float.NaN, .5f, 0f) }
+            val closed = open.toMutableList().apply { this[4] = NormalizedLandmark.create(.56f, .65f, 0f) }
+            var timestamp = 1000L
+            fun frame(points: List<NormalizedLandmark>) {
+                publish(points, timestamp, delayMs = 100L); timestamp += 134L; looper.idle()
+            }
+            repeat(4) { frame(open) }
+            repeat(6) { frame(closed) }
+            assertEquals(AirAction.SELECT_ITEM, AirRuntime.state.value.actionFeedback?.action)
+            assertEquals("Missing selection reports unavailable once, never injects an invisible tap", 1L,
+                AirRuntime.state.value.actionDispatchTelemetry.platformUnavailable)
+            frame(emptyList())
+            repeat(4) { frame(closed) }
+            assertEquals("Held contact cannot replay after hand loss", 1L,
+                AirRuntime.state.value.actionDispatchTelemetry.platformUnavailable)
+            assertTrue(org.robolectric.Shadows.shadowOf(service).gesturesDispatched.isEmpty())
+            assertFalse(AirRuntime.pointerTracking)
+        } finally { controller.destroy() }
     }
 
     @Test fun trackedPinchDispatchesOneBoundedTapBeforeReleaseAndNeverDrags() {
