@@ -1,5 +1,7 @@
 package com.airgesture.control.pointer
 
+import kotlin.math.hypot
+
 /** Thumb-middle contact. Tracking must observe separation before accepting a click. */
 class ClickHysteresisStateMachine(
     private val engageThreshold: Float = 0.18f,
@@ -19,9 +21,9 @@ class ClickHysteresisStateMachine(
     val isPointerLocked: Boolean
         get() = currentState == State.ENGAGING || currentState == State.CLICKED
 
-    fun processFrame(dNorm: Float, timestampMs: Long): Boolean {
+    fun processFrame(dNorm: Float, timestampMs: Long, depthSeparation: Float = 0f): Boolean {
         val previous = lastTimestampMs
-        if (!dNorm.isFinite() || dNorm < 0f || timestampMs < 0L ||
+        if (!dNorm.isFinite() || dNorm < 0f || !depthSeparation.isFinite() || depthSeparation < 0f || timestampMs < 0L ||
             (previous != null && (timestampMs <= previous || timestampMs - previous > MAX_GAP_MS))) {
             reset()
             return false
@@ -39,6 +41,17 @@ class ClickHysteresisStateMachine(
         }
         if (currentState == State.CLICKED) return false
         if (!observedOpen || coolingDown) return false
+
+        // Projection can hide separation when the hand tilts. Use the existing
+        // clearly-open boundary to veto spatially separated contact, tolerating the
+        // smaller inferred-z discrepancies seen at visible contact. A depth refit
+        // never rearms a consumed click or supplies projected opening evidence.
+        if (hypot(dNorm, depthSeparation) >= releaseThreshold) {
+            currentState = State.IDLE
+            contactSince = null
+            contactSampleIntervalMs = 0L
+            return false
+        }
 
         // Lock before contact, rather than after the finger movement has shifted the target.
         currentState = State.ENGAGING

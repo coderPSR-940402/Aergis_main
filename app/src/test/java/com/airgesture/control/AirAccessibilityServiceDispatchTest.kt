@@ -81,6 +81,155 @@ class AirAccessibilityServiceDispatchTest {
         AirRuntime.setPointerState(0f, 0f, tracking = false)
     }
 
+    @Test fun selectionSurvivesVisionRevocationButNotDisarmAndHiddenPinchClicksTheNode() {
+        @Suppress("DEPRECATION")
+        val node = android.view.accessibility.AccessibilityNodeInfo.obtain().apply {
+            isVisibleToUser = true; isEnabled = true; isClickable = true
+            packageName = "com.example.safe"; text = "Open"
+            setBoundsInScreen(android.graphics.Rect(10,10,100,100))
+        }
+        var clicks = 0
+        shadowOf(node).setOnPerformActionListener { action, _ ->
+            if (action == android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK) { clicks++; true } else false
+        }
+        val highlight = object : ScreenTargetHighlight {
+            override var isVisible = false
+            override fun show(target: android.graphics.Rect): Boolean { isVisible = true; return true }
+            override fun hide() { isVisible = false }
+        }
+        AirAccessibilityService::class.java.getDeclaredField("screenNavigator\$delegate").apply { isAccessible = true }
+            .set(service, lazyOf(ScreenTargetNavigator(highlight)))
+        shadow.setRootInActiveWindow(node)
+        AirRuntime.pointerEnabled = false
+        val looper = shadowOf(Looper.getMainLooper())
+        try {
+            service.dispatch(AirAction.NEXT_ITEM); looper.idle()
+            assertTrue(highlight.isVisible)
+            val ownOverlay = android.view.accessibility.AccessibilityEvent.obtain(
+                android.view.accessibility.AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED).apply {
+                packageName = service.packageName; className = "android.widget.TextView"
+            }
+            service.onAccessibilityEvent(ownOverlay)
+            assertTrue("Our feedback overlay must not erase another app's selected control", highlight.isVisible)
+            AirRuntime.invalidatePendingActions(clearSelection = false)
+            looper.idleFor(java.time.Duration.ofMillis(110))
+            assertTrue(highlight.isVisible)
+            service.dispatchSelectionPinch(); looper.idle()
+            assertEquals(1, clicks)
+            service.dispatchSelectionPinch(); looper.idle()
+            assertEquals(1, clicks)
+            service.dispatch(AirAction.NEXT_ITEM); looper.idle()
+            AirRuntime.controlMode = ControlMode.PAUSED
+            AirRuntime.controlMode = ControlMode.ARMED
+            service.dispatchSelectionPinch(); looper.idle()
+            assertEquals("Safety transitions must revoke selection even between guard polls", 1, clicks)
+        } finally { shadow.setRootInActiveWindow(null) }
+    }
+
+    @Test fun pointerDisabledScrollUsesAvailableNodeWithoutInjectingATouch() {
+        @Suppress("DEPRECATION")
+        val node = android.view.accessibility.AccessibilityNodeInfo.obtain().apply {
+            isVisibleToUser = true; isEnabled = true
+            setBoundsInScreen(android.graphics.Rect(400, 100, 600, 900))
+            addAction(android.view.accessibility.AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_DOWN)
+        }
+        var calls = 0
+        shadowOf(node).setOnPerformActionListener { _, _ -> calls++; true }
+        shadow.setRootInActiveWindow(node)
+        AirRuntime.pointerEnabled = false
+        val before = shadow.gesturesDispatched.size
+        service.dispatch(AirAction.SCROLL_UP)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(1, calls)
+        assertEquals(before, shadow.gesturesDispatched.size)
+        assertEquals(ActionDispatchOutcome.SUBMITTED, AirRuntime.state.value.actionDispatchTelemetry.lastOutcome)
+        shadow.setRootInActiveWindow(null)
+    }
+
+    @Test
+    @Suppress("DEPRECATION")
+    fun focusedPaneWithoutRequestedActionKeepsBoundedPointerFreeFallback() {
+        fun node(bounds: android.graphics.Rect) = android.view.accessibility.AccessibilityNodeInfo.obtain().apply {
+            isVisibleToUser = true; isEnabled = true; setBoundsInScreen(bounds)
+        }
+        val root = node(android.graphics.Rect(0, 0, 1000, 1000))
+        val focused = node(android.graphics.Rect(10, 10, 100, 100)).apply {
+            isAccessibilityFocused = true
+        }
+        val otherPane = node(android.graphics.Rect(500, 0, 1000, 900)).apply {
+            addAction(android.view.accessibility.AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_DOWN)
+            addAction(android.view.accessibility.AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_UP)
+        }
+        shadowOf(root).addChild(focused); shadowOf(root).addChild(otherPane)
+        var otherCalls = 0
+        shadowOf(otherPane).setOnPerformActionListener { _, _ -> otherCalls++; true }
+        shadow.setRootInActiveWindow(root)
+        AirRuntime.pointerEnabled = false
+        val metrics = DisplayMetrics()
+        (service.getSystemService(Context.WINDOW_SERVICE) as WindowManager)
+            .defaultDisplay.getRealMetrics(metrics)
+        try {
+            for (action in listOf(AirAction.SCROLL_UP, AirAction.SCROLL_DOWN)) {
+                val before = shadow.gesturesDispatched.size
+                val completedBefore = AirRuntime.state.value.actionDispatchTelemetry.completed
+                service.dispatch(action, GestureTuning(scrollPercent = 30))
+                shadowOf(Looper.getMainLooper()).idle()
+                assertEquals(0, otherCalls)
+                assertEquals(before + 1, shadow.gesturesDispatched.size)
+                val call = shadow.gesturesDispatched.last()
+                val stroke = call.description().getStroke(0)
+                val bounds = RectF()
+                stroke.path.computeBounds(bounds, true)
+                assertEquals((metrics.widthPixels - 1) * .5f, bounds.left, .01f)
+                assertEquals(metrics.heightPixels * .30f, bounds.height(), .01f)
+                assertTrue(bounds.top >= 0f && bounds.bottom <= metrics.heightPixels - 1f)
+                assertEquals(280L, stroke.duration)
+                // Native submission is not completion; the callback is authoritative.
+                assertEquals(completedBefore, AirRuntime.state.value.actionDispatchTelemetry.completed)
+                call.callback()!!.onCompleted(call.description())
+                assertEquals(completedBefore + 1, AirRuntime.state.value.actionDispatchTelemetry.completed)
+            }
+        } finally {
+            shadow.setRootInActiveWindow(null)
+        }
+    }
+
+    @Test fun mappedPointerToggleWorksBothWaysWithoutTouchAndPersists() {
+        AirRuntime.pointerEnabled = false
+        val before = AirRuntime.actionEpoch
+        service.dispatch(AirAction.TOGGLE_POINTER)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertTrue(AirRuntime.pointerEnabled)
+        assertTrue(ActionMappingStore(service).pointerEnabled())
+        assertTrue(AirRuntime.actionEpoch > before)
+        assertEquals(ActionDispatchOutcome.COMPLETED, AirRuntime.state.value.actionDispatchTelemetry.lastOutcome)
+        service.dispatch(AirAction.TOGGLE_POINTER)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertFalse(AirRuntime.pointerEnabled)
+        assertFalse(ActionMappingStore(service).pointerEnabled())
+        ActionMappingStore(service).setPointerEnabled(true)
+    }
+
+    @Test fun pointerToggleCanExitAnActivePrecisionDrag() {
+        service.dispatch(AirAction.POINTER_DRAG)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertTrue(service.nativeTouchInFlight)
+        service.dispatch(AirAction.TOGGLE_POINTER)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertFalse(AirRuntime.pointerEnabled)
+        assertFalse(service.precisionDragActive)
+        ActionMappingStore(service).setPointerEnabled(true)
+    }
+
+    @Test fun queuedPointerToggleCannotExecuteAfterDisarm() {
+        AirRuntime.pointerEnabled = false
+        service.dispatch(AirAction.TOGGLE_POINTER)
+        AirRuntime.controlMode = ControlMode.OFF
+        shadowOf(Looper.getMainLooper()).idle()
+        assertFalse(AirRuntime.pointerEnabled)
+        assertEquals(ActionDispatchOutcome.POLICY_DENIED, AirRuntime.state.value.actionDispatchTelemetry.lastOutcome)
+    }
+
     @Test
     @Config(sdk = [26])
     fun unavailableActionsCannotDispatchOnOlderAndroid() {
@@ -175,6 +324,32 @@ class AirAccessibilityServiceDispatchTest {
         assertEquals(1L, telemetry.cancelled)
         assertEquals(0L, telemetry.completed)
         assertEquals(ActionDispatchOutcome.CANCELLED, telemetry.lastOutcome)
+    }
+
+    @Test fun explicitSourceEpochCannotBeReplacedByCurrentPointerAuthority() {
+        val sourceEpoch = AirRuntime.actionEpoch
+        AirRuntime.invalidatePendingActions()
+        service.updatePointer(.5f, .5f, true)
+        shadowOf(Looper.getMainLooper()).idle()
+        service.dispatchPointerTap(sourceEpoch)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertTrue(shadow.gesturesDispatched.isEmpty())
+        assertEquals(ActionDispatchOutcome.POLICY_DENIED, AirRuntime.state.value.actionDispatchTelemetry.lastOutcome)
+    }
+
+    @Test fun calibrationOpensWithoutPointerAndRevokesActionAuthority() {
+        AirRuntime.pointerEnabled = false
+        AirRuntime.setPointerState(.5f, .5f, false)
+        val epoch = AirRuntime.actionEpoch
+        service.dispatch(AirAction.CALIBRATE_POINTER)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(ControlMode.READY, AirRuntime.controlMode)
+        assertTrue(AirRuntime.actionEpoch > epoch)
+        val launched = shadowOf(service).nextStartedActivity
+        assertEquals(MainActivity.ACTION_OPEN_CALIBRATION, launched?.action)
+        assertEquals(MainActivity::class.java.name, launched?.component?.className)
+        assertTrue(shadow.gesturesDispatched.isEmpty())
+        assertEquals(ActionDispatchOutcome.SUBMITTED, AirRuntime.state.value.actionDispatchTelemetry.lastOutcome)
     }
 
     @Test fun pointerTapWorksWhenCommandsOffButToggleInvalidatesQueuedTap() {
@@ -612,5 +787,32 @@ class AirAccessibilityServiceDispatchTest {
         updateLegacyPointerTouch(0.4f, 0.5f, true)
         shadowOf(Looper.getMainLooper()).idle()
         assertEquals(1, shadow.gesturesDispatched.size)
+    }
+    @Test fun lateNativeCompletionCannotRelabelANewerAction() {
+        service.dispatch(AirAction.TAP)
+        shadowOf(Looper.getMainLooper()).idle()
+        val touch = shadow.gesturesDispatched.single()
+        service.dispatch(AirAction.HOME)
+        shadowOf(Looper.getMainLooper()).idle()
+        val latest = AirRuntime.state.value.actionFeedback
+        val completedBefore = AirRuntime.state.value.actionDispatchTelemetry.completed
+        assertEquals(AirAction.HOME,latest?.action)
+        touch.callback()!!.onCompleted(touch.description())
+        assertEquals(latest,AirRuntime.state.value.actionFeedback)
+        assertEquals(completedBefore+1L,AirRuntime.state.value.actionDispatchTelemetry.completed)
+    }
+    @Test fun rejectedDragCancellationRetainsPendingFeedbackUntilNativeAcknowledgement() {
+        service.dispatch(AirAction.POINTER_DRAG)
+        shadowOf(Looper.getMainLooper()).idle()
+        val down = shadow.gesturesDispatched.single()
+        assertEquals(ActionDispatchOutcome.SUBMITTED,AirRuntime.state.value.actionFeedback?.outcome)
+        shadow.setCanDispatchGestures(false)
+        service.cancelPointerTouch()
+        shadowOf(Looper.getMainLooper()).idle()
+        assertTrue(service.nativeTouchInFlight)
+        assertEquals(ActionDispatchOutcome.SUBMITTED,AirRuntime.state.value.actionFeedback?.outcome)
+        down.callback()!!.onCancelled(down.description())
+        assertFalse(service.nativeTouchInFlight)
+        assertEquals(ActionDispatchOutcome.CANCELLED,AirRuntime.state.value.actionFeedback?.outcome)
     }
 }

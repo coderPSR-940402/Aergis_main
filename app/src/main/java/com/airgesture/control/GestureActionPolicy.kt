@@ -2,6 +2,9 @@ package com.airgesture.control
 
 /** Separates pointer-originated actions from classifier-mapped system actions. */
 object GestureActionPolicy {
+    /** The same mapped click selects the highlighted item when coordinate aiming is off. */
+    fun resolve(action: AirAction, pointerControlActive: Boolean): AirAction =
+        if (action == AirAction.TAP && !pointerControlActive) AirAction.SELECT_ITEM else action
     /** Compatibility alias for callers that authorize pointer-originated actions. */
     fun isEnabled(gesturesEnabled: Boolean, action: AirAction): Boolean {
         return isPointerActionEnabled(gesturesEnabled, action)

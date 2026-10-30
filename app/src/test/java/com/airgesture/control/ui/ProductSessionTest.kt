@@ -18,6 +18,11 @@ class ProductSessionTest {
         assertEquals(ProductActionState.ARMED, ProductSession.from(state(), true, false, true, true).actions)
         assertEquals(ProductActionState.DISABLED, ProductSession.from(state(), true, false, true, false).actions)
     }
+    @Test fun hiddenCursorDoesNotDisableTheSelectionPinchChannel() {
+        val shown = ProductSession.from(state(), true, false, false, true)
+        assertEquals(ProductActionState.ARMED, shown.actions)
+        assertTrue(shown.canToggleArm)
+    }
     @Test fun disarmAlwaysRemainsAvailableWhenArmedButUnsafe() {
         val unsafe = state().copy(foregroundSafety = ForegroundSafety.PROTECTED)
         val shown = ProductSession.from(unsafe, true, true, false, false)

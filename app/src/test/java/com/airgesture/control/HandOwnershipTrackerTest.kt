@@ -5,6 +5,43 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 class HandOwnershipTrackerTest {
+    @Test fun preferredHandSurvivesContinuousLabelRefitAndDetectionReordering() {
+        for (preference in listOf(ControlHandPreference.LEFT,ControlHandPreference.RIGHT)) {
+            val label = if (preference == ControlHandPreference.LEFT) "Left" else "Right"
+            val refitLabel = if (label == "Left") "Right" else "Left"
+            val tracker = HandOwnershipTracker()
+            val first = tracker.select(listOf(observation(0,label,.4f,.4f)),preference,1000L)!!
+            val refit = tracker.select(listOf(observation(0,refitLabel,.405f,.4f)),preference,1033L)
+            assertEquals("A label refit must not discard the configured owner's geometry",first.ownerId,refit?.ownerId)
+            val reordered = tracker.select(listOf(observation(0,label,.8f,.4f),
+                observation(1,refitLabel,.41f,.4f)),preference,1066L)
+            assertEquals(first.ownerId,reordered?.ownerId)
+            assertEquals(1,reordered?.index)
+        }
+    }
+
+    @Test fun changedPreferenceStillRequiresNewMatchingAcquisition() {
+        val tracker = HandOwnershipTracker()
+        val first = tracker.select(listOf(observation(0,"Left",.4f,.4f)),ControlHandPreference.LEFT,1000L)!!
+        assertNull(tracker.select(listOf(observation(0,"Left",.4f,.4f)),ControlHandPreference.RIGHT,1033L))
+        val next = tracker.select(listOf(observation(0,"Right",.4f,.4f)),ControlHandPreference.RIGHT,1066L)!!
+        org.junit.Assert.assertNotEquals(first.ownerId,next.ownerId)
+    }
+    @Test fun preferredHandCannotBeReplacedByOppositeLabelAfterLoss() {
+        for (preference in listOf(ControlHandPreference.LEFT,ControlHandPreference.RIGHT)) {
+            val label = if (preference == ControlHandPreference.LEFT) "Left" else "Right"
+            val other = if (label == "Left") "Right" else "Left"
+            val tracker = HandOwnershipTracker()
+            assertNull(tracker.select(listOf(observation(0,other,.4f,.4f)),preference,900L))
+            val first = tracker.select(listOf(observation(0,label,.4f,.4f)),preference,1000L)!!
+            assertNull(tracker.select(emptyList(),preference,1033L))
+            assertNull(tracker.select(listOf(observation(0,other,.4f,.4f)),preference,1066L))
+            assertNull(tracker.select(listOf(observation(0,other,.4f,.4f)),preference,1099L))
+            val next = tracker.select(listOf(observation(0,label,.4f,.4f)),preference,1132L)!!
+            org.junit.Assert.assertNotEquals(first.ownerId,next.ownerId)
+        }
+    }
+
     @Test
     fun ownershipFollowsTheSameHandWhenDetectionOrderChanges() {
         val tracker = HandOwnershipTracker()
@@ -102,6 +139,43 @@ class HandOwnershipTrackerTest {
                 timestampMs = 33L
             )
         )
+    }
+
+    @Test fun briefMissingHandPreservesIdentityButNeverSelectsAMissingHand() {
+        val tracker = HandOwnershipTracker()
+        val first = tracker.select(listOf(observation(0,"Left",.2f,.4f)), ControlHandPreference.EITHER,0L)
+        assertNull(tracker.select(emptyList(), ControlHandPreference.EITHER,100L))
+        assertNull(tracker.select(emptyList(), ControlHandPreference.EITHER,200L))
+        val recovered = tracker.select(listOf(observation(0,"Left",.21f,.4f)), ControlHandPreference.EITHER,300L)
+        assertEquals(first?.ownerId, recovered?.ownerId)
+    }
+
+    @Test fun missingFramesDoNotExtendOwnershipAndOppositeHandCannotRecoverIt() {
+        val tracker = HandOwnershipTracker()
+        val first = tracker.select(listOf(observation(0,"Left",.2f,.4f)), ControlHandPreference.EITHER,0L)
+        tracker.select(emptyList(), ControlHandPreference.EITHER,100L)
+        assertNull(tracker.select(listOf(observation(0,"Right",.2f,.4f)), ControlHandPreference.EITHER,200L))
+        val next = tracker.select(listOf(observation(0,"Left",.2f,.4f)), ControlHandPreference.EITHER,300L)
+        org.junit.Assert.assertNotEquals(first?.ownerId, next?.ownerId)
+        tracker.select(emptyList(), ControlHandPreference.EITHER,400L)
+        val expired = tracker.select(listOf(observation(0,"Left",.2f,.4f)), ControlHandPreference.EITHER,900L)
+        org.junit.Assert.assertNotEquals(next?.ownerId, expired?.ownerId)
+    }
+
+    @Test fun temporaryHandednessRefitDoesNotChangeOwnerIdentity() {
+        val tracker = HandOwnershipTracker()
+        val first = tracker.select(listOf(observation(0,"Left",.4f,.4f)), ControlHandPreference.EITHER,0L)
+        val refit = tracker.select(listOf(observation(0,"Right",.405f,.4f)), ControlHandPreference.EITHER,33L)
+        assertEquals(first?.ownerId, refit?.ownerId)
+    }
+
+    @Test fun briefAmbiguityCannotTransferOwnershipToTheOtherHand() {
+        val tracker = HandOwnershipTracker()
+        val first = tracker.select(listOf(observation(0,"Left",.4f,.4f)), ControlHandPreference.EITHER,0L)
+        assertNull(tracker.select(listOf(observation(0,"Left",.44f,.4f), observation(1,"Left",.45f,.4f)), ControlHandPreference.EITHER,33L))
+        val recovered = tracker.select(listOf(observation(0,"Right",.8f,.4f), observation(1,"Left",.41f,.4f)), ControlHandPreference.EITHER,66L)
+        assertEquals(first?.ownerId, recovered?.ownerId)
+        assertEquals(1, recovered?.index)
     }
 
     private fun observation(index: Int, handedness: String, x: Float, y: Float) =

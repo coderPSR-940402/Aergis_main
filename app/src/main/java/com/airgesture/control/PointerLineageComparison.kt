@@ -24,6 +24,8 @@ internal data class PointerLineageSample(
 
 /** All candidates consume the same measured tip and calibration. Never auto-selects. */
 internal class PointerLineageComparison {
+    var latest: PointerLineageSample? = null
+        private set
     private val recovered = Vc49PointerMotionFilter()
     private val precision = PrecisionPointerFilter()
 
@@ -33,10 +35,10 @@ internal class PointerLineageComparison {
         val precise = precision.update(mappedTip.x, mappedTip.y, timestampMs)
         return PointerLineageSample(mappedTip, current, PointerCoordinateMapper.Point(point.first, point.second),
             precise, precision.measurementTrusted, precision.lastRejection,
-            precision.lastJumpDistance, precision.lastJumpLimit)
+            precision.lastJumpDistance, precision.lastJumpLimit).also { latest = it }
     }
 
-    fun reset() { recovered.reset(); precision.reset() }
+    fun reset() { latest = null; recovered.reset(); precision.reset() }
 }
 
 /** O(1) statistics. Stationary labels must be supplied by a test segment, not guessed from jitter. */

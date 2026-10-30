@@ -9,11 +9,17 @@ import android.view.Surface
 import android.view.WindowManager
 
 /** Public Android capabilities only; submission is not proof of visible completion. */
-internal class PlatformActions(private val context: Context) {
+internal class PlatformActions(private val context: Context,
+    private val record: (ActionDispatchOutcome) -> Unit = AirRuntime::recordActionDispatchOutcome) {
     fun execute(action: AirAction) {
         val outcome = try {
             val submitted = when (action) {
                 AirAction.APP_SEARCH -> launch(Intent(context, AppSearchActivity::class.java))
+                AirAction.CALIBRATE_POINTER -> {
+                    AirRuntime.controlMode = ControlMode.READY
+                    launch(Intent(context, MainActivity::class.java).setAction(MainActivity.ACTION_OPEN_CALIBRATION)
+                        .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP))
+                }
                 AirAction.WEB_SEARCH -> launch(Intent(Intent.ACTION_WEB_SEARCH))
                 AirAction.WIFI_CONTROLS -> launch(Intent(Settings.ACTION_WIFI_SETTINGS))
                 AirAction.BLUETOOTH_SETTINGS -> launch(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
@@ -28,7 +34,7 @@ internal class PlatformActions(private val context: Context) {
         } catch (_: RuntimeException) {
             ActionDispatchOutcome.EXECUTION_FAILED
         }
-        AirRuntime.recordActionDispatchOutcome(outcome)
+        record(outcome)
     }
     private fun launch(intent: Intent): Boolean {
         context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))

@@ -92,4 +92,25 @@ class BoundedGestureDispatcherTest {
         calls[0].second.onCancelled(calls[0].first)
         assertEquals(listOf(ActionDispatchOutcome.CANCELLED), outcomes)
     }
+    @Test fun callbacksKeepTheirOwnRequestRecorderAfterAnotherCommandIsRejected() {
+        val first = mutableListOf<ActionDispatchOutcome>()
+        val second = mutableListOf<ActionDispatchOutcome>()
+        input.submit(gesture(),epoch,first::add)
+        input.submit(gesture(),epoch,second::add)
+        calls[0].second.onCompleted(calls[0].first)
+        assertEquals(listOf(ActionDispatchOutcome.COMPLETED),first)
+        assertEquals(listOf(ActionDispatchOutcome.PLATFORM_REJECTED),second)
+        assertTrue(outcomes.isEmpty())
+    }
+    @Test fun rejectedCancelDoesNotReplaceOriginalRequestOutcome() {
+        var feedback = ActionFeedback(1,AirAction.TAP,updatedAtMs=android.os.SystemClock.uptimeMillis())
+        input.submit(gesture(),epoch) { feedback = feedback.result(1,it,android.os.SystemClock.uptimeMillis()) }
+        accepted = false
+        input.cancel()
+        assertTrue(input.isBusy)
+        assertNull(feedback.outcome)
+        assertEquals(listOf(ActionDispatchOutcome.PLATFORM_REJECTED),outcomes)
+        calls[0].second.onCompleted(calls[0].first)
+        assertEquals(ActionDispatchOutcome.COMPLETED,feedback.outcome)
+    }
 }

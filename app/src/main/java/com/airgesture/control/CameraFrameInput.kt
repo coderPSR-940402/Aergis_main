@@ -109,7 +109,10 @@ internal class CameraFrameInput {
         val lease = buffers.acquire(size) ?: return null
         try {
             val target = lease.buffer
-            for (row in 0 until data.height) {
+            if (data.rowStride == rowBytes) {
+                source.limit(size)
+                target.put(source)
+            } else for (row in 0 until data.height) {
                 source.limit(row * data.rowStride + rowBytes)
                 source.position(row * data.rowStride)
                 target.put(source)

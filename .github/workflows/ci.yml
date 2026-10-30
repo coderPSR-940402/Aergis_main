@@ -111,6 +111,9 @@ jobs:
           python3 tools/verify_apk.py "$APK" --aapt "${ANDROID_HOME}/build-tools/36.0.0/aapt" --version-code "$((1000 + GITHUB_RUN_NUMBER))" --version-name "$EXPECTED_VERSION_NAME"
           echo "Release APK package, version and model verified"
 
+      - name: Exercise isolated production signing with an ephemeral fixture
+        run: python3 tools/smoke_production_signing.py --sdk "$ANDROID_HOME" --model app/src/main/assets/gesture_recognizer.task
+
       - name: Generate APK checksums
         shell: bash
         run: |
@@ -121,6 +124,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          BASELINE_GENERATED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           cat > baseline.json <<EOF
           {
             "repository": "${{ github.repository }}",
@@ -131,7 +135,7 @@ jobs:
             "run_number": ${{ github.run_number }},
             "run_url": "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}",
             "baseline_ref": "baseline-successful-apk",
-            "generated_at": "${{ github.run_started_at }}"
+            "generated_at": "$BASELINE_GENERATED_AT"
           }
           EOF
           test -s baseline.json

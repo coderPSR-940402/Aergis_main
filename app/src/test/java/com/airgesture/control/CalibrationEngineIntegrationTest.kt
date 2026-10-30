@@ -123,11 +123,49 @@ class CalibrationEngineIntegrationTest {
     @Test
     fun replacingHandDoesNotInheritMotionFilterPosition() {
         publish(hand(), 1000L)
-        val other = hand().toMutableList().apply { this[8] = NormalizedLandmark.create(0.8f, 0.2f, 0f) }
+        val other = hand().map { NormalizedLandmark.create(it.x() + .3f, it.y(), it.z()) }
+            .toMutableList().apply { this[8] = NormalizedLandmark.create(0.8f, 0.2f, 0f) }
         publish(other, 1033L, "Right")
         val expected = PointerCoordinateMapper.map(0.8f, 0.2f)
         assertEquals(expected.x, AirRuntime.pointerX, 0.0001f)
         assertEquals(expected.y, AirRuntime.pointerY, 0.0001f)
+    }
+
+    @Test fun offFrameIndexCannotPullRecoveredPointerTowardTheScreenEdge() {
+        AirRuntime.pointerClickingEnabled = false
+        repeat(4) { publish(hand(),1000L + it*100L) }
+        val target = AirRuntime.pointerSnapshot()
+        publish(hand().toMutableList().apply { this[8] = NormalizedLandmark.create(8f,.65f,0f) },1400L)
+        assertFalse(AirRuntime.pointerTracking)
+        publish(hand(),1500L)
+        assertTrue(AirRuntime.pointerTracking)
+        assertEquals(target.x,AirRuntime.pointerX,.0001f)
+        assertEquals(target.y,AirRuntime.pointerY,.0001f)
+    }
+
+    @Test fun preferredHandLabelRefitPreservesOneAnchoredNativeClick() {
+        withMappedBackService { shadow ->
+            // The engine maps MediaPipe's raw Left category to physical Right.
+            AirRuntime.handPreference = ControlHandPreference.RIGHT
+            AirRuntime.gesturesEnabled = false
+            val looper = org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper())
+            try {
+                repeat(4) { publish(hand(),1000L + it*100L); looper.idle() }
+                val target = AirRuntime.pointerSnapshot()
+                val closed = hand().toMutableList().apply {
+                    this[4] = NormalizedLandmark.create(.56f,.65f,0f)
+                }
+                publish(closed,1400L,rawHandedness = "Right"); looper.idle()
+                assertEquals("A continuous palm must survive label refits with fixed hand preference",1,
+                    shadow.gesturesDispatched.size)
+                assertEquals(target.x,AirRuntime.pointerX,.0001f)
+                assertEquals(target.y,AirRuntime.pointerY,.0001f)
+                val tap = shadow.gesturesDispatched.single()
+                tap.callback()!!.onCompleted(tap.description())
+                publish(closed,1500L,rawHandedness = "Right"); looper.idle()
+                assertEquals("A held contact remains consumed",1,shadow.gesturesDispatched.size)
+            } finally { AirRuntime.handPreference = ControlHandPreference.EITHER }
+        }
     }
 
     @Test
@@ -274,6 +312,85 @@ class CalibrationEngineIntegrationTest {
             // 1.75 times palm width is a plausible extended index, not a broken pinch.
             this[8] = NormalizedLandmark.create(.4f, .15f, 0f)
         })
+    }
+
+    @Test fun expiredCameraFramesRevokeActionsWithoutConstructingEitherNativeModel() {
+        org.robolectric.shadows.ShadowSystemClock.advanceBy(java.time.Duration.ofSeconds(2))
+        engine.cameraTimestampsRealtime = true
+        val lease = FrameBufferPool().acquire(4)!!
+        val frame = CapturedCameraFrame(RgbaFrameData(lease.buffer, 1, 1, 4, 4, 0, 1_000_000L, ""), 0L, 0L, lease)
+        val epoch = AirRuntime.actionEpoch
+        try {
+            engine.analyze(frame)
+            for (field in listOf("recognizer", "handLandmarker")) assertNull(
+                GestureRecognitionEngine::class.java.getDeclaredField(field).apply { isAccessible = true }.get(engine))
+            assertTrue(AirRuntime.actionEpoch > epoch)
+            assertFalse(AirRuntime.pointerTracking)
+        } finally { frame.close() }
+    }
+
+    @Test fun hiddenPointerBriefLossPreservesTheControllingOwner() {
+        AirRuntime.pointerEnabled = false
+        publish(hand(), 1000L)
+        publish(hand(), 1100L)
+        val owner = GestureRecognitionEngine::class.java.getDeclaredField("lastPointerOwnerId").apply { isAccessible = true }
+        val first = owner.get(engine)
+        assertNotNull(first)
+        publish(emptyList(), 1200L)
+        publish(hand(), 1300L)
+        assertEquals(first, owner.get(engine))
+    }
+
+    @Test fun customOnlyInferenceStillRequiresClassifierNeutralAfterAnOccurrence() {
+        val mappings = ActionMappingStore(RuntimeEnvironment.getApplication())
+        val prior = RegisteredGesture.entries.associateWith(mappings::mapping)
+        try {
+            RegisteredGesture.entries.forEach { mappings.setMapping(it, AirAction.NONE) }
+            mappings.setMapping(RegisteredGesture.L_SHAPE, AirAction.HOME)
+            AirRuntime.gesturesEnabled = true
+            val policy = GestureRecognitionEngine::class.java.getDeclaredMethod("useLandmarksOnly").apply { isAccessible = true }
+            assertEquals(true, policy.invoke(engine))
+            val transaction = GestureRecognitionEngine::class.java.getDeclaredField("gestureTransaction")
+                .apply { isAccessible = true }.get(engine) as GestureTransactionStateMachine
+            transaction.process(GestureTransactionStateMachine.Input(AirAction.HOME, .99f, 1000L, true, "Left:1", "L_SHAPE"))
+            assertEquals(false, policy.invoke(engine))
+            transaction.process(GestureTransactionStateMachine.Input(AirAction.NONE, .99f, 1100L, true, "Left:1"))
+            transaction.process(GestureTransactionStateMachine.Input(AirAction.NONE, .99f, 1200L, true, "Left:1"))
+            assertEquals(true, policy.invoke(engine))
+            mappings.setMapping(RegisteredGesture.VICTORY, AirAction.BACK)
+            assertEquals(false, policy.invoke(engine))
+        } finally { prior.forEach { (gesture, action) -> mappings.setMapping(gesture, action) } }
+    }
+
+    @Test fun hiddenPointerPinchRequestsSelectionOnceEvenWithUntrackableIndexAndCommandsOff() {
+        val controller = org.robolectric.Robolectric.buildService(AirAccessibilityService::class.java).create()
+        val service = controller.get()
+        AirAccessibilityService::class.java.getDeclaredMethod("onServiceConnected")
+            .apply { isAccessible = true }.invoke(service)
+        AirRuntime.setForegroundContext(ForegroundContextState(safety = ForegroundSafety.SAFE))
+        AirRuntime.pointerEnabled = false
+        AirRuntime.gesturesEnabled = false
+        AirRuntime.resetActionDispatchTelemetry()
+        try {
+            val looper = org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper())
+            val open = hand().toMutableList().apply { this[8] = NormalizedLandmark.create(Float.NaN, .5f, 0f) }
+            val closed = open.toMutableList().apply { this[4] = NormalizedLandmark.create(.56f, .65f, 0f) }
+            var timestamp = 1000L
+            fun frame(points: List<NormalizedLandmark>) {
+                publish(points, timestamp, delayMs = 100L); timestamp += 134L; looper.idle()
+            }
+            repeat(4) { frame(open) }
+            repeat(6) { frame(closed) }
+            assertEquals(AirAction.SELECT_ITEM, AirRuntime.state.value.actionFeedback?.action)
+            assertEquals("Missing selection reports unavailable once, never injects an invisible tap", 1L,
+                AirRuntime.state.value.actionDispatchTelemetry.platformUnavailable)
+            frame(emptyList())
+            repeat(4) { frame(closed) }
+            assertEquals("Held contact cannot replay after hand loss", 1L,
+                AirRuntime.state.value.actionDispatchTelemetry.platformUnavailable)
+            assertTrue(org.robolectric.Shadows.shadowOf(service).gesturesDispatched.isEmpty())
+            assertFalse(AirRuntime.pointerTracking)
+        } finally { controller.destroy() }
     }
 
     @Test fun trackedPinchDispatchesOneBoundedTapBeforeReleaseAndNeverDrags() {
@@ -427,9 +544,11 @@ class CalibrationEngineIntegrationTest {
         publish(closed, 1600L, delayMs = 601L)
         assertEquals(PointerInteractionPhase.IDLE, AirRuntime.pointerInteraction)
         publish(closed, 1800L, delayMs = 500L)
-        assertEquals("Recovery must observe open fingers again", PointerInteractionPhase.AIMING, AirRuntime.pointerInteraction)
-        AirRuntime.controlMode = ControlMode.PAUSED
+        assertEquals("Catch-up frame must not restore touch authority", PointerInteractionPhase.IDLE, AirRuntime.pointerInteraction)
         publish(closed, 2000L, delayMs = 500L)
+        assertEquals("Held contact cannot replay after catch-up", PointerInteractionPhase.AIMING, AirRuntime.pointerInteraction)
+        AirRuntime.controlMode = ControlMode.PAUSED
+        publish(closed, 2200L, delayMs = 500L)
         assertEquals(PointerInteractionPhase.IDLE, AirRuntime.pointerInteraction)
         assertFalse(AirRuntime.pointerTracking)
     }
@@ -596,6 +715,148 @@ class CalibrationEngineIntegrationTest {
         }
     }
 
+    @Test fun projectedContactWithDepthDisagreementDispatchesOneAnchoredTap() {
+        withMappedBackService { shadow ->
+            AirRuntime.gesturesEnabled = false
+            val looper = org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper())
+            val open = hand()
+            repeat(4) { publish(open, 1000L + it * 100L); looper.idle() }
+            val target = AirRuntime.pointerSnapshot()
+            val closed = open.toMutableList().apply {
+                this[4] = NormalizedLandmark.create(.56f, .65f, -.05f)
+            }
+            publish(closed, 1400L); looper.idle()
+            assertEquals(PointerInteractionPhase.PRESSED, AirRuntime.pointerInteraction)
+            assertEquals(target.x, AirRuntime.pointerX, .0001f)
+            assertEquals(target.y, AirRuntime.pointerY, .0001f)
+            assertEquals("Contact must reach native dispatch with commands disabled", 1, shadow.gesturesDispatched.size)
+            val tap = shadow.gesturesDispatched.single()
+            tap.callback()!!.onCompleted(tap.description())
+            repeat(4) { publish(closed, 1500L + it * 100L); looper.idle() }
+            assertEquals("Depth refits during held contact cannot repeat", 1, shadow.gesturesDispatched.size)
+            assertTrue(shadow.globalActionsPerformed.isEmpty())
+        }
+    }
+
+    @Test fun depthSeparatedProjectedContactCannotReachNativeDispatch() {
+        withMappedBackService { shadow ->
+            AirRuntime.gesturesEnabled = false
+            val looper = org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper())
+            repeat(4) { publish(hand(), 1000L + it * 100L); looper.idle() }
+            val overlap = hand().toMutableList().apply {
+                this[4] = NormalizedLandmark.create(.55f, .65f, -.08f)
+            }
+            repeat(4) { publish(overlap, 1400L + it * 100L); looper.idle() }
+            assertTrue("The pointer must still track without granting contact authority", AirRuntime.pointerTracking)
+            assertTrue("Visible overlap with clear depth separation cannot tap", shadow.gesturesDispatched.isEmpty())
+        }
+    }
+
+    @Test fun quarterTurnContactVetoUsesUnrotatedSensorDepthUnits() {
+        withMappedBackService { shadow ->
+            AirRuntime.gesturesEnabled = false
+            GestureRecognitionEngine::class.java.getDeclaredField("frameAspectRatio")
+                .apply { isAccessible = true }.set(engine, .75f)
+            val looper = org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper())
+            fun sensor(points: List<NormalizedLandmark>) = points.map {
+                // Inverse of the 270-degree x/y rotation; z stays in sensor-width units.
+                NormalizedLandmark.create(1f - it.y(), it.x(), it.z())
+            }
+            repeat(4) { publish(sensor(hand()), 1000L + it * 100L, rotationDegrees = 270); looper.idle() }
+            val separated = hand().toMutableList().apply {
+                this[4] = NormalizedLandmark.create(.55f, .65f, -.051f)
+            }
+            publish(sensor(separated), 1400L, rotationDegrees = 270); looper.idle()
+            assertTrue(AirRuntime.pointerTracking)
+            assertTrue(".051 / .15 is .34, not .255: reject this contact", shadow.gesturesDispatched.isEmpty())
+            val contact = separated.toMutableList().apply {
+                this[4] = NormalizedLandmark.create(.55f, .65f, -.035f)
+            }
+            publish(sensor(contact), 1500L, rotationDegrees = 270); looper.idle()
+            assertEquals("A smaller depth discrepancy still permits observed contact", 1, shadow.gesturesDispatched.size)
+            val tap = shadow.gesturesDispatched.single()
+            tap.callback()!!.onCompleted(tap.description())
+        }
+    }
+
+    @Test fun trustedAnchorSurvivesBriefIndexJumpAndMissingTipWithoutRepeatingTap() {
+        withMappedBackService { shadow ->
+            AirRuntime.gesturesEnabled = false
+            TestingTools.setFilterMode(PointerFilterMode.PRECISION)
+            val looper = org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper())
+            repeat(4) { publish(hand(), 1000L + it * 100L); looper.idle() }
+            val target = AirRuntime.pointerSnapshot()
+            val contact = hand().toMutableList().apply {
+                this[4] = NormalizedLandmark.create(.56f, .65f, 0f)
+                this[8] = NormalizedLandmark.create(.95f, .05f, 0f)
+            }
+            publish(contact, 1400L); looper.idle()
+            assertTrue(AirRuntime.pointerTracking)
+            assertEquals(target.x, AirRuntime.pointerX, .0001f)
+            assertEquals(target.y, AirRuntime.pointerY, .0001f)
+            assertEquals("A rejected index jump cannot consume an otherwise valid anchored tap", 1, shadow.gesturesDispatched.size)
+            val tap = shadow.gesturesDispatched.single()
+            tap.callback()!!.onCompleted(tap.description())
+            contact[8] = NormalizedLandmark.create(Float.NaN, Float.NaN, Float.NaN)
+            publish(contact, 1500L); looper.idle()
+            publish(contact, 1600L); looper.idle()
+            assertTrue(AirRuntime.pointerTracking)
+            assertFalse("Refits grant no raw calibration evidence", AirRuntime.rawPointerSnapshot().tracking)
+            assertEquals(1, shadow.gesturesDispatched.size)
+            publish(contact, 1700L); looper.idle()
+            assertFalse("The protected target must expire without trusted tip recovery", AirRuntime.pointerTracking)
+            assertEquals(1, shadow.gesturesDispatched.size)
+            contact[8] = hand()[8]
+            publish(contact, 1800L); looper.idle()
+            assertEquals("Reacquired closed contact cannot replay", 1, shadow.gesturesDispatched.size)
+        }
+    }
+
+    @Test fun pauseCannotLendAnOldAnchorToANewClosedContact() {
+        withMappedBackService { shadow ->
+            val looper = org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper())
+            repeat(4) { publish(hand(), 1000L + it * 100L); looper.idle() }
+            val approach = hand().toMutableList().apply { this[4] = NormalizedLandmark.create(.60f, .65f, 0f) }
+            publish(approach, 1400L); looper.idle()
+            AirRuntime.controlMode = ControlMode.PAUSED
+            AirRuntime.controlMode = ControlMode.ARMED
+            approach[4] = NormalizedLandmark.create(.56f, .65f, 0f)
+            approach[8] = NormalizedLandmark.create(Float.NaN, Float.NaN, Float.NaN)
+            publish(approach, 1500L); looper.idle()
+            assertTrue(shadow.gesturesDispatched.isEmpty())
+            assertFalse(AirRuntime.pointerTracking)
+        }
+    }
+
+    @Test fun partialCustomPoseCanExecuteAndRearmWithoutUnusedJointVisibility() {
+        withMappedBackService { shadow ->
+            AirRuntime.pointerEnabled = false
+            val context = RuntimeEnvironment.getApplication() as Context
+            val prefs = context.getSharedPreferences("aergis_mappings", Context.MODE_PRIVATE)
+            val previous = prefs.getString("gesture_FOUR_FINGERS", null)
+            try {
+                ActionMappingStore(context).setMapping(RegisteredGesture.FOUR_FINGERS, AirAction.BACK)
+                val custom = LandmarkGestureRecognizerTest.pose(RegisteredGesture.FOUR_FINGERS).map {
+                    NormalizedLandmark.create(it.x, it.y, it.z)
+                }.toMutableList().apply { this[7] = NormalizedLandmark.create(1.1f, .5f, 0f) }
+                val neutral = custom.toMutableList().apply {
+                    // Ambiguous bends produce no custom pose, while ownership stays identical.
+                    for (tip in listOf(8, 12, 16, 20))
+                        this[tip] = NormalizedLandmark.create(custom[tip - 3].x() + .10f, .39f, 0f)
+                }
+                primeClassifier(neutral)
+                val looper = org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper())
+                repeat(6) { publish(custom, 1300L + it * 100L); looper.idle() }
+                assertEquals(1, shadow.globalActionsPerformed.size)
+                repeat(4) { publish(neutral, 2000L + it * 100L); looper.idle() }
+                repeat(6) { publish(custom, 2400L + it * 100L); looper.idle() }
+                assertEquals("Confident neutral with the same usable joints can rearm", 2, shadow.globalActionsPerformed.size)
+            } finally {
+                prefs.edit().apply { if (previous == null) remove("gesture_FOUR_FINGERS") else putString("gesture_FOUR_FINGERS", previous) }.commit()
+            }
+        }
+    }
+
     private fun withMappedBackService(block: (org.robolectric.shadows.ShadowAccessibilityService) -> Unit) {
         val context = RuntimeEnvironment.getApplication() as Context
         val prefs = context.getSharedPreferences("aergis_mappings", Context.MODE_PRIVATE)
@@ -737,7 +998,38 @@ class CalibrationEngineIntegrationTest {
         this[12] = NormalizedLandmark.create(0.55f, 0.65f, 0f)
     }
 
-    private fun publish(landmarks: List<NormalizedLandmark>, timestamp: Long, rawHandedness: String = "Left", gestureName: String = "None", delayMs: Long = 0L, measuredAgeMs: Long? = null, gestureScore: Float = .99f, includeGesture: Boolean = true) {
+    @Test fun calibrationObservationUsesUptimeEvenWhenCameraClockIncludesSleep() {
+        AirRuntime.controlMode = ControlMode.READY
+        val before = android.os.SystemClock.uptimeMillis()
+        // REALTIME camera timestamps include sleep; the activity's delivery-age clock does not.
+        val cameraTimestamp = before + 3_600_000L
+        publish(hand(), cameraTimestamp, delayMs = 100L, measuredAgeMs = 100L)
+        val frame = requireNotNull(AirRuntime.state.value.calibrationGesture)
+        val after = android.os.SystemClock.uptimeMillis()
+        assertEquals("Gesture sample timing must retain its camera domain", cameraTimestamp, frame.timestampMs)
+        assertTrue("UI observation must use uptime, independently of the camera clock",
+            frame.observedAtMs in before..after)
+        assertTrue("Fresh calibration evidence must pass the activity's delivery-age check",
+            after - frame.observedAtMs in 0L..350L)
+    }
+
+    @Test fun disarmedCalibrationPublishesOnlyFreshOwnedEvidenceAndStopRevokesIt() {
+        AirRuntime.controlMode = ControlMode.READY
+        publish(hand(),1000L,delayMs=100L)
+        val frame = AirRuntime.state.value.calibrationGesture
+        assertEquals(1000L,frame?.timestampMs)
+        assertEquals(AirRuntime.actionEpoch,frame?.epoch)
+        assertFalse(AirRuntime.pointerTracking)
+        publish(hand(),1200L,delayMs=500L)
+        org.junit.Assert.assertNull(AirRuntime.state.value.calibrationGesture)
+        assertTrue("Manual preview remains independent of action age",AirRuntime.rawPointerSnapshot().tracking)
+        publish(hand(),1400L,delayMs=100L)
+        org.junit.Assert.assertNotNull(AirRuntime.state.value.calibrationGesture)
+        engine.stop()
+        org.junit.Assert.assertNull(AirRuntime.state.value.calibrationGesture)
+    }
+
+    private fun publish(landmarks: List<NormalizedLandmark>, timestamp: Long, rawHandedness: String = "Left", gestureName: String = "None", delayMs: Long = 0L, measuredAgeMs: Long? = null, gestureScore: Float = .99f, includeGesture: Boolean = true, rotationDegrees: Int = 0) {
         val hands = if (landmarks.isEmpty()) emptyList() else listOf(
             LandmarkProto.NormalizedLandmarkList.newBuilder().addAllLandmark(landmarks.map {
                 LandmarkProto.NormalizedLandmark.newBuilder().setX(it.x()).setY(it.y()).setZ(it.z()).build()
@@ -765,12 +1057,12 @@ class CalibrationEngineIntegrationTest {
                 "publishWithAge", GestureRecognizerResult::class.java, java.lang.Long.TYPE,
                 java.lang.Long.TYPE, java.lang.Integer.TYPE, java.lang.Long.TYPE
             ).apply { isAccessible = true }
-            method.invoke(engine, result, timestamp, timestamp + delayMs, 0, measuredAgeMs)
+            method.invoke(engine, result, timestamp, timestamp + delayMs, rotationDegrees, measuredAgeMs)
             return
         }
         val method = GestureRecognitionEngine::class.java.getDeclaredMethod(
             "publish", GestureRecognizerResult::class.java, java.lang.Long.TYPE, java.lang.Long.TYPE, java.lang.Integer.TYPE
         ).apply { isAccessible = true }
-        method.invoke(engine, result, timestamp, timestamp + delayMs, 0)
+        method.invoke(engine, result, timestamp, timestamp + delayMs, rotationDegrees)
     }
 }

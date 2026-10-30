@@ -9,9 +9,10 @@ internal enum class ProductActionState { STOPPED, DISABLED, DISARMED, ARMED, PAU
 /** Presentation only. The engine's dispatch/epoch policies remain authoritative. */
 internal data class ProductSession(val actions: ProductActionState, val canToggleArm: Boolean) {
     companion object {
+        @Suppress("UNUSED_PARAMETER")
         fun from(runtime: AirRuntimeUiState, accessibility: Boolean, gestures: Boolean,
             pointer: Boolean, pointerClicking: Boolean): ProductSession {
-            val channelEnabled = gestures || (pointer && pointerClicking)
+            val channelEnabled = gestures || pointerClicking
             val armed = runtime.controlMode == ControlMode.ARMED
             val healthy = runtime.running && runtime.cameraReady && runtime.visionReady && runtime.visionError == null
             val safe = runtime.foregroundSafety == ForegroundSafety.SAFE

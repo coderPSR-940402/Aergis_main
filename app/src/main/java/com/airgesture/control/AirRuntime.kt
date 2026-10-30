@@ -30,16 +30,6 @@ data class VisionTelemetry(
     val lastRejectionReason: String? = null
 )
 
-enum class ActionDispatchOutcome {
-    POLICY_DENIED,
-    PLATFORM_REJECTED,
-    SUBMITTED,
-    COMPLETED,
-    CANCELLED,
-    PLATFORM_UNAVAILABLE,
-    EXECUTION_FAILED
-}
-
 data class ActionDispatchTelemetry(
     val totalOutcomes: Long = 0L,
     val policyDenied: Long = 0L,
@@ -71,11 +61,15 @@ data class AirRuntimeState(
     val pointerInteraction: PointerInteractionPhase = PointerInteractionPhase.IDLE,
     /** Raw normalized vision coordinates, before screen mapping or calibration. */
     val rawPointer: PointerSnapshot = PointerSnapshot(0f, 0f, false),
+    val calibrationGesture: CalibrationGestureFrame? = null,
     val visionTelemetry: VisionTelemetry = VisionTelemetry(),
     val actionDispatchTelemetry: ActionDispatchTelemetry = ActionDispatchTelemetry(),
+    val actionFeedback: ActionFeedback? = null,
     val poseEvidence: PoseGeometryEvidence? = null,
     /** Invalidates actions queued under an older session or safety state. */
-    val actionEpoch: Long = 0L
+    val actionEpoch: Long = 0L,
+    /** A selected target survives vision gaps, but never a session/safety/settings change. */
+    val selectionEpoch: Long = 0L
 ) {
     val pointerTracking: Boolean
         get() = pointer.tracking
@@ -135,7 +129,7 @@ object AirRuntime {
     var running: Boolean
         get() = state.value.running
         set(value) = _state.update {
-            if (it.running == value) it else it.copy(running = value, actionEpoch = it.actionEpoch + 1L)
+            if (it.running == value) it else it.copy(running = value, actionEpoch = it.actionEpoch + 1L, selectionEpoch = it.selectionEpoch + 1L)
         }
 
     var cameraReady: Boolean
@@ -146,34 +140,34 @@ object AirRuntime {
         get() = state.value.pointerEnabled
         set(value) = _state.update {
             if (it.pointerEnabled == value) it
-            else it.copy(pointerEnabled = value, actionEpoch = it.actionEpoch + 1L)
+            else it.copy(pointerEnabled = value, actionEpoch = it.actionEpoch + 1L, selectionEpoch = it.selectionEpoch + 1L)
         }
 
     var pointerClickingEnabled: Boolean
         get() = state.value.pointerClickingEnabled
         set(value) = _state.update {
             if (it.pointerClickingEnabled == value) it
-            else it.copy(pointerClickingEnabled = value, actionEpoch = it.actionEpoch + 1L)
+            else it.copy(pointerClickingEnabled = value, actionEpoch = it.actionEpoch + 1L, selectionEpoch = it.selectionEpoch + 1L)
         }
 
     var gesturesEnabled: Boolean
         get() = state.value.gesturesEnabled
         set(value) = _state.update {
             if (it.gesturesEnabled == value) it
-            else it.copy(gesturesEnabled = value, actionEpoch = it.actionEpoch + 1L)
+            else it.copy(gesturesEnabled = value, actionEpoch = it.actionEpoch + 1L, selectionEpoch = it.selectionEpoch + 1L)
         }
 
     var controlMode: ControlMode
         get() = state.value.controlMode
         set(value) = _state.update {
             if (it.controlMode == value) it
-            else it.copy(controlMode = value, actionEpoch = it.actionEpoch + 1L)
+            else it.copy(controlMode = value, actionEpoch = it.actionEpoch + 1L, selectionEpoch = it.selectionEpoch + 1L)
         }
 
     fun setForegroundContext(context: ForegroundContextState) {
         _state.update {
             if (it.foregroundContext == context) it
-            else it.copy(foregroundContext = context, actionEpoch = it.actionEpoch + 1L)
+            else it.copy(foregroundContext = context, actionEpoch = it.actionEpoch + 1L, selectionEpoch = it.selectionEpoch + 1L)
         }
     }
 
@@ -181,11 +175,12 @@ object AirRuntime {
         get() = state.value.handPreference
         set(value) = _state.update {
             if (it.handPreference == value) it
-            else it.copy(handPreference = value, actionEpoch = it.actionEpoch + 1L)
+            else it.copy(handPreference = value, actionEpoch = it.actionEpoch + 1L, selectionEpoch = it.selectionEpoch + 1L)
         }
 
-    internal fun invalidatePendingActions() {
-        _state.update { it.copy(actionEpoch = it.actionEpoch + 1L) }
+    internal fun invalidatePendingActions(clearSelection: Boolean = true) {
+        _state.update { it.copy(actionEpoch = it.actionEpoch + 1L,
+            selectionEpoch = it.selectionEpoch + if (clearSelection) 1L else 0L) }
     }
 
     var pointerFeedback: PointerFeedback
@@ -292,9 +287,25 @@ object AirRuntime {
         _state.update { it.copy(poseEvidence = null) }
     }
 
-    internal fun recordActionDispatchOutcome(outcome: ActionDispatchOutcome) {
+    private val feedbackSequence = java.util.concurrent.atomic.AtomicLong()
+    internal fun beginActionFeedback(action: AirAction): Long {
+        val id = feedbackSequence.incrementAndGet()
+        val feedback = ActionFeedback(id, action, updatedAtMs = android.os.SystemClock.uptimeMillis())
+        _state.update { if ((it.actionFeedback?.requestId ?: 0L) < id) it.copy(actionFeedback = feedback) else it }
+        return id
+    }
+    internal fun recordActionFeedback(outcome: ActionDispatchOutcome, id: Long) {
+        recordActionTelemetry(outcome, id)
+        _state.update { current -> current.copy(actionFeedback = current.actionFeedback?.result(id, outcome,
+            android.os.SystemClock.uptimeMillis())) }
+    }
+
+    internal fun recordActionDispatchOutcome(outcome: ActionDispatchOutcome) = recordActionTelemetry(outcome, null)
+
+    private fun recordActionTelemetry(outcome: ActionDispatchOutcome, requestId: Long?) {
         if (TestingTools.state.value.status == RecordingStatus.RECORDING) {
-            TestingTools.event("action_outcome", org.json.JSONObject().put("outcome", outcome.name).put("epoch", actionEpoch))
+            TestingTools.event("action_outcome", org.json.JSONObject().put("outcome", outcome.name).put("epoch", actionEpoch)
+                .put("requestId", requestId ?: org.json.JSONObject.NULL))
         }
         _state.update { current ->
             val telemetry = current.actionDispatchTelemetry
@@ -328,6 +339,10 @@ object AirRuntime {
     }
 
     fun pointerSnapshot(): PointerSnapshot = state.value.pointer
+
+    internal fun setCalibrationGesture(frame: CalibrationGestureFrame?) {
+        _state.update { it.copy(calibrationGesture = frame) }
+    }
 
     fun rawPointerSnapshot(): PointerSnapshot = state.value.rawPointer
 

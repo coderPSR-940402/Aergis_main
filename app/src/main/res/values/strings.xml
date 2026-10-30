@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="action_calibrate_pointer">Calibrate pointer</string>
     <string name="app_name">Aergis</string>
     <string name="accessibility_description">Aergis uses accessibility gestures to perform configured device actions.</string>
     <string name="app_tagline">Air gesture control • 0.10.0-preview</string>
@@ -312,8 +313,8 @@
     <string name="action_focus_previous">Focus previous control</string>
     <string name="action_activate_focused">Activate focused control</string>
     <string name="motion_armed_help">Motion armed: hold still briefly, then move once. Expires in 3 seconds.</string>
-    <string name="pointer_clicking">Pointer clicking</string>
-    <string name="pointer_clicking_help">Thumb–middle contact taps the pointer target, independently of Gesture Commands.</string>
+    <string name="pointer_clicking">Pinch clicking</string>
+    <string name="pointer_clicking_help">Thumb–middle contact clicks once: tap the anchored target with the pointer on, or activate the highlighted item with it off. Works independently of Gesture Commands.</string>
     <string name="mapping_double_gun_left">Double finger gun left</string>
     <string name="mapping_double_gun_right">Double finger gun right</string>
     <string name="mapping_double_gun_up">Double finger gun up</string>
@@ -324,4 +325,21 @@
     <string name="gaze_lab">Gaze Lab (experimental)</string>
     <string name="navigation_gesture_help">With pointer off, map Double finger gun Up/Down to Scroll Up/Down and Left/Right to Swipe Left/Right. Map distinct poses to Next screen item, Previous screen item and Select highlighted item. Yellow outlines mark exposed clickable controls. New poses are disabled until mapped; keep a neutral interval between commands.</string>
     <string name="pose_gun_help">Extend thumb and index for Finger gun; extend thumb, index and middle for Double finger gun. Fold ring and little fingers. Direction follows the screen; avoid diagonals. Existing generic mappings remain unless a directional mapping is assigned.</string>
+    <string name="action_toggle_pointer">Toggle precision pointer</string>
+    <string name="touch_free_preset_apply">Add touch-free navigation mappings</string>
+    <string name="touch_free_preset_help">Fill unassigned poses with next item, previous item, select, scrolling, app search, system panels, motion control and pointer toggle. Existing assignments stay unchanged. Review the mappings below and practise the poses before use.</string>
+    <string name="touch_free_preset_complete">All navigation setup actions have a gesture assigned. Existing mappings were kept.</string>
+    <string name="touch_free_preset_missing">Still unassigned: %1$s. Assign these actions to gestures below. Existing mappings were kept.</string>
+    <string name="calibration_touch_free">Touch-free: aim steadily at each corner, then pinch thumb to middle finger once. After four corners, hold an open palm for 1 second to save. Hold a closed fist for 1.2 seconds to cancel. Actions stay disarmed.</string>
+    <string name="calibration_wrong_corner">Corner not captured. Follow the indicated corner order and keep opposite edges aligned. Release the pinch, aim steadily, then try again.</string>
+    <string name="action_feedback_message">%1$s · %2$s</string>
+    <string name="feedback_requested">Waiting for Android</string>
+    <string name="feedback_submitted">Submitted to Android</string>
+    <string name="feedback_input_finished">Android finished input</string>
+    <string name="feedback_executed">Executed</string>
+    <string name="feedback_cancelled">Input cancelled</string>
+    <string name="feedback_blocked">Blocked by control or screen safety</string>
+    <string name="feedback_rejected">Rejected or input busy</string>
+    <string name="feedback_unavailable">Target or capability unavailable</string>
+    <string name="feedback_failed">Action failed</string>
 </resources>

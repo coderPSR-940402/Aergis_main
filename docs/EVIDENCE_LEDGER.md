@@ -1,5 +1,159 @@
 # Aergis Evidence Ledger and Decision Log
 
+
+## Current continuation — 2026-10-28: five touchless-runtime improvements
+
+Base: PR #74 `e825204c8915afb716a9f9760b2536e6c10f7bb3`, CI #330 successful;
+main/build reference `a53596b`. The owner requested all five following changes.
+No new device evidence or acceptance has arrived for the new implementation.
+
+- Visibility: explicit joint masks per gesture and conservative neutral evidence.
+  Unused DIP joints no longer veto poses; thumb-base requirements depend on the
+  gesture. Every distinguishing fingertip/bend and palm anchor remains required.
+  Existing full evaluator and canned index-bone readiness rules are preserved;
+  landmark poses use their own angle/extension validation. Custom geometry is
+  computed once and reused for directional identity.
+- Capture: native CameraX RGBA replaces Java per-pixel YUV conversion on the primary
+  path. Request only advertised FAST noise/edge modes, with absent/unsupported
+  Camera2 metadata leaving defaults. Existing 640x480 preference, advertised <=60 FPS
+  selection, rate-bind fallback, KEEP_ONLY_LATEST and owned-buffer lifetime remain.
+  Native conversion changes processing cost and may change low-light noise; actual
+  frame age/FPS and tracking quality must be measured on A54, not inferred from CI.
+- Inference: armed commands-off sessions lazily use the exact hand-landmarker
+  submodel from the existing pinned bundle. Every commands-on session and rehearsal
+  retains full GestureRecognizer classification. Cached models run on the same
+  single worker; only one task runs per frame. Missing classifier labels are empty,
+  never invented confident neutral. Initialization/runtime failure falls back to
+  the full recognizer. Both models close on the existing worker lifecycle.
+  The extractor reproduces all 7,819,105 pinned submodel bytes; SHA-256:
+  `1c454b1f487e6a9f46d1e2cda05454c00189735d250e427d3b472e30c843ede1`.
+- Pinch: a previously trusted frozen target can bridge <=350 ms of index refit only
+  with fresh owned thumb/middle/palm geometry and an actual confirmed pinch. Refits
+  cannot refresh that trust clock, move the target, seed image tracking or provide
+  raw calibration samples. Epoch/owner/mapping/filter/disable/pause/hand-loss resets
+  revoke the anchor. Native pointer dispatch receives the original source epoch.
+- Calibration: append CALIBRATE_POINTER without renaming/reassigning old actions.
+  Its backend cancels native pointer touch, disarms and opens/reuses MainActivity,
+  starting the existing guided capture once. No camera auto-start or auto-arming.
+  Existing corner capture/review/Save/Cancel controls and stored-profile protections
+  remain the workflow; this is gesture-triggered entry, not automatic corner capture.
+
+Verification before Android CI: 63 selected production-core JUnit tests, 13 Python
+checks, exact pinned-submodel extraction, XML parsing and whitespace checks pass.
+New unused-joint and explicitly authorized index-refit cases were observed failing
+before their corrections. Native tests cover actual partial-hand command dispatch
+and neutral/rearm, one anchored tap across precision/NaN refits, the 350 ms bound,
+pause/epoch rejection, camera request options, absent classifier categories,
+calibration cold/warm/recreation entry and native Compose destination requests.
+These Android tests and APK/lint checks await CI; no device result is claimed.
+
+Author self-review only, honoring the single-agent instruction. Sensitive areas:
+recognition geometry, CameraX processing/format, MediaPipe task selection/lifetime,
+pointer-action authority and calibration entry. Pointer x/y transforms, filter
+algorithms, calibration math/profile storage and native touch implementation retain
+baseline contracts. Full-plan detail: `docs/superpowers/plans/2026-10-28-touchless-runtime.md`.
+
+Acceptance remains exact-APK A54 operation: intended AND unintended gestures with
+partial hands, low-light color/noise and delivery timing, optional GPU path/fallback,
+commands-on/off transitions, index refits/expiry and safety/owner changes, then
+mapped calibration from pointer-off mode. Do not merge/promote from CI alone.
+
+
+## Previous continuation — 2026-10-28: depth-separated overlap veto
+
+Re-evaluation of PR #74 head `1bfb87c55a6eb43ebffdc176d27bf05d8638e2b0`
+(CI #328 successful) found a missing negative case in the projected-contact change.
+Existing palm-roll coverage rotated fingers along the same axis as palm width.
+Rigid pitch along the perpendicular axis can hide open-finger separation in depth
+and synthesize a click. Two added production-interpreter tests reproduce this on
+that head: 80-degree pitch of an open hand and depth-separated fingertip overlap.
+This is a code-reproduced regression, not a new device observation.
+
+Keep projected thumb-middle contact but veto new contact when combined image/depth
+separation reaches the existing 0.32 clearly-open boundary. Normalize against the
+same projected palm width; estimated palm depth never enlarges the denominator.
+Smaller combined separation remains tolerated. Depth alone never rearms
+an already consumed click or grants projected opening evidence. Invalid depth
+units reset pending confirmation. No contact/release constant or time threshold
+is changed; applying the existing release boundary to spatial separation is a new
+conservative eligibility rule, not device-calibrated proof of physical contact.
+
+MediaPipe z remains in unrotated sensor-width units after the app's x/y rotation.
+Convert z to upright image-height units using 1 for 90/270-degree buffers and the
+upright width/height ratio for 0/180. Preserve pointer x/y, filters and calibration.
+Reference: [MediaPipe hand landmarks](https://github.com/google-ai-edge/mediapipe/blob/master/docs/solutions/hands.md#multi_hand_landmarks).
+
+Host verification: the two new negatives fail before the correction; a third
+rigid-pitch case rejects combining .17 image/.294 depth into apparent contact
+(unchanged spatial separation .34). The depth-only veto failed that case;
+combining both components in the open veto corrects it; all 48 selected
+production-core JUnit tests pass afterward, including all earlier contact positives,
+palm roll, timing, release, held-contact and anchoring tests. A table of eight
+rounded projected/depth candidate ratios from the earlier CLICK segment keeps seven
+eligible. The .145 image/.307 depth candidate is rejected: combined separation is
+.340, above the open boundary. These are eligibility checks, not recovered-click
+or accuracy claims. Thirteen Python tooling tests pass. Native regressions cover blocked depth-separated overlap, correct
+quarter-turn depth units and valid contact recovery; full Android CI is required.
+
+Scope: pinch geometry, confirmation eligibility and the engine's depth-unit input.
+CameraX, MediaPipe model/delegate/mode, pointer filters, x/y transforms, calibration,
+accessibility execution and lifecycle are unchanged by this correction. Existing
+PR #74 navigation remains intact. Main/build reference stays `a53596b`.
+
+Residual risks: monocular depth can still underestimate separation or overestimate
+true contact. Severe foreshortening and false projected release remain device
+acceptance cases. The existing rejection of untrusted pointer positions must not
+be bypassed to recover a consumed click. Pipeline delay and whole-hand gesture
+rejection are not solved here. The latest recording still identifies CI #327;
+there is no device acceptance for #328 or this correction. Do not promote either
+as a functional baseline or merge without exact-APK physical acceptance.
+
+
+## Previous continuation — 2026-10-27: projected thumb-middle contact
+
+- Main and automatic build reference resolve to `a53596b2d2c25ced3026d42a31d9b10b60225b5f`.
+  Preserve PR #74's navigation changes at `1bb69d4e637b43ec3d5eb5fa746242d29f7e8703`;
+  merge current main's recording-tooling changes into that branch before this correction.
+- Latest supplied A54 / Android 16 recording identifies PR #74 merge
+  `5385146d296b06de6fc7dad5af5c052782071e49`, CI #327. Across 1,215 records,
+  two native TAP requests have COMPLETED callbacks. This proves two dispatches, not
+  reliable target activation or release acceptance. The owner reports missed clicks.
+- In the labelled CLICK segment, 117 frames expose contact measurements. Eight have
+  aspect-corrected image-plane thumb-middle/palm separation below the existing 0.18
+  threshold; only one passes the current 3D metric. All eight retain pointer-touch
+  eligibility. Sampled camera images around several discrepancies show fingers together;
+  the 2 FPS images do not establish every attempted click or exact contact timing.
+- Root cause reproduced with synthetic geometry: inferred fingertip depth changes
+  a projected contact ratio of 0.10 into 0.269, suppressing confirmation. Inferred
+  palm-depth expansion can conversely admit visibly separated fingers. The prior
+  mixed 2D-tip/3D-palm metric must not be restored either.
+
+Correction: measure BOTH fingertip separation and palm width in aspect-corrected
+upright image coordinates. No contact/release threshold or timing change. Preserve
+finite/visible relevant-landmark checks, ownership/epoch/freshness gates, observed
+opening, high-rate confirmation, refractory guard, one tap per contact, pointer
+anchor and native dispatch. No CameraX, MediaPipe delegate/mode, filter, calibration,
+gesture mapping or lifecycle change in this correction. Existing PR #74 navigation
+implementation remains intact.
+
+Verification before CI: five new synthetic regressions fail against the unchanged
+metric; after correction all 40 selected production-core JUnit tests pass, including
+existing palm-roll, partial-hand, aspect, contact/release and anchoring cases. Host
+stubs cover Android clock, the unused MediaPipe smoother overload and mapping-store
+access only. Thirteen Python tooling tests and whitespace checks pass. Added actual
+engine-to-native-dispatch regression requires Android CI. Local Gradle bootstrap is
+network-blocked; do not claim a local Android build.
+
+Regression risk: projected fingertip overlap is not proof of physical touch. Check
+unintended commands as well as misses, especially oblique hands, passing fingers,
+held contact and release. Severe palm foreshortening can still make contact difficult.
+The correction does not solve the recorded roughly 12 FPS / 211 ms pipeline delay or
+whole-hand command rejection. No click-accuracy rate, device success or baseline
+promotion is claimed. Keep PR #74 unmerged until acceptance of the exact new APK:
+normal-posture repeated taps on labelled targets; no click from ordinary hand roll;
+no repeat during hold; release/reclick, pause/resume and partial-hand cancellation;
+gesture-only next/previous/select, scrolling and pointer toggling remain required.
+
 ## Current continuation — 2026-10-19: visible viewport authority
 
 ### Current reality and recording evidence

@@ -20,6 +20,8 @@ internal fun AergisShell(
     gesturesEnabled: Boolean,
     initialDestination: AergisDestination = AergisDestination.CONTROL,
     onEntering: (AergisDestination) -> Unit = {},
+    requestedDestination: AergisDestination? = null,
+    onDestinationHandled: () -> Unit = {},
     content: @Composable (AergisDestination, (AergisDestination) -> Unit) -> Unit
 ) {
     // Keep a String saveable, compatible with the previous shell's selectedName state.
@@ -31,6 +33,13 @@ internal fun AergisShell(
         if (destination != selected) {
             onEntering(destination)
             routeNames = navigation.open(destination).routes.joinToString("|")
+        }
+    }
+    LaunchedEffect(requestedDestination) {
+        requestedDestination?.let { destination ->
+            onEntering(destination)
+            routeNames = navigation.open(destination).routes.joinToString("|")
+            onDestinationHandled()
         }
     }
     val back: () -> Unit = { routeNames = navigation.back().routes.joinToString("|") }
@@ -66,6 +75,8 @@ internal fun AergisShell(
                 }
             }
             SessionLabel(gesturesEnabled)
+            // ActionFeedbackOverlay owns transient outcomes outside this activity's
+            // scanned tree: changing content here invalidates selection identities.
             if (!selected.root && selected != AergisDestination.WELCOME) {
                 TextButton(onClick = back, modifier = Modifier.padding(horizontal = 8.dp).heightIn(min = 48.dp)) {
                     Text(stringResource(R.string.product_back))

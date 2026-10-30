@@ -6,6 +6,56 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class GestureInterpreterThumbMiddleTest {
+    @Test fun invalidIndexCannotPoisonThePointerFiltersOnRecovery() {
+        for (badTip in listOf(Point3D(8f,.5f), Point3D(-8f,.5f), Point3D(.5f,8f),
+            Point3D(.5f,-8f), Point3D(Float.NaN,.5f))) {
+            val clean = GestureInterpreter()
+            val interrupted = GestureInterpreter()
+            clean.processFrame(pose(false),1000L)
+            interrupted.processFrame(pose(false),1000L)
+            interrupted.processFrame(pose(false).apply { this[8] = badTip },1033L)
+            val expected = clean.processFrame(pose(false),1066L)!!
+            val recovered = interrupted.processFrame(pose(false),1066L)!!
+            assertEquals("Rejected X must not alter the next valid position",expected.smoothedX,recovered.smoothedX,.00001f)
+            assertEquals("Rejected Y must not alter the next valid position",expected.smoothedY,recovered.smoothedY,.00001f)
+        }
+    }
+
+    @Test fun offFrameTipCancelsContactUntilAnOpeningIsObserved() {
+        val interpreter = GestureInterpreter()
+        interpreter.processFrame(pose(false),1000L)
+        interpreter.processFrame(pose(true),1033L)
+        assertNull(interpreter.processFrame(pose(true).apply { this[8] = Point3D(1.1f,.5f) },1066L))
+        assertFalse(interpreter.processFrame(pose(true),1166L)!!.isClickEngaged)
+        interpreter.processFrame(pose(false),1266L)
+        assertTrue(interpreter.processFrame(pose(true),1366L)!!.isClickEngaged)
+    }
+
+    @Test fun authorizedFiniteRefitKeepsTheStablePointWithoutLearningTheBadCoordinate() {
+        val interpreter = GestureInterpreter()
+        val initial = interpreter.processFrame(pose(false),1000L)!!
+        val refit = interpreter.processFrame(pose(true).apply { this[8] = Point3D(8f,-8f) },1100L,
+            allowIndexRefit = true)!!
+        assertTrue(refit.isClickEngaged)
+        assertEquals(initial.smoothedX,refit.smoothedX,0f)
+        assertEquals(initial.smoothedY,refit.smoothedY,0f)
+        val recovered = interpreter.processFrame(pose(true),1200L)!!
+        assertEquals(initial.smoothedX,recovered.smoothedX,.00001f)
+        assertEquals(initial.smoothedY,recovered.smoothedY,.00001f)
+        assertFalse(recovered.isClickEngaged)
+    }
+
+    @Test fun explicitlyAuthorizedIndexRefitCannotVetoVisibleThumbMiddleContact() {
+        val interpreter = GestureInterpreter()
+        interpreter.processFrame(pose(closed = false), 1000L)
+        val refit = pose(closed = true).apply { this[8] = Point3D(Float.NaN, Float.NaN, Float.NaN) }
+        val result = interpreter.processFrame(refit, 1100L, allowIndexRefit = true)
+        assertNotNull(result)
+        assertTrue(result!!.isClickEngaged)
+        assertTrue(result.smoothedX.isFinite())
+        assertFalse(interpreter.processFrame(refit, 1200L, allowIndexRefit = true)!!.isClickEngaged)
+    }
+
     @Test fun contactConfirmsOnceAndKeepsPressedStateUntilRelease() {
         val interpreter = GestureInterpreter()
         interpreter.processFrame(pose(closed = false), 1L)

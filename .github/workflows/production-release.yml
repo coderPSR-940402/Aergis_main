@@ -1,0 +1,152 @@
+name: Aergis production candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: 'Full 40-character accepted commit on main (older source for rollback)'
+        required: true
+        type: string
+      mode:
+        description: 'Candidate kind'
+        required: true
+        type: choice
+        options: [release, rollback]
+      data_compatible:
+        description: 'For rollback: reviewed older source against current saved settings/data'
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aergis-production
+  cancel-in-progress: false
+
+env:
+  SOURCE_SHA: ${{ inputs.source_sha }}
+  RELEASE_MODE: ${{ inputs.mode }}
+  DATA_COMPATIBLE: ${{ inputs.data_compatible }}
+
+jobs:
+  build:
+    if: github.ref == 'refs/heads/main' && github.repository == 'coderPSR-940402/Aergis_main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    outputs:
+      version_code: ${{ steps.request.outputs.version_code }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate integrated source and rollback review
+        id: request
+        run: python3 tools/production_release.py prepare
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Prepare Android SDK
+        run: |
+          set -euo pipefail
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-36' 'build-tools;36.0.0'
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6
+        with:
+          cache-disabled: true
+      - name: Recheck selected source and build unsigned production candidate
+        working-directory: source
+        env:
+          GITHUB_SHA: ${{ inputs.source_sha }}
+          AERGIS_PRODUCTION_VERSION_CODE: ${{ steps.request.outputs.version_code }}
+          AERGIS_PRODUCTION_VERSION_NAME: ${{ steps.request.outputs.version_name }}
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tools -p 'test_*.py'
+          ./gradlew test :app:lint :app:assembleRelease --no-daemon --no-build-cache --stacktrace
+      - name: Verify unsigned candidate
+        env:
+          VERSION_CODE: ${{ steps.request.outputs.version_code }}
+          VERSION_NAME: ${{ steps.request.outputs.version_name }}
+        run: |
+          set -euo pipefail
+          python3 tools/verify_apk.py source/app/build/outputs/apk/release/app-release-unsigned.apk --aapt "$ANDROID_HOME/build-tools/36.0.0/aapt" --version-code "$VERSION_CODE" --version-name "$VERSION_NAME"
+      - name: Stage immutable candidate inputs
+        run: |
+          mkdir candidate
+          cp source/app/build/outputs/apk/release/app-release-unsigned.apk release-request.json candidate/
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: production-unsigned-${{ github.run_id }}-${{ github.run_attempt }}
+          path: candidate/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload validation reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: production-reports-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            source/app/build/reports/
+            source/app/build/test-results/
+          retention-days: 30
+
+  sign:
+    needs: build
+    # Configure this environment to allow main only. Keep private keys only here.
+    environment: production-signing
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: production-unsigned-${{ github.run_id }}-${{ github.run_attempt }}
+          path: candidate
+          merge-multiple: true
+      - name: Prepare signing tools
+        run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "build-tools;36.0.0"'
+      - name: Sign and independently verify candidate
+        env:
+          PRODUCTION_KEYSTORE_BASE64: ${{ secrets.PRODUCTION_KEYSTORE_BASE64 }}
+          PRODUCTION_STORE_PASSWORD: ${{ secrets.PRODUCTION_STORE_PASSWORD }}
+          PRODUCTION_KEY_PASSWORD: ${{ secrets.PRODUCTION_KEY_PASSWORD }}
+          PRODUCTION_KEY_ALIAS: ${{ secrets.PRODUCTION_KEY_ALIAS }}
+          PRODUCTION_CERT_SHA256: ${{ vars.PRODUCTION_CERT_SHA256 }}
+        run: python3 tools/production_release.py sign
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: Aergis-production-${{ needs.build.outputs.version_code }}
+          path: production/
+          if-no-files-found: error
+          retention-days: 90
+      - name: Clean signing material
+        if: always()
+        run: |
+          rm -rf "$RUNNER_TEMP"/aergis-sign-*
+          rm -rf production candidate
+
+  draft:
+    needs: [build, sign]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: Aergis-production-${{ needs.build.outputs.version_code }}
+          path: production
+      - name: Retain candidate as an unpublished draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION_CODE: ${{ needs.build.outputs.version_code }}
+        run: |
+          set -euo pipefail
+          gh release create "production-$VERSION_CODE" production/* --draft --target "$SOURCE_SHA" --title "Aergis production candidate $VERSION_CODE" --notes-file production/release-notes.md

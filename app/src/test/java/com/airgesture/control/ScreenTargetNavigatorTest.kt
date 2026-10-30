@@ -12,9 +12,50 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk=[35])
 class ScreenTargetNavigatorTest {
+    @Test fun nativeClickConfirmationMatchesTheExactActivatedNodeAndRequestOnce() {
+        val node=target("Open") { }
+        val other=target("Other") { }
+        val events=mutableListOf<ScreenSelectionEvent>()
+        val navigator=ScreenTargetNavigator(VisibleHighlight(),events::add)
+        assertTrue(navigator.perform(node,AirAction.NEXT_ITEM,1L))
+        assertTrue(navigator.perform(node,AirAction.SELECT_ITEM,1L,42L))
+        @Suppress("DEPRECATION")
+        val event=android.view.accessibility.AccessibilityEvent.obtain(
+            android.view.accessibility.AccessibilityEvent.TYPE_VIEW_CLICKED)
+        shadowOf(event).setWindowId(node.windowId)
+        shadowOf(event).setSourceNode(other)
+        navigator.observe(event,1L)
+        assertEquals("activation_accepted",events.last().kind)
+        shadowOf(event).setSourceNode(node)
+        navigator.observe(event,1L)
+        assertEquals("activation_confirmed",events.last().kind)
+        assertEquals(42L,events.last().requestId)
+        val count=events.size
+        navigator.observe(event,1L)
+        assertEquals(count,events.size)
+        navigator.close()
+    }
+
+    @Test fun expiredOrRevokedActivationRecordsWhyItWasNotConfirmed() {
+        val node=target("Private label") { }
+        val events=mutableListOf<ScreenSelectionEvent>()
+        val navigator=ScreenTargetNavigator(VisibleHighlight(),events::add)
+        assertTrue(navigator.perform(node,AirAction.NEXT_ITEM,1L))
+        assertTrue(navigator.perform(node,AirAction.SELECT_ITEM,1L,42L))
+        navigator.expireActivation(2L)
+        assertEquals("activation_unconfirmed",events.last().kind)
+        assertEquals("selection_authority_changed",events.last().reason)
+        assertFalse(events.toString().contains("Private label"))
+        assertTrue(navigator.perform(node,AirAction.NEXT_ITEM,2L))
+        assertTrue(navigator.perform(node,AirAction.SELECT_ITEM,2L,43L))
+        navigator.expireActivation(2L,Long.MAX_VALUE)
+        assertEquals("no_matching_click_event",events.last().reason)
+        navigator.close()
+    }
     private class VisibleHighlight : ScreenTargetHighlight {
+        var lastBounds: Rect? = null
         override var isVisible = false
-        override fun show(target: Rect): Boolean { isVisible=true; return true }
+        override fun show(target: Rect): Boolean { lastBounds=Rect(target); isVisible=true; return true }
         override fun hide() { isVisible=false }
     }
     @Suppress("DEPRECATION")
@@ -26,6 +67,197 @@ class ScreenTargetNavigatorTest {
             if (action == AccessibilityNodeInfo.ACTION_CLICK) { click(); true } else false
         }
     }
+    private fun container() = target("") { }.apply { isClickable = false }
+
+    @Test fun replacingSiblingLabelRevokesTheSelectedRowButton() {
+        var clicks = 0
+        val row = container()
+        val label = target("Original item") { }.apply { isClickable = false }
+        val button = target("Delete") { clicks++ }
+        shadowOf(row).addChild(label); shadowOf(row).addChild(button)
+        val highlight = VisibleHighlight()
+        val navigator = ScreenTargetNavigator(highlight)
+        assertTrue(navigator.perform(row, AirAction.NEXT_ITEM, 1L))
+        label.text = "Replacement item"
+        assertFalse(navigator.refresh(row, 1L))
+        assertFalse(highlight.isVisible)
+        assertFalse(navigator.perform(row, AirAction.SELECT_ITEM, 1L))
+        assertEquals(0, clicks)
+    }
+
+    @Test fun confirmationRechecksSiblingLabelEvenWithoutAContentEvent() {
+        var clicks = 0
+        val row = container()
+        val label = target("Original item") { }.apply { isClickable = false }
+        shadowOf(row).addChild(label)
+        shadowOf(row).addChild(target("Delete") { clicks++ })
+        val navigator = ScreenTargetNavigator(VisibleHighlight())
+        assertTrue(navigator.perform(row, AirAction.NEXT_ITEM, 1L))
+        label.text = "Replacement item"
+        assertFalse(navigator.perform(row, AirAction.SELECT_ITEM, 1L))
+        assertEquals(0, clicks)
+    }
+
+    @Suppress("DEPRECATION")
+    @Test fun nestedButtonUsesItsContainingCollectionItemIdentity() {
+        var clicks = 0
+        val root = container()
+        val row = container().apply {
+            collectionItemInfo = AccessibilityNodeInfo.CollectionItemInfo.obtain(0, 1, 0, 1, false)
+        }
+        val label = target("Original item") { }.apply { isClickable = false }
+        val actions = container()
+        shadowOf(root).addChild(row)
+        shadowOf(row).addChild(label); shadowOf(row).addChild(actions)
+        shadowOf(actions).addChild(target("Delete") { clicks++ })
+        val navigator = ScreenTargetNavigator(VisibleHighlight())
+        assertTrue(navigator.perform(root, AirAction.NEXT_ITEM, 1L))
+        label.text = "Replacement item"
+        assertFalse(navigator.refresh(root, 1L))
+        assertFalse(navigator.perform(root, AirAction.SELECT_ITEM, 1L))
+        assertEquals(0, clicks)
+    }
+
+    @Suppress("DEPRECATION")
+    @Test fun updatingAnotherCollectionRowRetainsTheSelectedButtonAndConsumesItOnce() {
+        var clicks = 0
+        val root = container()
+        val selectedRow = container().apply {
+            collectionItemInfo = AccessibilityNodeInfo.CollectionItemInfo.obtain(0, 1, 0, 1, false)
+        }
+        val otherRow = container()
+        val otherLabel = target("Other item") { }.apply { isClickable = false }
+        shadowOf(root).addChild(selectedRow); shadowOf(root).addChild(otherRow)
+        shadowOf(selectedRow).addChild(target("Selected item") { }.apply { isClickable = false })
+        shadowOf(selectedRow).addChild(target("Delete") { clicks++ })
+        shadowOf(otherRow).addChild(otherLabel)
+        val highlight = VisibleHighlight()
+        val navigator = ScreenTargetNavigator(highlight)
+        assertTrue(navigator.perform(root, AirAction.NEXT_ITEM, 1L))
+        otherLabel.text = "Updated other item"
+        assertTrue(navigator.refresh(root, 1L))
+        assertTrue(highlight.isVisible)
+        assertTrue(navigator.perform(root, AirAction.SELECT_ITEM, 1L))
+        assertFalse(navigator.perform(root, AirAction.SELECT_ITEM, 1L))
+        assertEquals(1, clicks)
+    }
+
+    @Test fun nestedButtonWithoutCollectionMetadataRevokesOnRowReplacement() {
+        assertNestedUnlabelledRowRevoked(refreshFirst = true)
+    }
+
+    @Test fun nestedButtonWithoutCollectionMetadataRechecksBeforeClick() {
+        assertNestedUnlabelledRowRevoked(refreshFirst = false)
+    }
+
+    private fun assertNestedUnlabelledRowRevoked(refreshFirst: Boolean) {
+        var clicks = 0
+        val root = container()
+        val row = container()
+        val label = target("Original item") { }.apply { isClickable = false }
+        val actions = container()
+        shadowOf(root).addChild(row)
+        shadowOf(row).addChild(label); shadowOf(row).addChild(actions)
+        shadowOf(actions).addChild(target("Delete") { clicks++ })
+        val highlight = VisibleHighlight()
+        val navigator = ScreenTargetNavigator(highlight)
+        assertTrue(navigator.perform(root, AirAction.NEXT_ITEM, 1L))
+        assertTrue(navigator.refresh(root, 1L))
+        label.text = "Replacement item"
+        if (refreshFirst) {
+            assertFalse(navigator.refresh(root, 1L))
+            assertFalse(highlight.isVisible)
+        }
+        assertFalse(navigator.perform(root, AirAction.SELECT_ITEM, 1L))
+        assertEquals(0, clicks)
+    }
+
+    @Test fun recycledClickableRowCannotRetainSelectionAfterItsChildLabelChanges() {
+        var clicks = 0
+        val row = target("") { clicks++ }
+        val child = target("Original app") { }.apply { isClickable = false }
+        shadowOf(row).addChild(child)
+        val navigator = ScreenTargetNavigator(VisibleHighlight())
+        assertTrue(navigator.perform(row, AirAction.NEXT_ITEM, 1L))
+        assertTrue(navigator.refresh(row, 1L))
+        child.text = "Different app"
+        assertFalse(navigator.refresh(row, 1L))
+        assertFalse(navigator.perform(row, AirAction.SELECT_ITEM, 1L))
+        assertEquals(0, clicks)
+    }
+
+    @Test fun contentRefreshRetainsOnlyTheExactVisibleTarget() {
+        var clicks = 0
+        val node = target("Open") { clicks++ }
+        val highlight = VisibleHighlight()
+        val navigator = ScreenTargetNavigator(highlight)
+        assertTrue(navigator.perform(node, AirAction.NEXT_ITEM, 1L))
+        assertTrue(navigator.refresh(node, 1L))
+        assertTrue(highlight.isVisible)
+        assertEquals(0, clicks)
+        assertTrue(navigator.perform(node, AirAction.SELECT_ITEM, 1L))
+        assertEquals(1, clicks)
+        assertTrue(navigator.perform(node, AirAction.NEXT_ITEM, 1L))
+        node.text = "Replacement"
+        assertFalse(navigator.refresh(node, 1L))
+        assertFalse(highlight.isVisible)
+        assertFalse(navigator.perform(node, AirAction.SELECT_ITEM, 1L))
+    }
+    @Test fun boundsOnlyLayoutChangePreservesTheSameUnlabelledCollectionTarget() {
+        var clicks = 0
+        val root = container()
+        val node = target("Open account") { clicks++ }
+        shadowOf(root).addChild(node)
+        val navigator = ScreenTargetNavigator(VisibleHighlight())
+        assertTrue(navigator.perform(root, AirAction.NEXT_ITEM, 1L))
+        node.setBoundsInScreen(Rect(10,120,100,210))
+        assertTrue(navigator.refresh(root, 1L))
+        assertTrue(navigator.perform(root, AirAction.SELECT_ITEM, 1L))
+        assertEquals(1, clicks)
+    }
+
+    @Test fun selectionEventsRecordMovementAndActivationWithRequestIdentity() {
+        val events = mutableListOf<ScreenSelectionEvent>()
+        val node = target("Private label never logged") { }
+        val navigator = ScreenTargetNavigator(VisibleHighlight(), events::add)
+        assertTrue(navigator.perform(node, AirAction.NEXT_ITEM, 1L, 10L))
+        assertTrue(navigator.perform(node, AirAction.SELECT_ITEM, 1L, 11L))
+        assertEquals(listOf("selected", "activation_accepted"), events.map { it.kind })
+        assertEquals(listOf(10L, 11L), events.map { it.requestId })
+        assertEquals(events.first().selectionId, events.last().selectionId)
+    }
+
+    @Test fun revokedAuthorityDuringTheWindowScanCannotActivateTheTarget() {
+        var clicks = 0
+        val node = target("Open") { clicks++ }
+        val navigator = ScreenTargetNavigator(VisibleHighlight())
+        assertTrue(navigator.perform(node, AirAction.NEXT_ITEM, 1L))
+        assertFalse(navigator.perform(node, AirAction.SELECT_ITEM, 1L, 1L) { false })
+        assertEquals(0, clicks)
+    }
+
+    @Test fun changedBoundsAtConfirmationNeedAFreshHighlightedConfirmation() {
+        var clicks = 0
+        val node = target("Open") { clicks++ }
+        val navigator = ScreenTargetNavigator(VisibleHighlight())
+        assertTrue(navigator.perform(node, AirAction.NEXT_ITEM, 1L))
+        node.setBoundsInScreen(Rect(10,120,100,210))
+        assertFalse(navigator.perform(node, AirAction.SELECT_ITEM, 1L))
+        assertEquals(0, clicks)
+        assertTrue(navigator.perform(node, AirAction.SELECT_ITEM, 1L))
+        assertEquals(1, clicks)
+    }
+
+    @Test fun navigationAtTheBoundaryRecordsNoMovementExplicitly() {
+        val events = mutableListOf<ScreenSelectionEvent>()
+        val navigator = ScreenTargetNavigator(VisibleHighlight(), events::add)
+        val node = target("Only item") { }
+        assertTrue(navigator.perform(node, AirAction.NEXT_ITEM, 1L, 1L))
+        assertTrue(navigator.perform(node, AirAction.NEXT_ITEM, 1L, 2L))
+        assertEquals(listOf("selected", "unchanged"), events.map { it.kind })
+        assertEquals("navigation_boundary", events.last().reason)
+    }
+
     @Test fun actualNodeClickOccursOnlyOnceAfterVisibleSelection() {
         var clicked=0; val node=target("Open") { clicked++ }
         val highlight=VisibleHighlight(); val navigator=ScreenTargetNavigator(highlight)
@@ -55,5 +287,60 @@ class ScreenTargetNavigatorTest {
         node.isEnabled=true; node.isPassword=true
         assertFalse(navigator.perform(node,AirAction.NEXT_ITEM,1L))
         assertEquals(0,clicked)
+    }
+    @Suppress("DEPRECATION")
+    @Test fun uniqueCollectionRowFollowsAnInsertionAndUpdatesHighlightBounds() {
+        var clicks = 0
+        val original = target("Account A") { clicks++ }.apply {
+            collectionItemInfo = AccessibilityNodeInfo.CollectionItemInfo.obtain(0,1,0,1,false)
+        }
+        val firstRoot = container()
+        shadowOf(firstRoot).addChild(original)
+        val highlight = VisibleHighlight()
+        val navigator = ScreenTargetNavigator(highlight)
+        assertTrue(navigator.perform(firstRoot, AirAction.NEXT_ITEM, 1L))
+        val movedRoot = container()
+        shadowOf(movedRoot).addChild(target("Account B") { fail("Wrong row clicked") }.apply {
+            collectionItemInfo = AccessibilityNodeInfo.CollectionItemInfo.obtain(0,1,0,1,false)
+        })
+        val moved = target("Account A") { clicks++ }.apply {
+            setBoundsInScreen(Rect(10,120,100,210))
+            collectionItemInfo = AccessibilityNodeInfo.CollectionItemInfo.obtain(1,1,0,1,false)
+        }
+        shadowOf(movedRoot).addChild(moved)
+        assertTrue(navigator.refresh(movedRoot,1L))
+        assertEquals(Rect(10,120,100,210),highlight.lastBounds)
+        assertTrue(navigator.perform(movedRoot,AirAction.SELECT_ITEM,1L))
+        assertEquals(1,clicks)
+    }
+
+    @Suppress("DEPRECATION")
+    @Test fun duplicateCollectionRowsCannotBeConfirmed() {
+        val root = container()
+        val row = target("Same account") { fail("Ambiguous row clicked") }.apply {
+            collectionItemInfo = AccessibilityNodeInfo.CollectionItemInfo.obtain(0,1,0,1,false)
+        }
+        shadowOf(root).addChild(row)
+        val navigator = ScreenTargetNavigator(VisibleHighlight())
+        assertTrue(navigator.perform(root,AirAction.NEXT_ITEM,1L))
+        shadowOf(root).addChild(target("Same account") { fail("Ambiguous row clicked") }.apply {
+            collectionItemInfo = AccessibilityNodeInfo.CollectionItemInfo.obtain(1,1,0,1,false)
+        })
+        assertFalse(navigator.perform(root,AirAction.SELECT_ITEM,1L))
+    }
+    @Suppress("DEPRECATION")
+    @Test fun replacingCollectionContainerRevokesIdenticalRowContent() {
+        var clicks = 0
+        val root = container()
+        val list = container().apply { viewIdResourceName = "com.example.safe:id/inbox" }
+        val row = target("Delete account A") { clicks++ }.apply {
+            collectionItemInfo = AccessibilityNodeInfo.CollectionItemInfo.obtain(0,1,0,1,false)
+        }
+        shadowOf(root).addChild(list); shadowOf(list).addChild(row)
+        val navigator = ScreenTargetNavigator(VisibleHighlight())
+        assertTrue(navigator.perform(root,AirAction.NEXT_ITEM,1L))
+        list.viewIdResourceName = "com.example.safe:id/archive"
+        assertFalse(navigator.perform(root,AirAction.SELECT_ITEM,1L))
+        assertEquals(0,clicks)
     }
 }

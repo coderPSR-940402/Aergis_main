@@ -52,6 +52,21 @@ class LandmarkGestureRecognizerTest {
         assertEquals(RegisteredGesture.SHAKA.signalName, LandmarkGestureRecognizer.recognize(wide, 2f)?.name)
     }
 
+    @Test fun unusedDistalJointsDoNotVetoAnyCustomPose() {
+        for (gesture in RegisteredGesture.entries.filter { it.isLandmarkPose && !it.isDirectionalGun }) {
+            val points = pose(gesture).toMutableList()
+            for (joint in listOf(3, 7, 11, 15, 19)) points[joint] = Point3D(Float.NaN, Float.NaN, Float.NaN)
+            assertEquals(gesture.name, gesture.signalName, LandmarkGestureRecognizer.recognize(points, 1f)?.name)
+        }
+    }
+
+    @Test fun tuckedThumbPoseDoesNotRequireUnusedThumbBaseAngles() {
+        val points = pose(RegisteredGesture.HORNS).toMutableList()
+        points[1] = Point3D(1.1f, .5f)
+        points[2] = Point3D(Float.NaN, .5f)
+        assertEquals(RegisteredGesture.HORNS.signalName, LandmarkGestureRecognizer.recognize(points, 1f)?.name)
+    }
+
     companion object {
         fun pose(gesture: RegisteredGesture?): List<Point3D> {
             val p = MutableList(21) { Point3D(.5f, .75f) }

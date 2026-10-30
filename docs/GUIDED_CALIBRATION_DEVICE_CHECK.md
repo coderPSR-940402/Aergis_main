@@ -26,3 +26,24 @@ Record phone/Android version, orientation, selected control hand, text size and 
 - Screen recording or diagnostic capture, if available:
 
 Any unexpected system action during disarmed calibration blocks acceptance. CI verifies source behavior and APK construction; it does not establish comfortable reach, preview alignment or physical target accuracy.
+
+## Touch-free extension (2026-10-28 candidate)
+
+Map Calibrate pointer, enter from cold/warm activity with pointer disabled, and
+keep capture running. Follow top-left → top-right → bottom-right → bottom-left.
+At each comfortable corner, hold aim steady for at least 300 ms, then pinch thumb
+to middle once. Aim is frozen before contact; held contact cannot collect twice.
+Release before the next corner. After four captures, review the bounds and hold
+Open Palm for 1 second to save. Closed Fist held 1.2 seconds cancels. These are
+local calibration inputs while READY, independent of stored command bindings.
+They never arm control, inject a click, start capture, or overwrite a saved profile
+before explicit valid confirmation. Existing manual controls remain available.
+
+Exercise wrong-corner order, jitter, depth-separated fingers, hand loss during aim,
+held contact at reacquisition, opposite-hand replacement, stale/duplicate frames,
+activity pause, rotation/recreation, hand preference change and screen exit. No
+stale evidence may advance a step or save a profile. Confirm previous profiles
+survive cancel/invalid geometry; test comfortable reach with narrower valid spans.
+All timing/order thresholds need device acceptance; host tests are not an accuracy
+measurement. Retained identity after brief loss is motion-only: phone actions
+must observe fresh gesture/opening evidence after authority revocation.

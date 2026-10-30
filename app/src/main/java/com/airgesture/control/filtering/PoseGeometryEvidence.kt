@@ -1,5 +1,8 @@
 package com.airgesture.control.filtering
 
+import com.airgesture.control.GestureLandmarkRequirements
+import com.airgesture.control.RegisteredGesture
+
 /** Reasons why a pose cannot be treated as geometrically valid evidence. */
 enum class PoseGeometryRejectionReason {
     NONE,
@@ -36,23 +39,30 @@ class PoseGeometryEvidenceEvaluator(
         evaluate(landmarks, aspectRatio, pointerOnly = false)
 
     /** Pointer pinch needs its fingertips and palm anchors visible, not the wrist or little tip. */
-    fun evaluatePointer(landmarks: List<Point3D>, aspectRatio: Float = 1f): PoseGeometryEvidence =
-        evaluate(landmarks, aspectRatio, pointerOnly = true)
+    fun evaluatePointer(landmarks: List<Point3D>, aspectRatio: Float = 1f,
+        requireIndexTip: Boolean = true): PoseGeometryEvidence = evaluate(landmarks, aspectRatio, pointerOnly = true,
+            requiredIndices = if (requireIndexTip) null else intArrayOf(4, 5, 12, 17))
 
-    private fun evaluate(landmarks: List<Point3D>, aspectRatio: Float, pointerOnly: Boolean): PoseGeometryEvidence {
+    fun evaluateGesture(landmarks: List<Point3D>, gesture: RegisteredGesture?, aspectRatio: Float = 1f): PoseGeometryEvidence =
+        evaluate(landmarks, aspectRatio, pointerOnly = false,
+            requiredIndices = GestureLandmarkRequirements.joints(gesture),
+            constrainIndex = gesture?.isLandmarkPose != true)
+
+    private fun evaluate(landmarks: List<Point3D>, aspectRatio: Float, pointerOnly: Boolean,
+        requiredIndices: IntArray? = null, constrainIndex: Boolean = true): PoseGeometryEvidence {
         val finiteCount = landmarks.count { point ->
             point.x.isFinite() && point.y.isFinite() && point.z.isFinite()
         }
         if (!aspectRatio.isFinite() || aspectRatio <= 0f) {
             return rejected(landmarks.size, finiteCount, PoseGeometryRejectionReason.INVALID_PALM_WIDTH)
         }
-        if (landmarks.size < minimumLandmarkCount) {
+        if (landmarks.size < minimumLandmarkCount || requiredIndices?.any { it >= landmarks.size } == true) {
             return rejected(landmarks.size, finiteCount, PoseGeometryRejectionReason.INSUFFICIENT_LANDMARKS)
         }
-        if (!pointerOnly && finiteCount != landmarks.size) {
+        if (!pointerOnly && requiredIndices == null && finiteCount != landmarks.size) {
             return rejected(landmarks.size, finiteCount, PoseGeometryRejectionReason.NON_FINITE_LANDMARK)
         }
-        val visiblePoints = if (pointerOnly) listOf(KinematicValidator.THUMB_TIP,
+        val visiblePoints = requiredIndices?.map(landmarks::get) ?: if (pointerOnly) listOf(KinematicValidator.THUMB_TIP,
             KinematicValidator.INDEX_MCP, KinematicValidator.INDEX_TIP,
             KinematicValidator.MIDDLE_TIP, KinematicValidator.PINKY_MCP).map(landmarks::get) else landmarks
         if (visiblePoints.any { !it.x.isFinite() || !it.y.isFinite() || !it.z.isFinite() }) {
@@ -86,7 +96,7 @@ class PoseGeometryEvidenceEvaluator(
         // pointer path already requires visible finite landmarks, nonzero palm width,
         // trusted cursor motion and an observed open/contact/release sequence.
         // Keep the legacy whole-hand constraint for classifier commands only.
-        if (!pointerOnly && indexBoneRatio > maximumIndexBoneToPalmRatio) {
+        if (!pointerOnly && constrainIndex && indexBoneRatio > maximumIndexBoneToPalmRatio) {
             return PoseGeometryEvidence(
                 landmarkCount = landmarks.size,
                 finiteLandmarkCount = finiteCount,
@@ -101,8 +111,8 @@ class PoseGeometryEvidenceEvaluator(
             landmarkCount = landmarks.size,
             finiteLandmarkCount = finiteCount,
             normalizedPalmWidth = boundedPalmWidth,
-            indexBoneToPalmRatio = boundedBoneRatio,
-            fingertipToPalmRatio = boundedFingertipRatio,
+            indexBoneToPalmRatio = boundedBoneRatio.takeIf { it.isFinite() },
+            fingertipToPalmRatio = boundedFingertipRatio.takeIf { it.isFinite() },
             accepted = true,
             rejectionReason = PoseGeometryRejectionReason.NONE
         )

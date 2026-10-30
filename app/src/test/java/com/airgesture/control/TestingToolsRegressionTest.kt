@@ -34,6 +34,25 @@ class TestingToolsRegressionTest {
         JSONObject().put("timestampMs", time).put("reason", reason).put("inferenceMs", 12)
             .put("hands", org.json.JSONArray()).put("pointer", JSONObject().put("x", .5).put("y", .8).put("tracking", tracking))
 
+    @Test fun selectionAndExecutionEvidenceSurvivesNormalAndRecoveredExport() {
+        val dir = java.nio.file.Files.createTempDirectory("selection-recording").toFile()
+        try {
+            val recording = session(dir)
+            append(recording, frame(1000, "NO_HAND", false))
+            val event = recording.javaClass.getMethod("event", JSONObject::class.java)
+            event.invoke(recording, JSONObject("""{"event":"action_requested","action":"SELECT_ITEM","requestId":5}"""))
+            event.invoke(recording, JSONObject("""{"event":"selection_changed","kind":"activation_accepted","requestId":5}"""))
+            event.invoke(recording, JSONObject("""{"event":"action_outcome","outcome":"SUBMITTED","requestId":5}"""))
+            finish(recording)
+            fun evidence() = JSONObject(File(dir, "summary.json").readText()).getJSONObject("actionEvidence")
+            assertEquals("SUBMITTED", evidence().getJSONObject("byAction").getJSONObject("SELECT_ITEM").getJSONArray("results").getString(0))
+            assertEquals(1, evidence().getJSONObject("selectionChanges").getInt("activation_accepted"))
+            val recovered = DiagnosticSession.recover(dir)
+            recovered.finish(1200L)
+            assertEquals(1, evidence().getJSONObject("selectionChanges").getInt("activation_accepted"))
+        } finally { dir.deleteRecursively() }
+    }
+
     @Test fun noHandFramesAndCameraSamplesSurvivePdfAndZipExport() {
         val dir = File("build/reports/testing-tools/sample").apply { deleteRecursively(); mkdirs() }
         val recording = session(dir)

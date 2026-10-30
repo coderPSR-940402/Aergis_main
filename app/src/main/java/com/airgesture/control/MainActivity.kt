@@ -23,6 +23,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -36,6 +39,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.core.content.FileProvider
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.sample
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -45,6 +49,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 class MainActivity : ComponentActivity() {
+    private var requestedDestination by mutableStateOf<AergisDestination?>(null)
     private var pointerEnabled by mutableStateOf(true)
     private var gesturesEnabled by mutableStateOf(true)
     private var pointerClickingEnabled by mutableStateOf(true)
@@ -59,6 +64,7 @@ class MainActivity : ComponentActivity() {
     private var calibrationDraft by mutableStateOf(PointerCalibrationProfile.COMFORTABLE_REACH)
     private var calibrationMessage by mutableStateOf<String?>(null)
     private val calibrationSession = PointerCalibrationSession()
+    private val touchFreeCalibration = TouchFreeCalibration()
     private var pendingPdf: File? = null
     private var pendingZip: File? = null
     private val savePdf = registerForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
@@ -129,7 +135,22 @@ class MainActivity : ComponentActivity() {
         pendingZip = savedInstanceState?.getString("testing_pending_zip")?.let(::File)
         refreshSettings()
         TestingTools.restoreLatest(this)
+        handleCalibrationIntent(intent)
         setContent { AirGestureScreen() }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleCalibrationIntent(intent)
+    }
+
+    private fun handleCalibrationIntent(request: Intent) {
+        if (request.action != ACTION_OPEN_CALIBRATION) return
+        // Consume once: recreation restores the route without restarting capture.
+        request.action = Intent.ACTION_MAIN
+        startCalibration()
+        requestedDestination = AergisDestination.CALIBRATION
     }
 
     override fun onResume() {
@@ -222,6 +243,7 @@ class MainActivity : ComponentActivity() {
     private fun startCalibration() {
         AirRuntime.controlMode = ControlMode.READY
         calibrationSession.start()
+        touchFreeCalibration.start()
         calibrationState = calibrationSession.state()
         calibrationSampleCount = calibrationSession.sampleCount()
         calibrationMessage = getString(R.string.calibration_capture_guidance)
@@ -231,6 +253,7 @@ class MainActivity : ComponentActivity() {
         if (AirRuntime.controlMode != ControlMode.READY) return
         val rawPointer = AirRuntime.rawPointerSnapshot()
         val accepted = rawPointer.tracking && calibrationSession.addSample(rawPointer.x, rawPointer.y)
+        if (accepted) touchFreeCalibration.manualSample(rawPointer.x, rawPointer.y)
         calibrationState = calibrationSession.state()
         calibrationSampleCount = calibrationSession.sampleCount()
         calibrationMessage = if (accepted) {
@@ -250,6 +273,7 @@ class MainActivity : ComponentActivity() {
             return
         }
         if (applyCalibration(profile.copy(curveX = calibrationDraft.curveX, curveY = calibrationDraft.curveY))) {
+            touchFreeCalibration.stop()
             calibrationSession.reset()
             calibrationState = calibrationSession.state()
             calibrationSampleCount = 0
@@ -257,6 +281,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun cancelCalibration() {
+        touchFreeCalibration.stop()
         calibrationSession.reset()
         calibrationState = calibrationSession.state()
         calibrationSampleCount = 0
@@ -270,6 +295,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun resetCalibration() {
+        touchFreeCalibration.stop()
         PointerCalibrationStore(this).reset(handPreference, isLandscape())
         calibrationDraft = PointerCalibrationProfile.COMFORTABLE_REACH
         calibrationSession.reset()
@@ -285,13 +311,24 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     private fun AirGestureScreen() {
+        // Gesture-dispatched pointer changes must update the open controls too.
+        DisposableEffect(Unit) {
+            val prefs = getSharedPreferences("aergis_mappings", MODE_PRIVATE)
+            val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
+                pointerEnabled = ActionMappingStore(this@MainActivity).pointerEnabled()
+            }
+            prefs.registerOnSharedPreferenceChangeListener(listener)
+            onDispose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+        }
         var editingName by rememberSaveable { mutableStateOf<String?>(null) }
         val edit: (RegisteredGesture) -> Unit = { editingName = it.name }
         AergisTheme {
             AergisShell(
-                gesturesEnabled || (pointerEnabled && pointerClickingEnabled),
+                gesturesEnabled || pointerClickingEnabled,
                 initialDestination = if (accessibilityEnabled && cameraAllowed) AergisDestination.CONTROL else AergisDestination.WELCOME,
-                onEntering = { if (it.disarmsOnEntry) AirRuntime.controlMode = ControlMode.READY }
+                onEntering = { if (it.disarmsOnEntry) AirRuntime.controlMode = ControlMode.READY },
+                requestedDestination = requestedDestination,
+                onDestinationHandled = { requestedDestination = null; editingName = null }
             ) { destination, navigate ->
                 when (destination) {
                     AergisDestination.CONTROL -> ControlScreen(
@@ -389,6 +426,15 @@ class MainActivity : ComponentActivity() {
         DisposableEffect(Unit) {
             onDispose { if (calibrationState != PointerCalibrationSession.State.IDLE) cancelCalibration() }
         }
+        LaunchedEffect(Unit) {
+            lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                try {
+                    AirRuntime.state.map { it.calibrationGesture }.distinctUntilChanged().collect { frame ->
+                        processCalibrationGesture(frame)
+                    }
+                } finally { touchFreeCalibration.resetEvidence() }
+            }
+        }
         val flow = remember { AirRuntime.uiState.sample(250L) }
         val runtime by flow.collectAsStateWithLifecycle(initialValue = AirRuntime.uiStateSnapshot())
         val rawTrackingFlow = remember { AirRuntime.state.map { it.rawPointer.tracking }.distinctUntilChanged() }
@@ -396,6 +442,28 @@ class MainActivity : ComponentActivity() {
         ProductPage(R.string.product_calibration) {
             Text(stringResource(R.string.product_calibration_optional), color = AergisColors.Muted)
             CalibrationCard(rawTracking, runtime.controlMode, runtime.running && runtime.cameraReady)
+        }
+    }
+
+    private fun processCalibrationGesture(frame: CalibrationGestureFrame?) {
+        val safe = AirRuntime.controlMode == ControlMode.READY &&
+            AirRuntime.state.value.foregroundContext.safety == ForegroundSafety.SAFE &&
+            frame != null && frame.epoch == AirRuntime.actionEpoch &&
+            android.os.SystemClock.uptimeMillis() - frame.observedAtMs in 0L..350L
+        val event = touchFreeCalibration.update(if (safe) frame else null)
+        if (frame != null && frame.epoch != AirRuntime.actionEpoch) { cancelCalibration(); return }
+        when (event) {
+            is TouchFreeCalibration.Event.Capture -> {
+                if (calibrationSession.addSample(event.x, event.y)) {
+                    calibrationState = calibrationSession.state()
+                    calibrationSampleCount = calibrationSession.sampleCount()
+                    calibrationMessage = getString(R.string.calibration_sample_captured, calibrationSampleCount)
+                }
+            }
+            TouchFreeCalibration.Event.Confirm -> completeCalibration()
+            TouchFreeCalibration.Event.Cancel -> cancelCalibration()
+            TouchFreeCalibration.Event.WrongCorner -> calibrationMessage = getString(R.string.calibration_wrong_corner)
+            null -> Unit
         }
     }
 
@@ -422,6 +490,11 @@ class MainActivity : ComponentActivity() {
     private fun GesturesScreen(onEdit: (RegisteredGesture) -> Unit, navigate: (AergisDestination) -> Unit) {
         var query by rememberSaveable { mutableStateOf("") }
         var filter by rememberSaveable { mutableIntStateOf(0) }
+        var presetApplied by rememberSaveable { mutableStateOf(false) }
+        val missingPresetActions = remember(mappingsVersion) {
+            TouchFreeNavigationPreset.missingActions(ActionMappingStore(this@MainActivity))
+        }
+        val missingPresetLabels = missingPresetActions.map { actionLabel(it) }.joinToString(", ")
         val rows = RegisteredGesture.entries.map { gesture ->
             Triple(gesture, stringResource(gestureLabelRes(gesture)), actionLabel(mapping(gesture, mappingsVersion)))
         }.filter { (gesture, name, action) ->
@@ -433,6 +506,25 @@ class MainActivity : ComponentActivity() {
             item { ProductHeading(R.string.product_gestures) }
             item { GestureLibraryIntro() }
             item { Text(stringResource(R.string.navigation_gesture_help), color = AergisColors.Muted) }
+            item {
+                AergisPanel {
+                    Text(stringResource(R.string.touch_free_preset_help), color = AergisColors.Muted)
+                    AergisButton(onClick = {
+                        TouchFreeNavigationPreset.apply(ActionMappingStore(this@MainActivity))
+                        presetApplied = true
+                        mappingsVersion++
+                    }, modifier = Modifier.fillMaxWidth()) {
+                        Text(stringResource(R.string.touch_free_preset_apply))
+                    }
+                    if (presetApplied) {
+                        Text(
+                            if (missingPresetActions.isEmpty()) stringResource(R.string.touch_free_preset_complete)
+                            else stringResource(R.string.touch_free_preset_missing, missingPresetLabels),
+                            color = if (missingPresetActions.isEmpty()) AergisColors.Muted else AergisColors.Caution
+                        )
+                    }
+                }
+            }
             item { ProductLink(AergisDestination.LEARN, stringResource(R.string.product_learn_help), navigate) }
             item { androidx.compose.material3.OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth(),
                 label = { Text(stringResource(R.string.product_search_gestures)) }, singleLine = true) }
@@ -485,6 +577,7 @@ class MainActivity : ComponentActivity() {
             handPreference = selected
             ActionMappingStore(this@MainActivity).setHandPreference(selected)
             AirRuntime.handPreference = selected
+            touchFreeCalibration.stop()
             calibrationSession.reset()
             calibrationState = calibrationSession.state()
             calibrationSampleCount = 0
@@ -522,6 +615,7 @@ class MainActivity : ComponentActivity() {
             Text(stringResource(R.string.calibration_raw_preview), color = AergisColors.Muted,
                 style = MaterialTheme.typography.labelMedium)
             CalibrationStepPreview(calibrationSampleCount, capturing)
+            if (capturing) Text(stringResource(R.string.calibration_touch_free), color = AergisColors.Muted)
             calibrationMessage?.let { Text(it) }
             if (capturing) {
                 Text(stringResource(if (controlMode == ControlMode.READY) R.string.calibration_actions_disarmed
@@ -682,5 +776,9 @@ class MainActivity : ComponentActivity() {
             stringResource(R.string.ui_mapping_pointer_restriction) else null
         GestureMappingRow(source, stringResource(gestureLabelRes(source)), actionLabel(current),
             stringResource(gestureHelpRes(source)), restriction) { onEdit(source) }
+    }
+
+    companion object {
+        const val ACTION_OPEN_CALIBRATION = "com.airgesture.control.OPEN_CALIBRATION"
     }
 }

@@ -38,12 +38,14 @@ internal class TargetHighlightOverlay(context: Context) : ScreenTargetHighlight 
     }.apply { importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO }
     override val isVisible: Boolean get() = drawn && attached && view.isAttachedToWindow && view.isShown
     override fun show(target: Rect): Boolean {
-        drawn = false
         val metrics = android.util.DisplayMetrics()
         @Suppress("DEPRECATION")
         manager.defaultDisplay.getRealMetrics(metrics)
-        bounds = Rect(target)
-        if (!bounds.intersect(Rect(0,0,metrics.widthPixels,metrics.heightPixels))) { hide(); return false }
+        val clipped = Rect(target)
+        if (!clipped.intersect(Rect(0,0,metrics.widthPixels,metrics.heightPixels))) { hide(); return false }
+        if (attached && bounds == clipped) return true
+        drawn = false
+        bounds = clipped
         if (!attached) {
             val params = WindowManager.LayoutParams(-1, -1, WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or

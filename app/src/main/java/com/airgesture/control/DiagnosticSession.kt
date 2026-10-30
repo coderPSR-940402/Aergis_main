@@ -162,6 +162,13 @@ internal class DiagnosticSession private constructor(val directory: File, privat
         }
         summary.put("lineageComparison", comparisons).put("visibilityInterruptions", visibilityInterruptions)
             .put("pointerRejections", JSONObject(pointerRejections as Map<*, *>))
+        val eventFile = File(directory, "events.jsonl")
+        val actionSummary = if (eventFile.isFile) eventFile.useLines { lines ->
+            DiagnosticActionSummary.summarize(lines.filter { it.isNotBlank() }.map { line ->
+                runCatching { JSONObject(line) }.getOrElse { JSONObject().put("event", "unreadable") }
+            })
+        } else DiagnosticActionSummary.summarize(emptySequence())
+        summary.put("actionEvidence", actionSummary)
         File(directory, "summary.json").writeText(summary.toString(2))
         val pdf = File(directory, "report.pdf")
         DiagnosticReport.write(pdf, metadata, summary)

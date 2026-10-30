@@ -8,7 +8,7 @@ import org.json.JSONObject
 import java.io.File
 import java.util.Locale
 
-/** Three-page phone-test summary. Exact frame data travels in the accompanying ZIP. */
+/** Phone-test summary with automatically recorded selection and action outcomes. Exact frame data travels in the accompanying ZIP. */
 internal object DiagnosticReport {
     fun write(file: File, metadata: JSONObject, summary: JSONObject) {
         val doc = PdfDocument()
@@ -20,7 +20,7 @@ internal object DiagnosticReport {
                 try {
                     content(page.canvas)
                     paint.color = Color.GRAY; paint.textSize = 9f
-                    page.canvas.drawText("Aergis testing report  |  ${file.parentFile?.name}  |  ${number}/3", 36f, 812f, paint)
+                    page.canvas.drawText("Aergis testing report  |  ${file.parentFile?.name}  |  ${number}/4", 36f, 812f, paint)
                 } finally { doc.finishPage(page) }
             }
             fun text(c: android.graphics.Canvas, value: String, x: Float, y: Float, size: Float = 11f, bold: Boolean = false) {
@@ -122,6 +122,22 @@ internal object DiagnosticReport {
                     }
                 }
                 wrap(c, "The ZIP contains exact per-frame candidate outputs and overlay/action events. Lower distance to measured landmarks is not automatically better. These metrics cannot establish end-to-end camera/display latency or replace physical-device testing.", maxOf(y + 23f, 705f))
+            }
+            page(4) { c ->
+                text(c, "Selection and execution outcomes", 36f, 58f, 21f, true)
+                val evidence = summary.optJSONObject("actionEvidence")
+                var y = wrap(c, "Selection changes: ${evidence?.optJSONObject("selectionChanges") ?: "none recorded"}", 91f)
+                y = wrap(c, "Selection reasons: ${evidence?.optJSONObject("selectionReasons") ?: "none recorded"}", y + 8f)
+                y = wrap(c, "Each request is paired by its request ID. Completed movement records Aergis's target change. Accepted activation records Android accepting ACTION_CLICK; confirmed activation matches its click event to the selected node. Unconfirmed records a timeout or authority change. Native input completion records its callback.", y + 12f)
+                val actions = evidence?.optJSONObject("byAction")
+                for (action in actions?.keys()?.asSequence()?.sorted().orEmpty()) {
+                    if (y > 670f) { text(c, "Further results are in summary.json and events.jsonl.", 36f, y); break }
+                    val entry = actions!!.getJSONObject(action)
+                    val results = entry.getJSONArray("results")
+                    val counts = (0 until results.length()).map { results.getString(it) }.groupingBy { it }.eachCount()
+                    y = wrap(c, "${action.replace('_', ' ')}: ${entry.optInt("requested")} requests; $counts", y + 8f)
+                }
+                wrap(c, "Outcomes without a matching request: ${evidence?.optInt("unpairedOutcomes") ?: 0}. Unreadable events: ${evidence?.optInt("unreadableEvents") ?: 0}. Original logs remain in the ZIP.", 750f)
             }
             file.outputStream().use { doc.writeTo(it) }
         } finally { doc.close() }

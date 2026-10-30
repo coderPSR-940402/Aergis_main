@@ -101,6 +101,9 @@ class GestureCaptureService : Service(), LifecycleOwner {
             runCatching {
                 val provider = future.get()
                 cameraProvider = provider
+                val selector = CameraSelector.DEFAULT_FRONT_CAMERA
+                val cameraInfo = selector.filter(provider.availableCameraInfos).first()
+                val info = runCatching { Camera2CameraInfo.from(cameraInfo) }.getOrNull()
                 // The legacy 960x540 target negotiated 1088x1088 on the A54.
                 // Prefer a small 4:3 stream before spending work on RGBA conversion,
                 // inference and diagnostic image copies. Keep device-compatible fallbacks.
@@ -111,8 +114,9 @@ class GestureCaptureService : Service(), LifecycleOwner {
                         ResolutionStrategy.FALLBACK_RULE_CLOSEST_LOWER_THEN_HIGHER
                     ))
                     .build()
-                val useCase = ImageAnalysis.Builder()
-                    .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
+                val useCase = CameraLatencyPolicy.builder(
+                    runCatching { info?.getCameraCharacteristic(CameraCharacteristics.NOISE_REDUCTION_AVAILABLE_NOISE_REDUCTION_MODES) }.getOrNull(),
+                    runCatching { info?.getCameraCharacteristic(CameraCharacteristics.EDGE_AVAILABLE_EDGE_MODES) }.getOrNull())
                     .setResolutionSelector(resolutionSelector)
                     .setTargetRotation(displayRotation())
                     .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
@@ -138,9 +142,7 @@ class GestureCaptureService : Service(), LifecycleOwner {
                     // waiting snapshot while the GPU/diagnostics worker finishes its active one.
                     if (frame != null) processor.offer(frame)
                 }
-                val selector = CameraSelector.DEFAULT_FRONT_CAMERA
                 val defaultSession = SessionConfig.Builder(useCase).build()
-                val cameraInfo = selector.filter(provider.availableCameraInfos).first()
                 engine.cameraTimestampsRealtime = runCatching {
                     Camera2CameraInfo.from(cameraInfo).getCameraCharacteristic(
                         CameraCharacteristics.SENSOR_INFO_TIMESTAMP_SOURCE
