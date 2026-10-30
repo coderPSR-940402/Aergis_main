@@ -115,11 +115,13 @@ class GuidedCalibrationFlowTest {
         AirRuntime.setForegroundContext(ForegroundContextPolicy.evaluate(activity.packageName, MainActivity::class.java.name))
         invoke(activity, "startCalibration")
         val method = MainActivity::class.java.getDeclaredMethod("processCalibrationGesture", CalibrationGestureFrame::class.java).apply { isAccessible = true }
-        var time = android.os.SystemClock.uptimeMillis()
+        // Camera REALTIME samples may be hours ahead of uptime after deep sleep.
+        var time = android.os.SystemClock.uptimeMillis() + 3_600_000L
         fun frame(x: Float, y: Float, distance: Float = .7f, pose: String = "None") {
             time += 100
             org.robolectric.shadows.ShadowSystemClock.advanceBy(java.time.Duration.ofMillis(100))
-            method.invoke(activity, CalibrationGestureFrame(time, AirRuntime.actionEpoch, "Left:1", x, y, distance, 0f, pose))
+            method.invoke(activity, CalibrationGestureFrame(time, AirRuntime.actionEpoch, "Left:1", x, y, distance, 0f, pose,
+                observedAtMs = android.os.SystemClock.uptimeMillis()))
         }
         for ((x,y) in listOf(.8f to .2f,.2f to .2f,.2f to .8f,.8f to .8f)) {
             repeat(5) { frame(x,y) }; frame(x,y,.1f)
@@ -130,6 +132,26 @@ class GuidedCalibrationFlowTest {
         assertTrue(PointerCalibrationStore(activity).enabled())
         assertEquals(PointerCalibrationSession.State.IDLE,session(activity).state())
         assertEquals(ControlMode.READY,AirRuntime.controlMode)
+    }
+
+    @Test fun cancellationUsesObservationUptimeAndRejectsExpiredOrFutureDelivery() = withActivity { activity ->
+        AirRuntime.setForegroundContext(ForegroundContextPolicy.evaluate(activity.packageName, MainActivity::class.java.name))
+        val method = MainActivity::class.java.getDeclaredMethod("processCalibrationGesture", CalibrationGestureFrame::class.java).apply { isAccessible = true }
+        for ((age, expected) in listOf(
+            0L to PointerCalibrationSession.State.IDLE,
+            351L to PointerCalibrationSession.State.COLLECTING,
+            -1L to PointerCalibrationSession.State.COLLECTING
+        )) {
+            invoke(activity, "startCalibration")
+            repeat(14) {
+                org.robolectric.shadows.ShadowSystemClock.advanceBy(java.time.Duration.ofMillis(100))
+                val now = android.os.SystemClock.uptimeMillis()
+                method.invoke(activity, CalibrationGestureFrame(now + 3_600_000L, AirRuntime.actionEpoch,
+                    "Left:1", .5f, .5f, .7f, 0f, "Closed_Fist", observedAtMs = now - age))
+            }
+            assertEquals("Cancellation with observation age $age", expected, session(activity).state())
+            assertFalse(PointerCalibrationStore(activity).enabled())
+        }
     }
 
     @Test fun wrongEpochAndStaleCalibrationGesturesCannotAdvance() = withActivity { activity ->

@@ -4,7 +4,9 @@ import com.airgesture.control.pointer.ClickHysteresisStateMachine
 import kotlin.math.abs
 import kotlin.math.hypot
 
-/** Ephemeral owned, fresh vision evidence. Never grants phone-action authority. */
+/** Ephemeral owned vision evidence. Sample timestamps use the pipeline clock;
+ * [CalibrationGestureFrame.observedAtMs] uses uptime for UI delivery-age checks.
+ * Never grants phone-action authority. */
 data class CalibrationGestureFrame(val timestampMs: Long, val epoch: Long, val owner: String,
     val x: Float, val y: Float, val distance: Float, val depth: Float, val pose: String, val observedAtMs: Long = timestampMs)
 

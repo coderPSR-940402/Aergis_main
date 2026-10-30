@@ -632,7 +632,9 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                     handSelection.ownerId, rawTip.x, rawTip.y,
                     validator.calculateNormalizedFingerDistance(reusablePointsList, frameAspectRatio),
                     validator.calculateNormalizedFingerDepthDistance(reusablePointsList, frameAspectRatio, depthScale),
-                    if (selectedPoseEvidence?.accepted == true && gestureScore >= .7f) gestureName else "None", observedAtMs))
+                    if (selectedPoseEvidence?.accepted == true && gestureScore >= .7f) gestureName else "None",
+                    // UI delivery-age checks use uptime even when camera timing includes sleep.
+                    observedAtMs = SystemClock.uptimeMillis()))
             } else AirRuntime.setCalibrationGesture(null)
             AirRuntime.setPointerState(AirRuntime.pointerX, AirRuntime.pointerY, false)
             AirRuntime.pointerFeedback = PointerFeedback.DISABLED

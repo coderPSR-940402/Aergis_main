@@ -998,6 +998,21 @@ class CalibrationEngineIntegrationTest {
         this[12] = NormalizedLandmark.create(0.55f, 0.65f, 0f)
     }
 
+    @Test fun calibrationObservationUsesUptimeEvenWhenCameraClockIncludesSleep() {
+        AirRuntime.controlMode = ControlMode.READY
+        val before = android.os.SystemClock.uptimeMillis()
+        // REALTIME camera timestamps include sleep; the activity's delivery-age clock does not.
+        val cameraTimestamp = before + 3_600_000L
+        publish(hand(), cameraTimestamp, delayMs = 100L, measuredAgeMs = 100L)
+        val frame = requireNotNull(AirRuntime.state.value.calibrationGesture)
+        val after = android.os.SystemClock.uptimeMillis()
+        assertEquals("Gesture sample timing must retain its camera domain", cameraTimestamp, frame.timestampMs)
+        assertTrue("UI observation must use uptime, independently of the camera clock",
+            frame.observedAtMs in before..after)
+        assertTrue("Fresh calibration evidence must pass the activity's delivery-age check",
+            after - frame.observedAtMs in 0L..350L)
+    }
+
     @Test fun disarmedCalibrationPublishesOnlyFreshOwnedEvidenceAndStopRevokesIt() {
         AirRuntime.controlMode = ControlMode.READY
         publish(hand(),1000L,delayMs=100L)
