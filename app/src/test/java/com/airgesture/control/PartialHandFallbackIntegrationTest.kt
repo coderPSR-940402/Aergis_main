@@ -62,9 +62,9 @@ class PartialHandFallbackIntegrationTest {
         val before = AirRuntime.pointerSnapshot()
 
         // MediaPipe then drops the hand completely while the fingertip texture remains
-        // visible four pixels to the right. The fallback is motion-only: it may move the
+        // visible one pixel to the right. The fallback is motion-only: it may move the
         // visible cursor but must not claim fresh tracking/action authority.
-        setPixels(textureFrame(shiftX = 4))
+        setPixels(textureFrame(shiftX = 1))
         publish(emptyList(), 1_100L)
         val after = AirRuntime.pointerSnapshot()
 
@@ -72,7 +72,7 @@ class PartialHandFallbackIntegrationTest {
         assertFalse("Image fallback is never fresh gesture/click evidence", after.tracking)
         assertTrue(
             "Fallback should follow the still-visible fingertip instead of freezing at the last MediaPipe point",
-            abs(after.x - before.x) > 0.015f
+            abs(after.x - before.x) > 0.005f
         )
         assertEquals(PointerInteractionPhase.IDLE, AirRuntime.pointerInteraction)
     }

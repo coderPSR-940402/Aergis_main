@@ -43,7 +43,9 @@ internal class HandOwnershipTracker(
         }
         lastPreference = preference
         val candidates = observations.filter { observation ->
-            preference == ControlHandPreference.EITHER ||
+            // Preference selects a new owner. Once acquired, palm continuity owns
+            // the track; a transient classifier label must not discard that hand.
+            owner != null || preference == ControlHandPreference.EITHER ||
                 observation.handedness.equals(preference.name, ignoreCase = true)
         }
         if (candidates.isEmpty()) {

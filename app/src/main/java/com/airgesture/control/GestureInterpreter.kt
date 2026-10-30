@@ -46,9 +46,12 @@ class GestureInterpreter(
         }
         val poseEvidence = poseEvidenceEvaluator.evaluatePointer(landmarks, aspectRatio, requireIndexTip = !allowIndexRefit)
         val rawIndexTip = landmarks[KinematicValidator.INDEX_TIP]
-        val refitting = allowIndexRefit && (rawIndexTip.x !in 0f..1f || rawIndexTip.y !in 0f..1f)
+        val tipInFrame = rawIndexTip.x in 0f..1f && rawIndexTip.y in 0f..1f
+        val refitting = allowIndexRefit && !tipInFrame
         // Position authority is exactly landmark 8; anatomy belongs to the action channel.
-        if ((!rawIndexTip.x.isFinite() || !rawIndexTip.y.isFinite()) && (!refitting || lastStablePointer == null)) {
+        // Finite off-frame refits are invalid measurements too. Reject them before
+        // either filter learns a bad position/velocity and moves the next valid tip.
+        if (!tipInFrame && (!refitting || lastStablePointer == null)) {
             resetActions()
             return null
         }

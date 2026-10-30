@@ -5,6 +5,43 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 class HandOwnershipTrackerTest {
+    @Test fun preferredHandSurvivesContinuousLabelRefitAndDetectionReordering() {
+        for (preference in listOf(ControlHandPreference.LEFT,ControlHandPreference.RIGHT)) {
+            val label = if (preference == ControlHandPreference.LEFT) "Left" else "Right"
+            val refitLabel = if (label == "Left") "Right" else "Left"
+            val tracker = HandOwnershipTracker()
+            val first = tracker.select(listOf(observation(0,label,.4f,.4f)),preference,1000L)!!
+            val refit = tracker.select(listOf(observation(0,refitLabel,.405f,.4f)),preference,1033L)
+            assertEquals("A label refit must not discard the configured owner's geometry",first.ownerId,refit?.ownerId)
+            val reordered = tracker.select(listOf(observation(0,label,.8f,.4f),
+                observation(1,refitLabel,.41f,.4f)),preference,1066L)
+            assertEquals(first.ownerId,reordered?.ownerId)
+            assertEquals(1,reordered?.index)
+        }
+    }
+
+    @Test fun changedPreferenceStillRequiresNewMatchingAcquisition() {
+        val tracker = HandOwnershipTracker()
+        val first = tracker.select(listOf(observation(0,"Left",.4f,.4f)),ControlHandPreference.LEFT,1000L)!!
+        assertNull(tracker.select(listOf(observation(0,"Left",.4f,.4f)),ControlHandPreference.RIGHT,1033L))
+        val next = tracker.select(listOf(observation(0,"Right",.4f,.4f)),ControlHandPreference.RIGHT,1066L)!!
+        org.junit.Assert.assertNotEquals(first.ownerId,next.ownerId)
+    }
+    @Test fun preferredHandCannotBeReplacedByOppositeLabelAfterLoss() {
+        for (preference in listOf(ControlHandPreference.LEFT,ControlHandPreference.RIGHT)) {
+            val label = if (preference == ControlHandPreference.LEFT) "Left" else "Right"
+            val other = if (label == "Left") "Right" else "Left"
+            val tracker = HandOwnershipTracker()
+            assertNull(tracker.select(listOf(observation(0,other,.4f,.4f)),preference,900L))
+            val first = tracker.select(listOf(observation(0,label,.4f,.4f)),preference,1000L)!!
+            assertNull(tracker.select(emptyList(),preference,1033L))
+            assertNull(tracker.select(listOf(observation(0,other,.4f,.4f)),preference,1066L))
+            assertNull(tracker.select(listOf(observation(0,other,.4f,.4f)),preference,1099L))
+            val next = tracker.select(listOf(observation(0,label,.4f,.4f)),preference,1132L)!!
+            org.junit.Assert.assertNotEquals(first.ownerId,next.ownerId)
+        }
+    }
+
     @Test
     fun ownershipFollowsTheSameHandWhenDetectionOrderChanges() {
         val tracker = HandOwnershipTracker()

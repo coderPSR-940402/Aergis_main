@@ -131,6 +131,43 @@ class CalibrationEngineIntegrationTest {
         assertEquals(expected.y, AirRuntime.pointerY, 0.0001f)
     }
 
+    @Test fun offFrameIndexCannotPullRecoveredPointerTowardTheScreenEdge() {
+        AirRuntime.pointerClickingEnabled = false
+        repeat(4) { publish(hand(),1000L + it*100L) }
+        val target = AirRuntime.pointerSnapshot()
+        publish(hand().toMutableList().apply { this[8] = NormalizedLandmark.create(8f,.65f,0f) },1400L)
+        assertFalse(AirRuntime.pointerTracking)
+        publish(hand(),1500L)
+        assertTrue(AirRuntime.pointerTracking)
+        assertEquals(target.x,AirRuntime.pointerX,.0001f)
+        assertEquals(target.y,AirRuntime.pointerY,.0001f)
+    }
+
+    @Test fun preferredHandLabelRefitPreservesOneAnchoredNativeClick() {
+        withMappedBackService { shadow ->
+            // The engine maps MediaPipe's raw Left category to physical Right.
+            AirRuntime.handPreference = ControlHandPreference.RIGHT
+            AirRuntime.gesturesEnabled = false
+            val looper = org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper())
+            try {
+                repeat(4) { publish(hand(),1000L + it*100L); looper.idle() }
+                val target = AirRuntime.pointerSnapshot()
+                val closed = hand().toMutableList().apply {
+                    this[4] = NormalizedLandmark.create(.56f,.65f,0f)
+                }
+                publish(closed,1400L,rawHandedness = "Right"); looper.idle()
+                assertEquals("A continuous palm must survive label refits with fixed hand preference",1,
+                    shadow.gesturesDispatched.size)
+                assertEquals(target.x,AirRuntime.pointerX,.0001f)
+                assertEquals(target.y,AirRuntime.pointerY,.0001f)
+                val tap = shadow.gesturesDispatched.single()
+                tap.callback()!!.onCompleted(tap.description())
+                publish(closed,1500L,rawHandedness = "Right"); looper.idle()
+                assertEquals("A held contact remains consumed",1,shadow.gesturesDispatched.size)
+            } finally { AirRuntime.handPreference = ControlHandPreference.EITHER }
+        }
+    }
+
     @Test
     fun vc49SameHandRecoveryAfterVisibilityGraceRetainsShockGuard() {
         TestingTools.setFilterMode(PointerFilterMode.VC49)
