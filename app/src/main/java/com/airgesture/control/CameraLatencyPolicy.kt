@@ -10,11 +10,17 @@ internal object CameraLatencyPolicy {
     fun builder(noiseModes: IntArray?, edgeModes: IntArray?): ImageAnalysis.Builder {
         val builder = ImageAnalysis.Builder().setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
         val interop = Camera2Interop.Extender(builder)
-        // FAST is required not to reduce capture rate, unlike high-quality processing.
+        // Tracking consumes the sensor geometry, not a sharpened/denoised photograph.
+        // Avoid optional ISP work when OFF is advertised; otherwise FAST is required
+        // not to reduce capture rate. High-quality processing may buffer exposures.
         // Unsupported modes remain camera-controlled; never invent a camera request.
-        if (noiseModes?.contains(CaptureRequest.NOISE_REDUCTION_MODE_FAST) == true)
+        if (noiseModes?.contains(CaptureRequest.NOISE_REDUCTION_MODE_OFF) == true)
+            interop.setCaptureRequestOption(CaptureRequest.NOISE_REDUCTION_MODE, CaptureRequest.NOISE_REDUCTION_MODE_OFF)
+        else if (noiseModes?.contains(CaptureRequest.NOISE_REDUCTION_MODE_FAST) == true)
             interop.setCaptureRequestOption(CaptureRequest.NOISE_REDUCTION_MODE, CaptureRequest.NOISE_REDUCTION_MODE_FAST)
-        if (edgeModes?.contains(CaptureRequest.EDGE_MODE_FAST) == true)
+        if (edgeModes?.contains(CaptureRequest.EDGE_MODE_OFF) == true)
+            interop.setCaptureRequestOption(CaptureRequest.EDGE_MODE, CaptureRequest.EDGE_MODE_OFF)
+        else if (edgeModes?.contains(CaptureRequest.EDGE_MODE_FAST) == true)
             interop.setCaptureRequestOption(CaptureRequest.EDGE_MODE, CaptureRequest.EDGE_MODE_FAST)
         return builder
     }

@@ -131,18 +131,21 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 metrics.recordOutOfOrderSkip()
                 return
             }
-            if (frameAgeAtStart > POINTER_MAX_AGE_MS) {
+            fun discardExpiredExposure(): Boolean {
+                val age = frameAge().coerceAtLeast(0L)
+                if (age <= POINTER_MAX_AGE_MS) return false
                 // Already expired before conversion/native work; revoke action state now.
                 synchronized(this) { if (!closed.get()) handlePointerGap(nowIn(source),
                     PointerTrackingPolicy.isActive(AirRuntime.pointerEnabled, AirRuntime.controlMode,
                         AirRuntime.state.value.foregroundContext.safety), true, "STALE_BEFORE_INFERENCE", PointerFeedback.VISION_REJECTED) }
                 lastSubmittedTimestampMs = timestamp
-                AirRuntime.recordVisionResult(freshnessPolicy.evaluate(timestamp, timestamp + frameAgeAtStart))
+                AirRuntime.recordVisionResult(freshnessPolicy.evaluate(timestamp, timestamp + age))
                 metrics.recordRejection("STALE_BEFORE_INFERENCE")
                 TestingTools.event("frame_skipped", org.json.JSONObject().put("reason", "STALE_BEFORE_INFERENCE")
-                    .put("resultTimestampMs", timestamp).put("ageMs", frameAgeAtStart))
-                return
+                    .put("resultTimestampMs", timestamp).put("ageMs", age))
+                return true
             }
+            if (discardExpiredExposure()) return
             val landmarksOnly = useLandmarksOnly()
             ensureRecognizer(analysisStartUptime, landmarksOnly)
             val currentLandmarker = if (landmarksOnly && !handLandmarkerUnavailable) handLandmarker else null
@@ -162,6 +165,10 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 val imageProcessingOptions = ImageProcessingOptions.builder()
                     .setRotationDegrees(image.rotationDegrees)
                     .build()
+                // Lazy GPU/model initialization and conversion can outlive the
+                // exposure's remaining budget. Skip this native call and drain the
+                // latest waiting frame; never reset its timestamp to make it fresh.
+                if (discardExpiredExposure() || closed.get()) return
                 val result = if (currentLandmarker != null) LandmarkOnlyGestureResult(
                     currentLandmarker.detectForVideo(mpImage, imageProcessingOptions, timestamp))
                 else currentRecognizer!!.recognizeForVideo(mpImage, imageProcessingOptions, timestamp)
@@ -748,13 +755,16 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         val observations = landmarks.mapIndexedNotNull { index, hand ->
             if (hand.size <= PINKY_MCP) return@mapIndexedNotNull null
             // Palm anchors do not include fingertips that move/refit during contact.
-            val palm = intArrayOf(WRIST, INDEX_MCP, 9, 13, PINKY_MCP).map { joint ->
+            // A close or clipped hand can lose its wrist while both palm-width
+            // anchors remain reliable. Keep identity independent of unused joints;
+            // per-gesture and pinch evidence still apply their own visibility gates.
+            val palm = intArrayOf(INDEX_MCP, PINKY_MCP).map { joint ->
                 val raw = hand[joint]
                 CameraCoordinateTransform.toUpright(raw.x(), raw.y(), raw.z(), rotationDegrees)
             }
             val centerX = palm.sumOf { it.x.toDouble() }.toFloat() / palm.size
             val centerY = palm.sumOf { it.y.toDouble() }.toFloat() / palm.size
-            val palmSize = palm[1].distance2DTo(palm[4], frameAspectRatio)
+            val palmSize = palm[0].distance2DTo(palm[1], frameAspectRatio)
             if (!centerX.isFinite() || !centerY.isFinite() || !palmSize.isFinite() || palmSize <= 0f) {
                 return@mapIndexedNotNull null
             }
@@ -889,7 +899,6 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         /** Real camera-frame age / spacing beyond which a result is too old to move the cursor. */
         private const val POINTER_MAX_AGE_MS = 600L
         private const val POINTER_MAX_GAP_MS = 500L
-        private const val WRIST = KinematicValidator.WRIST
         private const val INDEX_MCP = KinematicValidator.INDEX_MCP
         private const val INDEX_TIP = KinematicValidator.INDEX_TIP
         private const val PINKY_MCP = KinematicValidator.PINKY_MCP

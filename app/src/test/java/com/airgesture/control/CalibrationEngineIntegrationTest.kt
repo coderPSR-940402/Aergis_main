@@ -59,6 +59,24 @@ class CalibrationEngineIntegrationTest {
         assertTrue(AirRuntime.pointerTracking)
     }
 
+    @Test fun clippedWristCannotResetVisibleOwnedPinchConfirmation() {
+        fun pose(distance: Float, wrist: Float) = hand().toMutableList().apply {
+            this[0] = NormalizedLandmark.create(wrist,wrist,0f)
+            this[4] = NormalizedLandmark.create(.5f,.5f,0f)
+            this[12] = NormalizedLandmark.create(.5f + distance * .2f,.5f,0f)
+        }
+        publish(pose(.8f,.5f),1000L)
+        publish(pose(.8f,.5f),1033L)
+        publish(pose(.2f,Float.NaN),1066L)
+        assertEquals("Unused wrist loss must not erase the owned approach", PointerInteractionPhase.PINCHING,
+            AirRuntime.pointerInteraction)
+        assertTrue(AirRuntime.pointerTracking)
+        publish(pose(.17f,Float.NaN),1099L)
+        publish(pose(.20f,1.1f),1132L)
+        publish(pose(.17f,Float.NaN),1165L)
+        assertEquals(PointerInteractionPhase.PRESSED, AirRuntime.pointerInteraction)
+    }
+
     @Test
     fun stoppedEngineCannotPublishLateInferenceIntoANewSession() {
         publish(hand(), 1000L)
