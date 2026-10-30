@@ -24,6 +24,7 @@ class ActionFeedbackOverlayTest {
         val requested = ActionFeedback(1, AirAction.NEXT_ITEM, updatedAtMs = SystemClock.uptimeMillis())
         try {
             overlay.show(requested)
+            shadowOf(Looper.getMainLooper()).idle()
             val view = viewField.get(overlay) as TextView
             assertTrue(view.isAttachedToWindow)
             assertEquals(requested.message(context), view.text.toString())
