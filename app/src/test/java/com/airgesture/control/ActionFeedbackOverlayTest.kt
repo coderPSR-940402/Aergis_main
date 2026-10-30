@@ -18,7 +18,7 @@ import org.robolectric.annotation.Config
 @Config(sdk = [35])
 class ActionFeedbackOverlayTest {
     @Test fun outcomesStayVisibleOutsideActivityContentAndExpire() {
-        val context = RuntimeEnvironment.getApplication<android.app.Application>()
+        val context = RuntimeEnvironment.getApplication()
         val overlay = ActionFeedbackOverlay(context)
         val viewField = ActionFeedbackOverlay::class.java.getDeclaredField("view").apply { isAccessible = true }
         val requested = ActionFeedback(1, AirAction.NEXT_ITEM, updatedAtMs = SystemClock.uptimeMillis())
