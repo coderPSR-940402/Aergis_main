@@ -21,6 +21,39 @@ import org.robolectric.annotation.GraphicsMode
 class NativeProductUiTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
 
+    @Test fun actionFeedbackDoesNotEnterActivitySemanticsOrMoveControls() {
+        var clicks = 0
+        compose.setContent {
+            AergisTheme {
+                AergisShell(true) { _, _ ->
+                    Button({ clicks++ }) { Text("Selected control") }
+                }
+            }
+        }
+        val control = compose.onNodeWithText("Selected control")
+        val before = control.fetchSemanticsNode()
+        fun assertControlRetained() {
+            val current = control.fetchSemanticsNode()
+            assertEquals(before.id, current.id)
+            assertEquals(before.boundsInRoot, current.boundsInRoot)
+        }
+        var requestId = 0L
+        compose.runOnIdle { requestId = AirRuntime.beginActionFeedback(AirAction.NEXT_ITEM) }
+        compose.waitForIdle()
+        assertControlRetained()
+        compose.onNodeWithText(AirRuntime.state.value.actionFeedback!!.message(compose.activity)).assertDoesNotExist()
+        compose.runOnIdle { AirRuntime.recordActionFeedback(ActionDispatchOutcome.COMPLETED, requestId) }
+        compose.waitForIdle()
+        assertControlRetained()
+        compose.onNodeWithText(AirRuntime.state.value.actionFeedback!!.message(compose.activity)).assertDoesNotExist()
+        // Banner expiry must not shift controls or change their accessible content either.
+        compose.mainClock.advanceTimeBy(4100L)
+        compose.waitForIdle()
+        assertControlRetained()
+        control.performClick()
+        compose.runOnIdle { assertEquals(1, clicks) }
+    }
+
     @Test fun externalCalibrationRequestNavigatesExistingShellAndIsHandledOnce() {
         val request = androidx.compose.runtime.mutableStateOf<AergisDestination?>(null)
         var handled = 0

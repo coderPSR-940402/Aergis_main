@@ -75,7 +75,8 @@ internal fun AergisShell(
                 }
             }
             SessionLabel(gesturesEnabled)
-            ActionFeedbackBanner()
+            // ActionFeedbackOverlay owns transient outcomes outside this activity's
+            // scanned tree: changing content here invalidates selection identities.
             if (!selected.root && selected != AergisDestination.WELCOME) {
                 TextButton(onClick = back, modifier = Modifier.padding(horizontal = 8.dp).heightIn(min = 48.dp)) {
                     Text(stringResource(R.string.product_back))
@@ -105,24 +106,5 @@ private fun SessionLabel(inputEnabled: Boolean) {
     Surface(color = AergisColors.Background) {
         Text(stringResource(R.string.ui_session_summary, capture, actions), color = AergisColors.Muted,
             style = MaterialTheme.typography.labelSmall, modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp))
-    }
-}
-
-@Composable
-private fun ActionFeedbackBanner() {
-    val flow = remember { AirRuntime.state.map { it.actionFeedback }.distinctUntilChanged() }
-    val feedback by flow.collectAsStateWithLifecycle(initialValue = null)
-    var visible by remember { mutableStateOf(false) }
-    LaunchedEffect(feedback) {
-        visible = feedback?.visibleAt(android.os.SystemClock.uptimeMillis()) == true
-        if (visible) {
-            kotlinx.coroutines.delay((4000L - (android.os.SystemClock.uptimeMillis() - feedback!!.updatedAtMs)).coerceAtLeast(1L))
-            visible = false
-        }
-    }
-    if (visible) feedback?.let {
-        Text(it.message(androidx.compose.ui.platform.LocalContext.current),
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 4.dp),
-            color = AergisColors.Caution, style = MaterialTheme.typography.labelMedium)
     }
 }
