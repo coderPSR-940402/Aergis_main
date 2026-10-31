@@ -3,6 +3,7 @@ package com.airgesture.control
 import kotlin.math.PI
 import kotlin.math.exp
 import kotlin.math.hypot
+import kotlin.math.abs
 
 internal enum class PrecisionRejection { NONE, INVALID_OR_OUT_OF_ORDER, JUMP_HELD }
 
@@ -83,21 +84,28 @@ internal class PrecisionPointerFilter {
         velocityY += derivativeAlpha * (dy / dt - velocityY)
         // Keep stationary aim quiet; coherent travel receives the higher cutoff below.
         // The jump gate remains responsible for rejecting isolated spikes.
-        var cutoff = .35f + 20f * (hypot(velocityX, velocityY) - .06f).coerceAtLeast(0f)
+        var cutoffX = .35f + 20f * (abs(velocityX) - .06f).coerceAtLeast(0f)
+        var cutoffY = .35f + 20f * (abs(velocityY) - .06f).coerceAtLeast(0f)
         recent.addLast(Sample(measured, timestampMs))
         while (recent.size > 16 || (recent.size > 4 && timestampMs - recent.first().timestampMs > 200L)) recent.removeFirst()
         if (recent.size >= 3) {
-            var path = 0f
-            for (i in 1 until recent.size) path += hypot(recent[i].point.x - recent[i - 1].point.x, recent[i].point.y - recent[i - 1].point.y)
-            val displacement = hypot(measured.x - recent.first().point.x, measured.y - recent.first().point.y)
+            var pathX = 0f
+            var pathY = 0f
+            for (i in 1 until recent.size) {
+                pathX += abs(recent[i].point.x - recent[i - 1].point.x)
+                pathY += abs(recent[i].point.y - recent[i - 1].point.y)
+            }
+            val displacementX = abs(measured.x - recent.first().point.x)
+            val displacementY = abs(measured.y - recent.first().point.y)
             // A consistent small movement is intentional fine aim, not stationary noise.
             // This opens the cutoff without adding prediction or a sticky dead zone.
-            if (displacement >= .003f && displacement >= path * .85f) cutoff = maxOf(cutoff, 3.5f)
+            // Travel on one axis must not open the gain for noise on the other.
+            if (displacementX >= .003f && displacementX >= pathX * .85f) cutoffX = maxOf(cutoffX, 3.5f)
+            if (displacementY >= .003f && displacementY >= pathY * .85f) cutoffY = maxOf(cutoffY, 3.5f)
         }
-        val gain = alpha(dt, cutoff)
         val result = PointerCoordinateMapper.Point(
-            previous.x + gain * (measured.x - previous.x),
-            previous.y + gain * (measured.y - previous.y)
+            previous.x + alpha(dt, cutoffX) * (measured.x - previous.x),
+            previous.y + alpha(dt, cutoffY) * (measured.y - previous.y)
         )
         measurement = measured; output = result; measurementTrusted = true
         lastAcceptedTimestamp = timestampMs

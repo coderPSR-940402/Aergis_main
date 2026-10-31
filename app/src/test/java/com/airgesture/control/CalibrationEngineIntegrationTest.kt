@@ -59,6 +59,24 @@ class CalibrationEngineIntegrationTest {
         assertTrue(AirRuntime.pointerTracking)
     }
 
+    @Test fun clippedWristCannotResetVisibleOwnedPinchConfirmation() {
+        fun pose(distance: Float, wrist: Float) = hand().toMutableList().apply {
+            this[0] = NormalizedLandmark.create(wrist,wrist,0f)
+            this[4] = NormalizedLandmark.create(.5f,.5f,0f)
+            this[12] = NormalizedLandmark.create(.5f + distance * .2f,.5f,0f)
+        }
+        publish(pose(.8f,.5f),1000L)
+        publish(pose(.8f,.5f),1033L)
+        publish(pose(.2f,Float.NaN),1066L)
+        assertEquals("Unused wrist loss must not erase the owned approach", PointerInteractionPhase.PINCHING,
+            AirRuntime.pointerInteraction)
+        assertTrue(AirRuntime.pointerTracking)
+        publish(pose(.17f,Float.NaN),1099L)
+        publish(pose(.20f,1.1f),1132L)
+        publish(pose(.17f,Float.NaN),1165L)
+        assertEquals(PointerInteractionPhase.PRESSED, AirRuntime.pointerInteraction)
+    }
+
     @Test
     fun stoppedEngineCannotPublishLateInferenceIntoANewSession() {
         publish(hand(), 1000L)
@@ -297,6 +315,106 @@ class CalibrationEngineIntegrationTest {
         publish(hand(), 1233L)
         assertFalse(AirRuntime.rawPointerSnapshot().tracking)
         assertFalse(AirRuntime.pointerTracking)
+    }
+
+    @Test
+    fun queuedCameraInputFromBeforePauseResumeNeverInitializesNativeModels() {
+        val lease = FrameBufferPool().acquire(4)!!
+        val frame = CapturedCameraFrame(RgbaFrameData(lease.buffer,1,1,4,4,0,1_000_000L,""),0L,0L,lease)
+        AirRuntime.controlMode = ControlMode.PAUSED
+        AirRuntime.controlMode = ControlMode.ARMED
+        val epoch = AirRuntime.state.value.inputEpoch
+        try {
+            engine.analyze(frame)
+            assertNull("Discarded input must not attempt unavailable native initialization",AirRuntime.visionError)
+            for (field in listOf("recognizer","handLandmarker")) assertNull(
+                GestureRecognitionEngine::class.java.getDeclaredField(field).apply { isAccessible = true }.get(engine))
+            assertEquals("Discard cannot invalidate the newer camera context",epoch,AirRuntime.state.value.inputEpoch)
+        } finally { frame.close() }
+    }
+
+    @Test
+    fun hiddenPointerExpiredCommandFramesSkipNativeInitialization() {
+        AirRuntime.pointerEnabled = false
+        org.robolectric.shadows.ShadowSystemClock.advanceBy(java.time.Duration.ofSeconds(2))
+        engine.cameraTimestampsRealtime = true
+        val cameraMs = android.os.SystemClock.elapsedRealtime() - 351L
+        val lease = FrameBufferPool().acquire(4)!!
+        val frame = CapturedCameraFrame(RgbaFrameData(lease.buffer,1,1,4,4,0,cameraMs * 1_000_000L,""),
+            android.os.SystemClock.uptimeMillis(),android.os.SystemClock.elapsedRealtime(),lease)
+        try {
+            engine.analyze(frame)
+            assertNull(AirRuntime.visionError)
+            for (field in listOf("recognizer","handLandmarker")) assertNull(
+                GestureRecognitionEngine::class.java.getDeclaredField(field).apply { isAccessible = true }.get(engine))
+            assertFalse(AirRuntime.pointerTracking)
+            assertEquals("A skipped command-age exposure cannot be reported as accepted vision",
+                "STALE_RESULT",AirRuntime.state.value.visionTelemetry.lastRejectionReason)
+        } finally { frame.close() }
+    }
+
+    @Test
+    fun oldInFlightResultsCannotPrimeACommandAfterPauseResumeButFreshResultsRecover() {
+        withMappedBackService { shadow ->
+            AirRuntime.pointerEnabled = false
+            primeClassifier()
+            val capturedEpoch = AirRuntime.state.value.inputEpoch
+            AirRuntime.controlMode = ControlMode.PAUSED
+            AirRuntime.controlMode = ControlMode.ARMED
+            val looper = org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper())
+            publish(hand(),1300L,gestureName="Victory",inputEpoch=capturedEpoch)
+            publish(hand(),1400L,gestureName="Victory",inputEpoch=capturedEpoch)
+            looper.idle()
+            assertTrue("Old in-flight observations must never prime or dispatch in the resumed state",
+                shadow.globalActionsPerformed.isEmpty())
+            publish(hand(),1500L,gestureName="Victory",inputEpoch=AirRuntime.state.value.inputEpoch)
+            looper.idle()
+            assertTrue("A single new observation cannot borrow old confirmation",shadow.globalActionsPerformed.isEmpty())
+            publish(hand(),1600L,gestureName="Victory",inputEpoch=AirRuntime.state.value.inputEpoch)
+            looper.idle()
+            assertEquals("Two current observations retain normal first-occurrence behavior",1,shadow.globalActionsPerformed.size)
+        }
+    }
+
+    @Test
+    fun recordedInterruptedContactDispatchesOneNativeTapAtTheFrozenPrecisionTarget() {
+        withMappedBackService { shadow ->
+            AirRuntime.gesturesEnabled = false
+            AirRuntime.resetActionDispatchTelemetry()
+            TestingTools.setFilterMode(PointerFilterMode.PRECISION)
+            val looper = org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper())
+            var anchor: PointerCoordinateMapper.Point? = null
+            val rows = javaClass.getResourceAsStream("/recordings/pinch-20261030-105s.csv")!!
+                .bufferedReader().use { it.readLines() }
+                .filter { it.isNotBlank() && !it.startsWith("#") && !it.startsWith("timeMs") }
+            for (row in rows) {
+                val values = row.split(',')
+                val elapsed = values[0].toLong()
+                val pose = hand().toMutableList().apply {
+                    // Replay recorded time, contact and depth in a synthetic stable palm;
+                    // deliberate index travel challenges the final screen-space anchor.
+                    this[4] = NormalizedLandmark.create(.45f,.65f,values[2].toFloat() * .2f)
+                    this[12] = NormalizedLandmark.create(.45f + values[1].toFloat() * .2f,.65f,0f)
+                    this[8] = NormalizedLandmark.create(.5f + elapsed * .00005f,.4f,0f)
+                }
+                publish(pose,1000L + elapsed)
+                looper.idle()
+                if (elapsed in 334L..1467L) {
+                    if (anchor == null) anchor = PointerCoordinateMapper.Point(AirRuntime.pointerX,AirRuntime.pointerY)
+                    assertEquals(anchor!!.x,AirRuntime.pointerX,.0001f)
+                    assertEquals(anchor!!.y,AirRuntime.pointerY,.0001f)
+                }
+                assertEquals("Only the second recorded contact may dispatch; t=$elapsed",
+                    if (elapsed < 1200L) 0 else 1,shadow.gesturesDispatched.size)
+                if (elapsed == 1200L) {
+                    val tap = shadow.gesturesDispatched.single()
+                    assertFalse(tap.description().getStroke(0).willContinue())
+                    tap.callback()!!.onCompleted(tap.description())
+                }
+            }
+            assertTrue("The mapped classifier must not compete with contact",shadow.globalActionsPerformed.isEmpty())
+            assertEquals(1L,AirRuntime.state.value.actionDispatchTelemetry.completed)
+        }
     }
 
     @Test
@@ -1029,7 +1147,7 @@ class CalibrationEngineIntegrationTest {
         org.junit.Assert.assertNull(AirRuntime.state.value.calibrationGesture)
     }
 
-    private fun publish(landmarks: List<NormalizedLandmark>, timestamp: Long, rawHandedness: String = "Left", gestureName: String = "None", delayMs: Long = 0L, measuredAgeMs: Long? = null, gestureScore: Float = .99f, includeGesture: Boolean = true, rotationDegrees: Int = 0) {
+    private fun publish(landmarks: List<NormalizedLandmark>, timestamp: Long, rawHandedness: String = "Left", gestureName: String = "None", delayMs: Long = 0L, measuredAgeMs: Long? = null, gestureScore: Float = .99f, includeGesture: Boolean = true, rotationDegrees: Int = 0, inputEpoch: Long? = null) {
         val hands = if (landmarks.isEmpty()) emptyList() else listOf(
             LandmarkProto.NormalizedLandmarkList.newBuilder().addAllLandmark(landmarks.map {
                 LandmarkProto.NormalizedLandmark.newBuilder().setX(it.x()).setY(it.y()).setZ(it.z()).build()
@@ -1052,6 +1170,14 @@ class CalibrationEngineIntegrationTest {
             ).build()
         )
         val result = factory.invoke(null, hands, emptyList<Any>(), handedness, gestures, timestamp) as GestureRecognizerResult
+        if (inputEpoch != null) {
+            val method = GestureRecognitionEngine::class.java.getDeclaredMethod(
+                "publishWithAge",GestureRecognizerResult::class.java,java.lang.Long.TYPE,
+                java.lang.Long.TYPE,java.lang.Integer.TYPE,java.lang.Long.TYPE,java.lang.Long.TYPE
+            ).apply { isAccessible = true }
+            method.invoke(engine,result,timestamp,timestamp + delayMs,rotationDegrees,measuredAgeMs ?: delayMs,inputEpoch)
+            return
+        }
         if (measuredAgeMs != null) {
             val method = GestureRecognitionEngine::class.java.getDeclaredMethod(
                 "publishWithAge", GestureRecognizerResult::class.java, java.lang.Long.TYPE,

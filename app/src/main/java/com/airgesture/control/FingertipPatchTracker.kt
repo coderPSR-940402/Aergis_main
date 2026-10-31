@@ -10,17 +10,34 @@ internal class FingertipPatchTracker {
     private var y = 0
     private var width = 0
     private var height = 0
+    private var tipOffsetX = 0
+    private var tipOffsetY = 0
     private val scores = FloatArray(49*49)
     private val xs = IntArray(49*49)
     private val ys = IntArray(49*49)
     private val searchPixels = FloatArray(65*65)
 
+    /** Seed from model image coordinates before any rotation or screen mapping. */
+    fun seedNormalized(w: Int, h: Int, nx: Float, ny: Float, luminance: (Int, Int) -> Float) {
+        reset()
+        if (nx !in 0f..1f || ny !in 0f..1f) return
+        // The normalized image includes 1.0; pixel indices stop at size - 1.
+        // Clamp only that endpoint after rejecting genuinely off-image input.
+        seed(w, h, (nx * w).toInt().coerceAtMost(w - 1),
+            (ny * h).toInt().coerceAtMost(h - 1), luminance)
+    }
+
     fun seed(w: Int, h: Int, px: Int, py: Int, luminance: (Int, Int) -> Float) {
         reset()
-        if (px < 8 || py < 8 || px >= w - 8 || py >= h - 8) return
-        val patch = sample(px, py, luminance)
+        if (w < 17 || h < 17 || px !in 0 until w || py !in 0 until h) return
+        // Keep the entire appearance patch in the image while retaining the exact
+        // fingertip offset. Do not clamp the reported fingertip to the patch center.
+        val cx = px.coerceIn(8, w - 9)
+        val cy = py.coerceIn(8, h - 9)
+        val patch = sample(cx, cy, luminance)
         if (energy(patch) < 1000f) return
-        template = patch; x = px; y = py; width = w; height = h
+        tipOffsetX = px - cx; tipOffsetY = py - cy
+        template = patch; x = cx; y = cy; width = w; height = h
     }
     fun track(w: Int, h: Int, luminance: (Int, Int) -> Float): Point? {
         val reference = template ?: return null
@@ -54,8 +71,9 @@ internal class FingertipPatchTracker {
         for (i in 0 until count) if ((xs[i]-bx)*(xs[i]-bx)+(ys[i]-by)*(ys[i]-by) >= 64)
             second = maxOf(second,scores[i])
         if (best < .92f || best - second < .08f) { reset(); return null }
+        if (bx + tipOffsetX !in 0 until w || by + tipOffsetY !in 0 until h) { reset(); return null }
         x = bx; y = by
-        return Point(x.toFloat()/w, y.toFloat()/h)
+        return Point((x + tipOffsetX).toFloat()/w, (y + tipOffsetY).toFloat()/h)
     }
     private fun sample(x: Int, y: Int, lum: (Int,Int)->Float): FloatArray {
         val values = FloatArray(81); var i=0

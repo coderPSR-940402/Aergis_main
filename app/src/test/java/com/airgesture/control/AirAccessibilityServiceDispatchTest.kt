@@ -81,6 +81,19 @@ class AirAccessibilityServiceDispatchTest {
         AirRuntime.setPointerState(0f, 0f, tracking = false)
     }
 
+    @Test fun classifierDispatchRetainsTheEpochOfItsRecognitionResult() {
+        val captured = AirRuntime.actionEpoch
+        AirRuntime.controlMode = ControlMode.PAUSED
+        AirRuntime.controlMode = ControlMode.ARMED
+        service.dispatch(AirAction.BACK,expectedEpoch = captured)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertTrue(shadow.globalActionsPerformed.isEmpty())
+        assertEquals(1L,AirRuntime.state.value.actionDispatchTelemetry.policyDenied)
+        service.dispatch(AirAction.BACK,expectedEpoch = AirRuntime.actionEpoch)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(1,shadow.globalActionsPerformed.size)
+    }
+
     @Test fun selectionSurvivesVisionRevocationButNotDisarmAndHiddenPinchClicksTheNode() {
         @Suppress("DEPRECATION")
         val node = android.view.accessibility.AccessibilityNodeInfo.obtain().apply {
