@@ -73,3 +73,38 @@ Device acceptance: repeated natural contacts and long holds; clear release/recli
 pointer-off selection contact; hand near each frame edge and close to the camera;
 second-hand arrival, loss/recovery and pause; PRECISION horizontal/vertical/diagonal
 aim and anchored clicks; bright and low light capture/inference age and cadence.
+
+## 2026-10-31 continuation audit
+
+Remote PR #75 still points to `3ed781b`; the automatic main build reference remains
+`1c5a41e`. A read-only package query through the paired phone reports preview
+versionCode 1344 with camera permission granted. It is older than PR #75's build
+1346; neither that query nor the earlier recording validates the PR on the phone.
+
+Found a boundary mismatch in the engine's appearance-template seed: finite model
+coordinates in the inclusive interval [0,1] are accepted for pointer motion, but
+`(coordinate * imageSize).toInt()` produces an invalid pixel index at exactly 1.0.
+The tracker correctly rejects that index, silently losing image recovery at the
+right/bottom endpoint. Move normalized-image seeding into the tracker, reject
+off-image/nonfinite inputs before conversion, and map the inclusive endpoint to
+the last real pixel. Interior pixel conversion, immutable templates, search work,
+correlation/ambiguity thresholds and motion-only authority retain their behavior.
+Rotation/mirroring/calibration still occur after image tracking, in their existing
+order; no off-camera point is clamped into valid action evidence.
+
+The new normalized-border regression failed before the endpoint correction;
+the other 165 selected core tests passed. With the correction, all 166 selected
+core JUnit tests and 18 Python tooling tests pass. Host compilation uses actual
+production sources with stubs for Android's default clock, the unused MediaPipe
+landmark overload and mapping-store access. Native engine regressions cover the
+right/bottom/corner endpoint moving inward through all four camera rotations.
+An additional native replay uses the recorded sensor intervals/contact/depth in a
+declared synthetic palm with moving index evidence: it expects one completed tap
+at the second recorded contact and an unchanged PRECISION target throughout
+confirmation/hold. This is integration coverage, not new recorded hand geometry.
+
+Local `./gradlew test --no-daemon` cannot download Gradle (`Network is unreachable`).
+The new native tests, full Android suite, lint and both APKs require the final CI
+run; its result and exact artifact identity belong in PR #75. No measured latency
+improvement, new physical gesture success or functional-baseline promotion is
+inferred. Review is single-agent, consistent with the existing project plan.

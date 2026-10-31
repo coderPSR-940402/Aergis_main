@@ -17,6 +17,16 @@ internal class FingertipPatchTracker {
     private val ys = IntArray(49*49)
     private val searchPixels = FloatArray(65*65)
 
+    /** Seed from model image coordinates before any rotation or screen mapping. */
+    fun seedNormalized(w: Int, h: Int, nx: Float, ny: Float, luminance: (Int, Int) -> Float) {
+        reset()
+        if (nx !in 0f..1f || ny !in 0f..1f) return
+        // The normalized image includes 1.0; pixel indices stop at size - 1.
+        // Clamp only that endpoint after rejecting genuinely off-image input.
+        seed(w, h, (nx * w).toInt().coerceAtMost(w - 1),
+            (ny * h).toInt().coerceAtMost(h - 1), luminance)
+    }
+
     fun seed(w: Int, h: Int, px: Int, py: Int, luminance: (Int, Int) -> Float) {
         reset()
         if (w < 17 || h < 17 || px !in 0 until w || py !in 0 until h) return

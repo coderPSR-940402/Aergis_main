@@ -318,6 +318,47 @@ class CalibrationEngineIntegrationTest {
     }
 
     @Test
+    fun recordedInterruptedContactDispatchesOneNativeTapAtTheFrozenPrecisionTarget() {
+        withMappedBackService { shadow ->
+            AirRuntime.gesturesEnabled = false
+            AirRuntime.resetActionDispatchTelemetry()
+            TestingTools.setFilterMode(PointerFilterMode.PRECISION)
+            val looper = org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper())
+            var anchor: PointerCoordinateMapper.Point? = null
+            val rows = javaClass.getResourceAsStream("/recordings/pinch-20261030-105s.csv")!!
+                .bufferedReader().use { it.readLines() }
+                .filter { it.isNotBlank() && !it.startsWith("#") && !it.startsWith("timeMs") }
+            for (row in rows) {
+                val values = row.split(',')
+                val elapsed = values[0].toLong()
+                val pose = hand().toMutableList().apply {
+                    // Replay recorded time, contact and depth in a synthetic stable palm;
+                    // deliberate index travel challenges the final screen-space anchor.
+                    this[4] = NormalizedLandmark.create(.45f,.65f,values[2].toFloat() * .2f)
+                    this[12] = NormalizedLandmark.create(.45f + values[1].toFloat() * .2f,.65f,0f)
+                    this[8] = NormalizedLandmark.create(.5f + elapsed * .00005f,.4f,0f)
+                }
+                publish(pose,1000L + elapsed)
+                looper.idle()
+                if (elapsed in 334L..1467L) {
+                    if (anchor == null) anchor = PointerCoordinateMapper.Point(AirRuntime.pointerX,AirRuntime.pointerY)
+                    assertEquals(anchor!!.x,AirRuntime.pointerX,.0001f)
+                    assertEquals(anchor!!.y,AirRuntime.pointerY,.0001f)
+                }
+                assertEquals("Only the second recorded contact may dispatch; t=$elapsed",
+                    if (elapsed < 1200L) 0 else 1,shadow.gesturesDispatched.size)
+                if (elapsed == 1200L) {
+                    val tap = shadow.gesturesDispatched.single()
+                    assertFalse(tap.description().getStroke(0).willContinue())
+                    tap.callback()!!.onCompleted(tap.description())
+                }
+            }
+            assertTrue("The mapped classifier must not compete with contact",shadow.globalActionsPerformed.isEmpty())
+            assertEquals(1L,AirRuntime.state.value.actionDispatchTelemetry.completed)
+        }
+    }
+
+    @Test
     fun slowCameraPinchWithCroppedWristDispatchesExactlyOneNativeTap() {
         assertSlowCameraPinchDispatchesOneTap(hand().toMutableList().apply {
             this[0] = NormalizedLandmark.create(.5f, 1.02f, 0f)

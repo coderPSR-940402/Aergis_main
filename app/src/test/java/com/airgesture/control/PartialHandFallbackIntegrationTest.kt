@@ -48,6 +48,41 @@ class PartialHandFallbackIntegrationTest {
     }
 
     @Test
+    fun rightImageEndpointRetainsMotionRecoveryThroughEveryRotation() =
+        assertEndpointRecovery(1f,.5f,-3,0)
+
+    @Test
+    fun bottomImageEndpointRetainsMotionRecoveryThroughEveryRotation() =
+        assertEndpointRecovery(.5f,1f,0,-3)
+
+    @Test
+    fun bottomRightImageCornerRetainsMotionRecoveryThroughEveryRotation() =
+        assertEndpointRecovery(1f,1f,-3,-3)
+
+    private fun assertEndpointRecovery(nx: Float, ny: Float, dx: Int, dy: Int) {
+        for (rotation in listOf(0,90,180,270)) {
+            engine.close()
+            engine = GestureRecognitionEngine(RuntimeEnvironment.getApplication())
+            val pose = hand().toMutableList().apply {
+                this[8] = NormalizedLandmark.create(nx,ny,0f)
+            }
+            setPixels(textureFrame(0,rotationDegrees=rotation))
+            publish(pose,1000L,rotation)
+            assertTrue("The endpoint must first have trusted model tracking",AirRuntime.pointerTracking)
+            val before = AirRuntime.pointerSnapshot()
+            setPixels(textureFrame(dx,shiftY=dy,rotationDegrees=rotation))
+            publish(emptyList(),1100L,rotation)
+            val after = AirRuntime.pointerSnapshot()
+            assertTrue("Endpoint ($nx,$ny), rotation=$rotation must follow inward image motion",
+                kotlin.math.hypot(after.x-before.x,after.y-before.y) > .005f)
+            assertEquals(PointerFeedback.COASTING,AirRuntime.pointerFeedback)
+            assertFalse("Image recovery cannot authorize a click",after.tracking)
+            assertFalse(AirRuntime.rawPointerSnapshot().tracking)
+            assertEquals(PointerInteractionPhase.IDLE,AirRuntime.pointerInteraction)
+        }
+    }
+
+    @Test
     fun trustedIndexTipSeedsMotionFallbackWhenUnrelatedLandmarkIsOffscreen() {
         val partialPose = hand().toMutableList().apply {
             // The little fingertip is unrelated to pointer position and pinch evidence.
@@ -83,13 +118,15 @@ class PartialHandFallbackIntegrationTest {
             .set(engine, frame)
     }
 
-    private fun textureFrame(shiftX: Int, width: Int = 120, height: Int = 120): RgbaFrameData {
+    private fun textureFrame(shiftX: Int, width: Int = 120, height: Int = 120,
+        shiftY: Int = 0, rotationDegrees: Int = 0): RgbaFrameData {
         val buffer = ByteBuffer.allocate(width * height * 4)
         for (y in 0 until height) {
             for (x in 0 until width) {
                 val sourceX = x - shiftX
-                val value = ((sourceX * 73 + y * 151 + sourceX * y * 17) xor
-                    (sourceX shl 3) xor (y shl 5)) and 0xff
+                val sourceY = y - shiftY
+                val value = ((sourceX * 73 + sourceY * 151 + sourceX * sourceY * 17) xor
+                    (sourceX shl 3) xor (sourceY shl 5)) and 0xff
                 buffer.put(value.toByte())
                 buffer.put(value.toByte())
                 buffer.put(value.toByte())
@@ -97,7 +134,7 @@ class PartialHandFallbackIntegrationTest {
             }
         }
         buffer.rewind()
-        return RgbaFrameData(buffer, width, height, width * 4, 4, 0, 1_000_000L, "[0,0][$width,$height]")
+        return RgbaFrameData(buffer, width, height, width * 4, 4, rotationDegrees, 1_000_000L, "[0,0][$width,$height]")
     }
 
     private fun hand(): List<NormalizedLandmark> = MutableList(21) {
@@ -109,7 +146,7 @@ class PartialHandFallbackIntegrationTest {
         this[12] = NormalizedLandmark.create(0.55f, 0.65f, 0f)
     }
 
-    private fun publish(landmarks: List<NormalizedLandmark>, timestamp: Long) {
+    private fun publish(landmarks: List<NormalizedLandmark>, timestamp: Long, rotationDegrees: Int = 0) {
         val hands = if (landmarks.isEmpty()) emptyList() else listOf(
             LandmarkProto.NormalizedLandmarkList.newBuilder().addAllLandmark(landmarks.map {
                 LandmarkProto.NormalizedLandmark.newBuilder()
@@ -151,6 +188,6 @@ class PartialHandFallbackIntegrationTest {
             java.lang.Long.TYPE,
             java.lang.Integer.TYPE
         ).apply { isAccessible = true }
-        method.invoke(engine, result, timestamp, timestamp, 0)
+        method.invoke(engine, result, timestamp, timestamp, rotationDegrees)
     }
 }

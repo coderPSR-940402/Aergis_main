@@ -2,6 +2,32 @@ package com.airgesture.control
 import org.junit.Assert.*
 import org.junit.Test
 class FingertipPatchTrackerTest {
+    @Test fun normalizedRightAndBottomEndpointsCanRecoverBackIntoTheImage() {
+        for ((nx,ny,dx,dy) in listOf(
+            listOf(1f,.5f,-3f,0f), listOf(.5f,1f,0f,-3f), listOf(1f,1f,-3f,-3f))) {
+            val tracker = FingertipPatchTracker()
+            tracker.seedNormalized(120,120,nx,ny,::texture)
+            val point = tracker.track(120,120) { x,y ->
+                texture((x-dx.toInt()).coerceIn(0,119),(y-dy.toInt()).coerceIn(0,119))
+            }
+            assertNotNull("An accepted normalized border tip ($nx,$ny) must seed recovery",point)
+            val expectedX = if (nx == 1f) 116f/120f else .5f
+            val expectedY = if (ny == 1f) 116f/120f else .5f
+            assertEquals(expectedX,point!!.x,.0001f)
+            assertEquals(expectedY,point.y,.0001f)
+        }
+    }
+
+    @Test fun invalidNormalizedTipRevokesThePreviousTemplateWithoutReadingPixels() {
+        for ((nx,ny) in listOf(Float.NaN to .5f,.5f to Float.POSITIVE_INFINITY,
+            -.001f to .5f,1.001f to .5f,.5f to -.001f,.5f to 1.001f)) {
+            val tracker = FingertipPatchTracker()
+            tracker.seed(120,120,50,50,::texture)
+            tracker.seedNormalized(120,120,nx,ny) { _,_ -> fail("Invalid model input cannot read pixels"); 0f }
+            assertNull("Invalid input must not retain an earlier template",tracker.track(120,120,::texture))
+        }
+    }
+
     @Test fun visibleFingertipAtAnyImageBorderRetainsItsExactOffset() {
         for ((px,py) in listOf(0 to 50, 119 to 50, 50 to 0, 50 to 119, 0 to 0, 119 to 119)) {
             val tracker = FingertipPatchTracker()

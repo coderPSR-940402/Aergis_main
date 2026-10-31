@@ -586,8 +586,8 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 indexTip.x() in 0f..1f && indexTip.y() in 0f..1f
             ) {
                 currentPixels?.let { pixels ->
-                    fingertipPatch.seed(pixels.width, pixels.height,
-                        (indexTip.x() * pixels.width).toInt(), (indexTip.y() * pixels.height).toInt(),
+                    fingertipPatch.seedNormalized(pixels.width, pixels.height,
+                        indexTip.x(), indexTip.y(),
                         { x, y -> luminance(pixels, x, y) })
                     patchEpoch = AirRuntime.actionEpoch
                 }
