@@ -108,3 +108,43 @@ The new native tests, full Android suite, lint and both APKs require the final C
 run; its result and exact artifact identity belong in PR #75. No measured latency
 improvement, new physical gesture success or functional-baseline promotion is
 inferred. Review is single-agent, consistent with the existing project plan.
+
+## Queued and in-flight frame continuation
+
+Audit of `f12526b` found that queued actions retained an epoch, but camera snapshots
+did not. A frame already copied or in native inference could therefore arrive after
+a Pause/Resume or configuration round trip and be interpreted using the new runtime
+authority. The existing landmarker/recognizer mode-change check covered only one
+specific switch; freshness alone does not distinguish these source contexts.
+
+An explicit runtime `inputEpoch` now advances on session, safety, control switches,
+hand preference and external calibration/filter/orientation invalidation. Assignment
+and tuning changes also advance it; identical binding saves preserve current input.
+Mapping values, defaults and persistence rules are unchanged. Capture stamps the
+epoch before any RGBA/YUV plane read, and deferred conversion retains it. The
+engine checks it before initialization, before native inference, and inside result
+publication. Internal vision gaps, owner refits and filter/history resets still revoke
+actions/selection as before but do not advance input provenance, avoiding repeated
+discard of otherwise current frames. A discarded obsolete frame cannot revoke the
+newer source context. Classifier/direct-motion dispatch carries the publication's
+action epoch into both native admission and the main-thread execution check.
+
+Pre-inference admission also uses the existing 350 ms command-age allowance when
+ARMED with the pointer off. Pointer and READY preview keep their existing 600 ms
+allowance. Future-clock exposures are rejected before native work. No sample time,
+inference model, hand count, gesture/filter threshold or click coordinate changes.
+This avoids already-useless work; it is not a measured A54 speedup. The source stamp
+binds the capture callback/copy onward; sensor delivery before that callback retains
+the existing CameraClock/absolute-age behavior and UNKNOWN-clock limitation.
+
+The policy's three missing branches first failed against the old admission behavior:
+obsolete context, hidden-pointer age 351 ms and future-clock input. The final selected
+core suite passes 170 tests; all 18 tooling tests pass. Added native regressions cover
+Pause/Resume before queued work, during plane copy and after inference; preserved YUV
+provenance; first fresh command recovery without borrowing old confirmation; current
+frames surviving normal vision revocation; and explicit stale classifier dispatch.
+The hidden-pointer skip also records rejected rather than accepted vision telemetry.
+
+Local Android test bootstrap again fails before execution because Gradle retrieval is
+network-blocked. Final full Android/native tests, lint, APK and signing results belong
+in PR #75. The existing exact contact replay and endpoint tests remain unchanged.

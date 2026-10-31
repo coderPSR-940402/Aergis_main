@@ -19,9 +19,13 @@ class DeferredCameraConversionTest {
         val image = camera(2, 2, byteArrayOf(76,76,99, 76,76), 3,
             byteArrayOf(85), byteArrayOf(255.toByte()), 1, 1)
         val frame = input.capture(image.proxy, 100L, 200L)!!
+        val capturedEpoch = frame.inputEpoch
         image.proxy.close()
         image.y.fill(0)
+        AirRuntime.invalidatePendingActions()
         val rgba = frame.data
+        assertEquals("Deferred conversion cannot adopt a newer authority epoch",capturedEpoch,frame.inputEpoch)
+        assertTrue(frame.inputEpoch != AirRuntime.state.value.inputEpoch)
         assertEquals(270, rgba.rotationDegrees)
         assertEquals(123000000L, rgba.timestampNs)
         assertEquals("[0,0][2,2]", rgba.cropRect)

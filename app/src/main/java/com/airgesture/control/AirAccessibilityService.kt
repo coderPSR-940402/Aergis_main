@@ -177,8 +177,9 @@ class AirAccessibilityService : AccessibilityService() {
     internal fun dispatchPointerTap(expectedEpoch: Long = AirRuntime.actionEpoch) =
         dispatch(AirAction.TAP, origin = ActionOrigin.POINTER, expectedEpoch = expectedEpoch)
 
-    fun dispatch(action: AirAction, tuning: GestureTuning = GestureTuning()) =
-        dispatch(action, tuning, ActionOrigin.GESTURE)
+    fun dispatch(action: AirAction, tuning: GestureTuning = GestureTuning(),
+        expectedEpoch: Long = AirRuntime.actionEpoch) =
+        dispatch(action, tuning, ActionOrigin.GESTURE, expectedEpoch)
 
     private fun dispatch(action: AirAction, tuning: GestureTuning = GestureTuning(), origin: ActionOrigin,
         expectedEpoch: Long = AirRuntime.actionEpoch) {
