@@ -1,65 +1,83 @@
 # Development Status
 
-## Current working systems
+_Last refreshed: 2026-11-02._
 
-- CameraX latest-frame gesture analysis with prompt `ImageProxy` cleanup.
-- On-device MediaPipe gesture recognition with GPU-to-CPU fallback.
-- StateFlow-backed runtime state and lifecycle-aware Compose UI.
-- Pointer smoothing, kinematic validation, coordinate mapping, click hysteresis, and swipe detection.
-- Accessibility gesture dispatch with configured action mappings.
-- Bounded vision retry recovery and localized Compose status/error presentation.
+## Source of truth
 
-## Changes this pass
+- `main` is the current repository source.
+- `baseline-successful-apk` is the newest **CI-verified APK-producing build reference**. Resolve it dynamically; never hard-code an old commit as the development baseline.
+- Physical behavior is accepted only when device evidence is tied to the exact APK/commit/run. CI success is not device usability proof.
+- `known-good/commit-50` remains historical rollback evidence, not the current development target.
 
-- Added a pure gesture transaction state machine for classifier-mapped one-shot actions.
-- Static gesture commands now require stable multi-frame evidence before dispatch.
-- Added ownership continuity, stale-frame cancellation, cooldown, and neutral-release rearming.
-- Reset the transaction gate on tracking loss, vision recovery, and engine close.
-- Added regression tests for stable confirmation, release-before-rearm, ownership changes, and stale frames.
-- Added continuity-based primary-hand selection using hand center, palm size, handedness preference, and safe rejection of distant replacement hands.
-- Added regression tests for reordered detections, configured hand preference, and ownership takeover rejection.
-- Added timestamped velocity history to predict the owned hand's next position.
-- Added a score-margin ambiguity gate that rejects close competing hand candidates instead of guessing.
-- Classifier commands now require a safely selected owner even when pointer rendering is disabled.
-- Gesture model preparation now fails closed on download, checksum, size, or missing-asset errors instead of producing a non-functional APK.
-- CI build permissions are read-only; successful baseline advancement runs in a separate write-scoped job.
-- Accessibility gesture injection helpers are private, and camera-permission denial is surfaced in the launcher UI.
+## Current working architecture
 
-## Verified results
+- CameraX latest-frame analysis with prompt image cleanup and stale-frame protection.
+- On-device MediaPipe vision with GPU-first / CPU-fallback behavior.
+- Explicit control-hand ownership and camera-time observation authority.
+- Gesture-first mapped actions that can operate independently of pointer rendering.
+- Precision pointer mapping/filtering as a secondary control path.
+- Thumb-to-middle-finger pinch interaction with anchored click coordinates and native accessibility dispatch.
+- Accessibility global actions, bounded touch injection, foreground-safety checks, and action epochs.
+- Guided calibration, persisted mappings/settings, diagnostics/replay tooling, and local evidence export.
+- Debug and minified release APK production in GitHub Actions with package/model/signing/checksum verification.
 
-- Repository was inspected at baseline `ffb2882`.
-- `git diff --check` passed for this pass.
-- Obsolete frame-level classifier cooldown references were removed.
-- Transaction-gate CI passed on `a685323`: run `36938950059`.
-- Hand-ownership CI passed on `c086778`: run `36939617650`.
-- CodeQL passed on `a685323`: run `36938950119`.
-- CodeQL passed on `c086778`: run `36939617636`.
-- Velocity-arbitration CI passed on `8f13c1c`: run `36950569617`.
-- Velocity-arbitration CodeQL passed on `8f13c1c`: run `36950569678`.
-- Motion/context safety CI initially exposed a Kotlin visibility error on `d34e3b5`; the focused fix is `d409bcc`.
-- Corrected safety CI passed on `d409bcc`: run `36951443377`.
-- Corrected safety CodeQL passed on `d409bcc`: run `36951443420`.
-- Hardening CI passed on `0e290b3`: run `37114581999`.
-- Hardening CodeQL passed on `0e290b3`: run `37114582022`.
-- `baseline-successful-apk` advanced to `0e290b3` after the successful APK-producing workflow.
-- Final least-privilege CI passed on `371f38a`: run `37115190081`.
-- Final least-privilege CodeQL passed on `371f38a`: run `37115190102`.
-- `baseline-successful-apk` advanced to `371f38a` after the final successful APK-producing workflow.
-- Local Android build execution remains unavailable because the sandbox does not provide the project Android SDK; CI is authoritative for APK/lint validation.
+## November 2026 stabilization pass
 
-## Important unresolved issues
+### Pinch, provenance, recovery, and precision
 
-- Primary-hand ownership still needs device validation across occlusion, rapid crossings, and large hand-scale changes.
-- Device-motion sensing and cancellation were removed at user request. No gyro/accelerometer readings gate pointer, gestures, dragging or calibration.
-- Protected foreground-context policy and explicit READY/ARMED control mode are implemented; device coverage remains outstanding.
-- Physical-device false-positive, latency, jitter, thermal, and battery measurements are unavailable.
+PR #75 merged the latest pinch-confirmation and tracking hardening work after successful Aergis CI and CodeQL. The change set includes brief-threshold-fluctuation tolerance with release-to-rearm protection, stronger frame/input provenance, controlling-hand continuity, edge/near-camera recovery work, and PRECISION/anchored-click protections.
 
-## Device testing needed
+This is **remotely verified code**, not a physical-device acceptance claim. The Galaxy A54 still needs exact-APK validation for deliberate clicks, false clicks, release/reclick, partial-hand recovery, edge motion, second-hand appearance, pointer-off gesture navigation, latency, and sustained use.
 
-- Verify static gesture confirmation latency and release behavior on a physical device.
-- Test hand crossings, occlusion, orientation changes, and service reconnects.
-- Confirm that click and swipe primitives remain independent from classifier command gating.
+### Live diagnostics foundation
 
-## Next frontier
+PR #77 added only Stage 1 of live diagnostics: a compact monotonic sample type and a hard-bounded in-memory timeline with boundary, eviction, ordering, and empty-buffer tests. It intentionally adds no disk I/O, relay, CameraX, gesture, pointer, or accessibility behavior.
 
-Run the physical-device false-positive campaign, verify movement continuity and protected-context coverage, then expand the gesture vocabulary only if the measured safety gates remain green.
+The broader event-promotion/relay design remains staged work. Do not treat the presence of the timeline as completion of automatic live diagnosis.
+
+### Pointer authority cleanup
+
+PR #78 removed the unreferenced legacy `pointer/PointerController.kt` and `pointer/ClickManager.kt`. Current runtime pointer/click authority remains in the active recognition, mapping/filter, pinch, and accessibility-dispatch pipeline. This reduces ambiguity without intentionally changing runtime behavior.
+
+## Verification posture
+
+Every functional PR must keep these gates separate:
+
+1. **Static/host evidence:** focused unit tests and deterministic replay where applicable.
+2. **Aergis CI:** full unit suite, Android lint, debug APK, minified release APK, APK verification, signing smoke test, checksums, and artifacts.
+3. **CodeQL:** Java/Kotlin analysis.
+4. **Main verification:** the merged `main` commit must pass its APK-producing workflow before `baseline-successful-apk` advances.
+5. **Device gate:** camera, MediaPipe delegate, pointer, gestures, click reliability, tracking recovery, latency, thermal behavior, and actual Android outcomes require physical-device evidence.
+
+A change does not become a functional baseline merely because it compiles or CI is green.
+
+## Current device evidence / unresolved behavior
+
+The latest retained device evidence still shows substantial tracking interruption and latency under real use. Subsequent code changes may address parts of those failures, but they require a new exact-APK Galaxy A54 test before any improvement is claimed.
+
+Highest-priority device checks:
+
+- normal-posture repeated thumb-middle clicks on labelled targets;
+- false-click rate, hold behavior, release-to-rearm, and rapid re-click;
+- hand loss/reacquisition, partial-hand visibility, frame edges, and near-camera motion;
+- stable controlling-hand ownership when a second hand appears;
+- pointer-off gesture navigation, selection, scrolling, Back/Home/Recents, and pointer toggle;
+- anchored click location and PRECISION smoothness;
+- camera delivery age, inference age/result cadence, and sustained thermal behavior;
+- pause/resume, protected screens, orientation change, service restart, and stale-action cancellation.
+
+## Repository / release hygiene
+
+- GitHub Actions are the build authority and use pinned action revisions.
+- The public preview signing key is intentionally checked in and is **not** a production key.
+- Production signing material belongs only in the restricted GitHub environment/secrets path; local private keystores are ignored by Git.
+- Keep engine, dependency, UI, persistence, and release changes in logically coherent PRs; avoid unrelated rewrites.
+- Do not delete or overwrite historical rollback/device-evidence refs merely to reduce branch count.
+
+## Administrative gap
+
+`main` currently has no GitHub branch-protection/ruleset enforcement. Repository administration should require pull requests plus successful Aergis CI and CodeQL checks and should block force-push/deletion of `main`. This is an account/repository setting; it is not implemented by application code.
+
+## Next engineering gate
+
+Finish the exact-APK Galaxy A54 acceptance pass for the merged pinch/tracking work before promoting physical behavior. Continue live diagnostics in small stages so observation can improve without gaining action authority or adding latency to CameraX/inference/accessibility paths.
