@@ -24,4 +24,13 @@ class DevLoopReplayTest {
         assertEquals(listOf(LiveDiagnosticKind.MISSED_CLICK), result.events.map { it.trigger.kind })
         assertEquals(43L, result.events.single().trigger.requestId)
     }
+
+    @Test fun replayPreservesSubmissionOnlyEvidenceWithoutInventingFailure() {
+        val result = DevLoopReplay.replay(listOf(
+            DevLoopReplayRecord("open", 1000, 44, "MEDIA_NEXT"),
+            DevLoopReplayRecord("outcome", 1100, 44, outcome = ActionDispatchOutcome.SUBMITTED),
+            DevLoopReplayRecord("tick", 20_000)))
+        assertTrue(result.events.isEmpty())
+        assertTrue(result.outcomes.isEmpty())
+    }
 }

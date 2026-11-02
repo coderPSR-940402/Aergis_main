@@ -74,4 +74,27 @@ class LiveDevLoopRuntimeTest {
         assertFalse(root.resolve("latest.json").exists())
         assertTrue(root.resolve("session.json").readText().contains("\"submitted_only\":1"))
     }
+
+    @Test fun heldDragHasNoInventedCompletionDeadline() {
+        val root = Files.createTempDirectory("devloop-drag").toFile()
+        val session = DevLoopSession(root, "sha", "id", {})
+        session.start(1000, 100_000)
+        session.open(1, 1000, "POINTER_DRAG", 321f, 654f, 1, 2)
+        session.tick(20_000, 119_000)
+        session.outcome(ActionDispatchOutcome.COMPLETED, 1, 20_100)
+        session.stop(20_200, 119_200)
+        assertFalse(root.resolve("latest.json").exists())
+        assertTrue(root.resolve("trace.json").readText().contains("SUCCESS"))
+    }
+
+    @Test fun duplicateOpenDoesNotInflateTheSessionClickDenominator() {
+        val root = Files.createTempDirectory("devloop-duplicate").toFile()
+        val session = DevLoopSession(root, "sha", "id", {})
+        session.start(1000, 100_000)
+        session.open(1, 1000, "TAP", 321f, 654f, 1, 2)
+        session.outcome(ActionDispatchOutcome.COMPLETED, 1, 1100)
+        session.open(1, 1200, "TAP", 321f, 654f, 1, 2)
+        session.stop(1300, 100_300)
+        assertTrue(root.resolve("session.json").readText().contains("\"click_attempts\":1"))
+    }
 }
