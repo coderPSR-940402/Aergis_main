@@ -36,5 +36,24 @@ def builtin(name, values):
             self.assertTrue(list((server / 'devloop-backups').glob('*.json')))
 
 
+
+class ToolboxDiscoveryTest(unittest.TestCase):
+    def test_detects_existing_active_runtime_instead_of_requiring_a_manual_server_path(self):
+        import os
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            server = root / 'versions/0.3.1/server'
+            server.mkdir(parents=True)
+            (root / 'active.json').write_text('{"active":"0.3.1"}')
+            (server / 'catalog.py').write_text('''TASKS = {}
+def param(kind, label, default=None, **kwargs): return dict(type=kind, label=label, default=default, **kwargs)
+def task(id, label, description, **kwargs): TASKS[id] = dict(id=id, label=label, description=description, **kwargs)
+''')
+            (server / 'core.py').write_text('def builtin(name, values): return {"old": True}\n')
+            result = subprocess.run([sys.executable, 'tools/install_devloop_toolbox.py', '--no-service'],
+                                    env={**os.environ, 'ATB_INSTALL_ROOT': str(root)}, capture_output=True, text=True)
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertEqual('installed', json.loads(result.stdout)['state'])
+
 if __name__ == '__main__':
     unittest.main()

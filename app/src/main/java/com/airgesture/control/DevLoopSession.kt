@@ -36,15 +36,27 @@ internal class DevLoopSession(
     private var seq = 0L
     private var stopped = false
     private var evidenceComplete = true
+    private var previousSessionId: String? = null
     private val diagnostics = LiveDiagnostics(buffer, LiveDiagnosticEventSink { snapshot ->
         runCatching { store.publish(snapshot) }
         val t = snapshot.trigger
+        val context = (snapshot.before + snapshot.after).filter { it.frameId != null || it.handId != null || it.cameraAgeMs != null }
+            .fold(mutableListOf<LiveDiagnosticSample>()) { kept, sample ->
+                if (kept.lastOrNull()?.let { sample.uptimeMs - it.uptimeMs >= 100 } != false) kept.add(sample)
+                kept
+            }
+        val contextEventSeq = seq + 1
         emit("event", linkedMapOf("event_kind" to t.kind.name, "severity" to t.severity.name,
             "event_uptime_ms" to t.uptimeMs, "wall_clock_ms" to t.wallClockMs,
             "request_id" to t.requestId, "action" to t.action, "reason_code" to t.reasonCode,
             "target_x" to t.frozenTargetX, "target_y" to t.frozenTargetY,
             "session_epoch" to t.sessionEpoch, "input_epoch" to t.inputEpoch,
-            "before_count" to snapshot.before.size, "after_count" to snapshot.after.size))
+            "before_count" to snapshot.before.size, "after_count" to snapshot.after.size,
+            "pre_window_ms" to 30_000, "post_window_ms" to 10_000,
+            "post_window_complete" to (lastUptime >= t.uptimeMs + 10_000),
+            "evidence_complete" to evidenceComplete, "context_sample_count" to context.size,
+            "previous_session_id" to if (t.kind == LiveDiagnosticKind.PROCESS_RESTART) previousSessionId else null))
+        for (sample in context) emitSample(sample, contextEventSeq)
     }, interactionTimeoutMs = 2500, onTerminal = ::terminal)
 
     fun start(uptimeMs: Long, wallClockMs: Long) {
@@ -53,8 +65,15 @@ internal class DevLoopSession(
         val unclean = store.startSession(buildId, wallClockMs)
         if (unclean && previous != null) {
             val oldId = Regex("\"session_id\":\"([A-Za-z0-9_.-]+)\"").find(previous)?.groupValues?.get(1)
-            if (oldId != null) write(File(root, "sessions/$oldId.json"), previous
-                .replace("\"state\":\"recording\"", "\"state\":\"unclean\""))
+            if (oldId != null) {
+                previousSessionId = oldId
+                val oldSeq = Regex("\"seq\":([0-9]+)").find(previous)?.groupValues?.get(1)?.toLongOrNull() ?: 0L
+                val recovered = previous.replace(Regex("\"state\":\"[^\"]*\""), "\"state\":\"unclean\"")
+                    .replace("\"clean\":true", "\"clean\":false")
+                    .replace(Regex("\"seq\":[0-9]+"), "\"seq\":${oldSeq + 1}")
+                write(File(root, "sessions/$oldId.json"), recovered)
+                runCatching { relay(LiveDiagnosticRelay.PREFIX + recovered) }
+            }
         }
         startedWall = wallClockMs
         lastWall = wallClockMs
@@ -101,15 +120,21 @@ internal class DevLoopSession(
 
     fun sample(sample: LiveDiagnosticSample, rawX: Float? = null, rawY: Float? = null, tracking: Boolean = false) {
         if (stopped) return
+        val observedConditions = mutableListOf<Pair<LiveDiagnosticKind, String>>()
         increment("frame_count")
         sample.cameraAgeMs?.let { bounded(ages, it) }
         sample.inferenceMs?.let { bounded(inference, it) }
+        if ((sample.cameraAgeMs ?: 0) > 600) observedConditions += LiveDiagnosticKind.CAMERA_DELAY to "pipeline_age_above_600ms"
+        if ((sample.inferenceMs ?: 0) > 250) observedConditions += LiveDiagnosticKind.INFERENCE_STALL to "inference_above_250ms"
         val old = lastFrame
         if (sample.handId != null) {
             if (lastOwner != null && lastOwner != sample.handId) increment("hand_switches")
             lastOwner = sample.handId
             lostAt?.let { bounded(recovery, (sample.uptimeMs - it).coerceAtLeast(0)); lostAt = null }
-        } else if (lastOwner != null && lostAt == null) lostAt = sample.uptimeMs
+        } else if (lastOwner != null && lostAt == null) {
+            lostAt = sample.uptimeMs
+            observedConditions += LiveDiagnosticKind.HAND_LOST to "controlling_owner_not_observed"
+        }
         if (rawX != null && rawY != null && rawX.isFinite() && rawY.isFinite() &&
             (rawX < .1f || rawX > .9f || rawY < .1f || rawY > .9f)) {
             increment("edge_samples")
@@ -119,7 +144,10 @@ internal class DevLoopSession(
             sample.contactState in PINCH_PHASES && old.pointerX != null && old.pointerY != null &&
             sample.pointerX != null && sample.pointerY != null) {
             val jump = hypot((sample.pointerX - old.pointerX).toDouble(), (sample.pointerY - old.pointerY).toDouble())
-            if (jump.isFinite()) pinchJumpMax = maxOf(pinchJumpMax ?: 0.0, jump)
+            if (jump.isFinite()) {
+                pinchJumpMax = maxOf(pinchJumpMax ?: 0.0, jump)
+                if (jump > .15) observedConditions += LiveDiagnosticKind.TRACKING_JUMP to "pinch_pointer_step_above_0.15"
+            }
         }
         lastFrame = sample
         if (frameTrace.lastOrNull()?.let { sample.uptimeMs - it.uptimeMs >= 100 } != false) {
@@ -132,7 +160,19 @@ internal class DevLoopSession(
             lastUptime = sample.uptimeMs
             lastWall = sample.wallClockMs
             diagnostics.sample(sample)
+            for ((kind, reason) in observedConditions) diagnostics.trigger(LiveDiagnosticTrigger(kind,
+                LiveDiagnosticSeverity.WARNING, sample.uptimeMs, sample.wallClockMs,
+                reasonCode = reason, sessionEpoch = sample.sessionEpoch, inputEpoch = sample.inputEpoch))
         }
+    }
+
+    fun selectionUnconfirmed(id: Long, uptimeMs: Long, reason: String) {
+        if (stopped || id !in requests) return
+        emit("trace", linkedMapOf("step" to "selection_unconfirmed", "uptime_ms" to uptimeMs,
+            "request_id" to id, "reason_code" to reason))
+        if (reason == "no_matching_click_event")
+            diagnostics.recordOutcome(id, LiveInteractionTerminal.TIMED_OUT, uptimeMs, reason)
+        else diagnostics.recordOutcome(id, LiveInteractionTerminal.CANCELLED, uptimeMs, reason)
     }
 
     fun tick(uptimeMs: Long, wallClockMs: Long) {
@@ -183,8 +223,8 @@ internal class DevLoopSession(
             "request_id" to outcome.requestId, "outcome" to outcome.terminal.name, "reason_code" to outcome.reason))
     }
 
-    private fun emitSample(s: LiveDiagnosticSample) = emit("trace", linkedMapOf("step" to "sample",
-        "uptime_ms" to s.uptimeMs, "wall_clock_ms" to s.wallClockMs, "frame_id" to s.frameId,
+    private fun emitSample(s: LiveDiagnosticSample, contextEventSeq: Long? = null) = emit("trace", linkedMapOf("step" to "sample",
+        "context_event_seq" to contextEventSeq, "uptime_ms" to s.uptimeMs, "wall_clock_ms" to s.wallClockMs, "frame_id" to s.frameId,
         "hand_id" to s.handId, "pointer_x" to s.pointerX, "pointer_y" to s.pointerY,
         "contact_state" to s.contactState, "camera_age_ms" to s.cameraAgeMs, "inference_ms" to s.inferenceMs,
         "frame_gap_ms" to s.analyzedFrameGapMs, "session_epoch" to s.sessionEpoch, "input_epoch" to s.inputEpoch))
@@ -231,7 +271,7 @@ internal class DevLoopSession(
         internal fun isSubmissionOnly(action: String): Boolean = action in SUBMISSION_ONLY
         private val PINCH_PHASES = setOf("PINCHING", "PRESSED", "HOLDING", "DRAGGING")
         private val SUBMISSION_ONLY = setOf("VOLUME_UP", "VOLUME_DOWN", "MEDIA_PLAY_PAUSE", "MEDIA_NEXT", "MEDIA_PREVIOUS",
-            "APP_SEARCH", "WEB_SEARCH", "WIFI_CONTROLS", "BLUETOOTH_SETTINGS", "CALIBRATE_POINTER",
+            "APP_SEARCH", "WEB_SEARCH", "WIFI_CONTROLS", "BLUETOOTH_SETTINGS", "CALIBRATE_POINTER", "ROTATION_TOGGLE", "SCROLL_UP", "SCROLL_DOWN",
             "FOCUS_NEXT", "FOCUS_PREVIOUS", "ACTIVATE_FOCUSED")
         private fun value(v: Any?): String = when (v) {
             null -> "null"

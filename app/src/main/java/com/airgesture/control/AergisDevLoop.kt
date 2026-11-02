@@ -30,6 +30,11 @@ internal object AergisDevLoop {
         runCatching { worker?.observe { sample(sample, rawX, rawY, tracking) } }
     }
 
+    fun recordSelectionUnconfirmed(requestId: Long, reason: String) {
+        val now = android.os.SystemClock.uptimeMillis()
+        runCatching { worker?.observe { selectionUnconfirmed(requestId, now, reason) } }
+    }
+
     fun checkpoint() {
         val now = android.os.SystemClock.uptimeMillis()
         val wall = System.currentTimeMillis()

@@ -130,6 +130,8 @@ internal class LiveDiagnostics(
                         outcome = outcome,
                         kind = if (outcome.action == "TAP") {
                             LiveDiagnosticKind.MISSED_CLICK
+                        } else if (outcome.action == "SELECT_ITEM") {
+                            LiveDiagnosticKind.SELECTION_FAILED
                         } else {
                             LiveDiagnosticKind.ACTION_FAILED
                         },
@@ -202,6 +204,8 @@ internal class LiveDiagnostics(
                 LiveDiagnosticTrigger(
                     kind = if (outcome.action == "TAP") {
                         LiveDiagnosticKind.MISSED_CLICK
+                    } else if (outcome.action == "SELECT_ITEM") {
+                        LiveDiagnosticKind.SELECTION_FAILED
                     } else {
                         LiveDiagnosticKind.ACTION_FAILED
                     },

@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import shlex
+import re
 import shutil
 import subprocess
 import sys
@@ -79,6 +80,9 @@ def install(server, service=True):
         if shutil.which('sv'):
             status = subprocess.run(['sv', 'up', str(run.parent)], capture_output=True, text=True, timeout=10)
             result['service'] = 'started' if status.returncode == 0 else 'installed_needs_supervisor'
+            reloaded = subprocess.run(['sv', 'restart', str(prefix / 'var/service/atb-agent'),
+                                      str(prefix / 'var/service/atb-dashboard')], capture_output=True, text=True, timeout=20)
+            result['runtime_reload'] = 'reloaded' if reloaded.returncode == 0 else 'needs_restart'
         else:
             result['service'] = 'installed_needs_supervisor'
     return result
@@ -86,10 +90,17 @@ def install(server, service=True):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--server', type=Path, required=True)
+    parser.add_argument('--server', type=Path)
     parser.add_argument('--no-service', action='store_true')
     args = parser.parse_args()
-    print(json.dumps(install(args.server, not args.no_service), indent=2))
+    server = args.server
+    if server is None:
+        root = Path(os.environ.get('ATB_INSTALL_ROOT', str(Path.home() / '.local/share/android-power-toolbox')))
+        active = json.loads((root / 'active.json').read_text())['active']
+        if not isinstance(active, str) or not re.fullmatch(r'\d+\.\d+\.\d+', active):
+            parser.error('Existing Toolbox has no valid active runtime; pass --server explicitly')
+        server = root / 'versions' / active / 'server'
+    print(json.dumps(install(server, not args.no_service), indent=2))
 
 
 if __name__ == '__main__':

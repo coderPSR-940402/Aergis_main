@@ -151,6 +151,17 @@ jobs:
           test -s baseline.json
           cat baseline.json
 
+      - name: Package the existing-Toolbox collector installer
+        run: |
+          python3 - <<'PYTHON'
+          from pathlib import Path
+          from zipfile import ZipFile, ZIP_DEFLATED
+          with ZipFile('aergis-devloop-toolbox.zip', 'w', ZIP_DEFLATED) as archive:
+              for name in ('aergis_live_collector.py', 'install_devloop_toolbox.py', 'aergis_live_collector.sh'):
+                  archive.write(Path('tools') / name, name)
+              archive.write('docs/aergis-devloop.md', 'README.md')
+          PYTHON
+
       - name: Upload APKs and baseline metadata
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
@@ -161,6 +172,7 @@ jobs:
             apk-sha256.txt
             apk-signing.txt
             baseline.json
+            aergis-devloop-toolbox.zip
           if-no-files-found: error
 
       - name: Upload test and lint reports

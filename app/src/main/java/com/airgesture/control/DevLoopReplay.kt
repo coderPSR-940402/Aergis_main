@@ -9,7 +9,8 @@ internal data class DevLoopReplayRecord(
     val targetY: Float = Float.NaN,
     val outcome: ActionDispatchOutcome? = null,
     val sessionEpoch: Long = 0,
-    val inputEpoch: Long = 0
+    val inputEpoch: Long = 0,
+    val reasonCode: String? = null
 )
 internal data class DevLoopReplayResult(val outcomes: List<LiveInteractionOutcome>, val events: List<LiveDiagnosticSnapshot>)
 
@@ -37,6 +38,9 @@ internal object DevLoopReplay {
                 null -> Unit
                 else -> live.recordOutcome(r.requestId, LiveInteractionTerminal.FAILED, r.uptimeMs, r.outcome.name.lowercase())
             }
+            "selection_unconfirmed" -> live.recordOutcome(r.requestId,
+                if (r.reasonCode == "no_matching_click_event") LiveInteractionTerminal.TIMED_OUT else LiveInteractionTerminal.CANCELLED,
+                r.uptimeMs, r.reasonCode)
             "sample", "tick" -> live.sample(LiveDiagnosticSample(r.uptimeMs, r.uptimeMs))
             "stop" -> live.finish(r.uptimeMs)
         }

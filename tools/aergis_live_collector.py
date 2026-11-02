@@ -23,7 +23,7 @@ NUMBERS = {'seq', 'request_id', 'uptime_ms', 'event_uptime_ms', 'wall_clock_ms',
            'stopped_wall_clock_ms', 'click_attempts', 'click_success', 'missed_clicks', 'action_failures',
            'cancelled', 'submitted_only', 'frame_count', 'frame_age_p95_ms', 'inference_p95_ms',
            'pinch_jump_max', 'hand_switches', 'hand_loss_recovery_p95_ms', 'edge_samples',
-           'edge_tracked', 'trace_dropped', 'queue_dropped', 'before_count', 'after_count'}
+           'pre_window_ms', 'post_window_ms', 'context_sample_count', 'context_event_seq', 'edge_tracked', 'trace_dropped', 'queue_dropped', 'before_count', 'after_count'}
 
 
 def parse_line(line):
@@ -53,7 +53,7 @@ def parse_line(line):
             result[key] = value
         elif key in NUMBERS and type(value) in (int, float) and math.isfinite(value):
             result[key] = value
-        elif key == 'clean' and type(value) is bool:
+        elif key in {'clean', 'post_window_complete', 'evidence_complete'} and type(value) is bool:
             result[key] = value
     return result
 
@@ -107,21 +107,30 @@ def compare_sessions(before, after):
 
 def regression_fixture(trace):
     """Generate expectations from recorded terminal evidence, never from requests alone."""
+    if trace.get('truncated'):
+        raise ValueError('incomplete trace: bounded retention removed records; collect a shorter complete session')
     records = sorted(trace.get('records', []), key=lambda r: (r.get('uptime_ms', r.get('event_uptime_ms', 0)), r.get('seq', 0)))
+    open_ids = {r.get('request_id') for r in records if r.get('step') == 'open'}
+    if any(r.get('step') in {'terminal', 'outcome'} and r.get('request_id') not in open_ids for r in records):
+        raise ValueError('incomplete trace: an outcome has no opening record')
     terminal_ids = {r.get('request_id') for r in records if r.get('step') == 'terminal'}
-    terminals, kinds = [], []
+    terminals, kinds, observations = [], [], []
     for item in records:
         if item.get('step') == 'terminal':
             terminals.append(item['outcome'])
         elif item.get('step') == 'outcome' and item.get('outcome') == 'COMPLETED' and item.get('request_id') not in terminal_ids:
             terminals.append('SUCCESS')
         if item.get('record') == 'event':
-            kinds.append(item['event_kind'])
+            if item['event_kind'] in {'MISSED_CLICK', 'ACTION_FAILED', 'SELECTION_FAILED'}:
+                kinds.append(item['event_kind'])
+            else:
+                observations.append(item['event_kind'])
     records += [dict(step='tick', uptime_ms=r['uptime_ms'], seq=r.get('seq', 0)) for r in records
                 if r.get('step') == 'terminal' and r.get('outcome') == 'TIMED_OUT']
     records.sort(key=lambda r: (r.get('uptime_ms', r.get('event_uptime_ms', 0)), r.get('seq', 0)))
     return dict(schema=1, provenance='captured_device' if trace.get('captured_device') else 'synthetic_contract',
                 session_id=trace.get('session_id'), build_id=trace.get('build_id'), records=records,
+                replay_scope='interaction_correlation', recorded_observation_kinds=observations,
                 expected=dict(terminals=terminals, event_kinds=kinds))
 
 
@@ -213,12 +222,20 @@ class Collector:
         state = session.get('state')
         termination = ('Session finished normally' if clean is True else 'Previous session ended unexpectedly'
                        if state == 'unclean' else 'Session is recording' if state == 'recording' else 'No session received yet')
+        comparison = read_json(self.root / 'comparison.json', {})
+        if comparison.get('after_session') != session.get('session_id'):
+            comparison = {}
+        event = self.view('event')
+        if event.get('session_id') != session.get('session_id'):
+            event = {}
+        history = [read_json(p, {}) for p in (self.root / 'sessions').glob('*.json')]
+        history.sort(key=lambda s: s.get('started_wall_clock_ms', 0))
         return dict(schema=1, session_id=session.get('session_id'), build_id=session.get('build_id'),
                     summary=dict(termination=termination,
                                  clicks=f"{session.get('click_success', 0)} completed; {session.get('missed_clicks', 0)} missed",
                                  evidence='Android completion callbacks prove dispatched taps completed. Intended attempts before recognition require recorded contact evidence.'),
                     metrics=metrics(session), manifest=session,
-                    comparison=read_json(self.root / 'comparison.json', {}), latest_event=self.view('event'), history_count=len(list((self.root / 'events').glob('*.json'))))
+                    comparison=comparison, session_history=history, latest_event=event, history_count=len(list((self.root / 'events').glob('*.json'))))
 
 
 def main(argv=None):

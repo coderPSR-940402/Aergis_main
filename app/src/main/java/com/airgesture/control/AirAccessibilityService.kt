@@ -58,6 +58,8 @@ class AirAccessibilityService : AccessibilityService() {
             .put("selectionEpoch", AirRuntime.state.value.selectionEpoch)
             .put("bounds", event.bounds?.let { org.json.JSONObject().put("left", it.left).put("top", it.top)
                 .put("right", it.right).put("bottom", it.bottom) } ?: org.json.JSONObject.NULL))
+        if (event.kind == "activation_unconfirmed" && event.requestId != null)
+            AergisDevLoop.recordSelectionUnconfirmed(event.requestId, event.reason)
         if (event.kind == "activation_confirmed" && event.requestId != null)
             AirRuntime.recordActionFeedback(ActionDispatchOutcome.COMPLETED, event.requestId)
     } }

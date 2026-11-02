@@ -22,7 +22,7 @@ class DevLoopCapturedReplayTest {
                 r.optLong("request_id"), r.optString("action", "TAP"),
                 r.optDouble("target_x", Double.NaN).toFloat(), r.optDouble("target_y", Double.NaN).toFloat(),
                 runCatching { ActionDispatchOutcome.valueOf(r.optString("outcome")) }.getOrNull(),
-                r.optLong("session_epoch"), r.optLong("input_epoch"))
+                r.optLong("session_epoch"), r.optLong("input_epoch"), r.optString("reason_code", ""))
         }
         val result = DevLoopReplay.replay(steps)
         val expected = fixture.getJSONObject("expected")

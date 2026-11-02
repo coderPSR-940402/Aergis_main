@@ -132,6 +132,43 @@ class CollectorTest(unittest.TestCase):
         fixture = regression_fixture(trace)
         self.assertTrue(any(r.get('step') == 'tick' and r['uptime_ms'] == 3500 for r in fixture['records']))
 
+    def test_truncated_trace_cannot_be_misrepresented_as_a_complete_regression(self):
+        c = Collector(self.root, max_trace=3)
+        for item in [record(kind='trace', step='open', uptime_ms=1000, request_id=42),
+                     record(kind='trace', seq=2, step='outcome', uptime_ms=1100, request_id=42, outcome='COMPLETED'),
+                     record(kind='trace', seq=3, step='terminal', uptime_ms=1100, request_id=42, outcome='SUCCESS'),
+                     record(kind='trace', seq=4, step='open', uptime_ms=1200, request_id=43)]:
+            self.feed(c, item)
+        with self.assertRaisesRegex(ValueError, 'incomplete'):
+            regression_fixture(c.view('replay'))
+
+    def test_comparison_is_not_attached_to_a_different_current_session(self):
+        c = Collector(self.root)
+        self.feed(c, record(kind='session', clean=True, state='stopped', started_wall_clock_ms=100))
+        next_session = record(kind='session', clean=True, state='stopped', started_wall_clock_ms=200)
+        next_session.update(session_id='next', build_id='next-sha')
+        self.feed(c, next_session)
+        current = record(kind='session', clean=False, state='recording', started_wall_clock_ms=300)
+        current.update(session_id='current', build_id='newest-sha')
+        self.feed(c, current)
+        self.assertEqual({}, c.view('latest')['comparison'])
+
+    def test_prior_unclean_session_survives_a_new_recording_manifest(self):
+        c = Collector(self.root)
+        self.feed(c, record(kind='session', seq=1, clean=False, state='recording', started_wall_clock_ms=100))
+        self.feed(c, record(kind='session', seq=2, clean=False, state='unclean', started_wall_clock_ms=100))
+        current = record(kind='session', clean=False, state='recording', started_wall_clock_ms=200)
+        current.update(session_id='next', build_id='next-sha')
+        self.feed(c, current)
+        history = c.view('latest')['session_history']
+        self.assertTrue(any(s['session_id'] == 'a54-session' and s['state'] == 'unclean' for s in history))
+
+    def test_frame_observations_are_not_falsely_claimed_as_correlator_regressions(self):
+        fixture = regression_fixture({'records': [record(kind='event', event_kind='HAND_LOST', event_uptime_ms=1000)]})
+        self.assertEqual([], fixture['expected']['event_kinds'])
+        self.assertEqual(['HAND_LOST'], fixture['recorded_observation_kinds'])
+        self.assertEqual('interaction_correlation', fixture['replay_scope'])
+
 
 if __name__ == "__main__":
     unittest.main()
