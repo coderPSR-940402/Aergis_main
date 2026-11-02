@@ -97,4 +97,66 @@ class LiveDevLoopRuntimeTest {
         session.stop(1300, 100_300)
         assertTrue(root.resolve("session.json").readText().contains("\"click_attempts\":1"))
     }
+
+    @Test fun semanticScrollAndRotationSubmissionCannotManufactureCompletionFailures() {
+        for (action in listOf("SCROLL_UP", "SCROLL_DOWN", "ROTATION_TOGGLE")) {
+            val root = Files.createTempDirectory("devloop-submission").toFile()
+            val session = DevLoopSession(root, "sha", "id", {})
+            session.start(1000, 100_000)
+            session.open(1, 1000, action, Float.NaN, Float.NaN, 1, 2)
+            session.outcome(ActionDispatchOutcome.SUBMITTED, 1, 1100)
+            session.tick(20_000, 119_000)
+            session.stop(20_100, 119_100)
+            assertFalse(action, root.resolve("latest.json").exists())
+        }
+    }
+
+    @Test fun promotedEventTransportsItsFrameContextBeforeTheProcessCanStop() {
+        val root = Files.createTempDirectory("devloop-context").toFile()
+        val lines = mutableListOf<String>()
+        val session = DevLoopSession(root, "sha", "id", lines::add)
+        session.start(1000, 100_000)
+        session.sample(LiveDiagnosticSample(1100, 100_100, frameId = 99, cameraAgeMs = 42))
+        session.open(1, 1200, "TAP", 321f, 654f, 1, 2)
+        session.outcome(ActionDispatchOutcome.PLATFORM_REJECTED, 1, 1250)
+        session.tick(11_250, 110_250)
+        assertTrue(lines.any { it.contains("\"event_kind\":\"ACTION_FAILED\"") })
+        assertTrue(lines.any { it.contains("\"frame_id\":99") && it.contains("\"camera_age_ms\":42") })
+    }
+
+    @Test fun recoveredUncleanManifestIsTransportedWithItsOriginalIdentity() {
+        val root = Files.createTempDirectory("devloop-unclean-transport").toFile()
+        DevLoopSession(root, "old-sha", "old", {}).start(1000, 100_000)
+        val lines = mutableListOf<String>()
+        DevLoopSession(root, "new-sha", "new", lines::add).start(2000, 101_000)
+        assertTrue(lines.any { it.contains("\"session_id\":\"old\"") &&
+            it.contains("\"build_id\":\"old-sha\"") && it.contains("\"state\":\"unclean\"") })
+    }
+
+    @Test fun frameConditionsProduceObservationsAndRecoveryMetricsWithoutChangingInput() {
+        val root = Files.createTempDirectory("devloop-detectors").toFile()
+        val lines = mutableListOf<String>()
+        val session = DevLoopSession(root, "sha", "id", lines::add)
+        session.start(1000, 100_000)
+        session.sample(LiveDiagnosticSample(1100, 100_100, handId = "owner", pointerX = .1f,
+            pointerY = .2f, contactState = "PINCHING", cameraAgeMs = 20, inferenceMs = 10))
+        session.sample(LiveDiagnosticSample(1200, 100_200, handId = "owner", pointerX = .4f,
+            pointerY = .2f, contactState = "PINCHING", cameraAgeMs = 700, inferenceMs = 300))
+        session.sample(LiveDiagnosticSample(1300, 100_300))
+        session.sample(LiveDiagnosticSample(1500, 100_500, handId = "owner"), .95f, .5f, true)
+        session.stop(1600, 100_600)
+        for (kind in listOf("HAND_LOST", "TRACKING_JUMP", "CAMERA_DELAY", "INFERENCE_STALL"))
+            assertTrue(kind, lines.any { it.contains("\"event_kind\":\"$kind\"") })
+        val manifest = root.resolve("session.json").readText()
+        assertTrue(manifest.contains("\"hand_loss_recovery_p95_ms\":200"))
+        assertTrue(manifest.contains("\"edge_tracked\":1"))
+    }
+
+    @Test fun expiredSelectionConfirmationHasItsOwnEvidenceKind() {
+        val events = mutableListOf<LiveDiagnosticSnapshot>()
+        val live = LiveDiagnostics(LiveDiagnosticBuffer(100, 60_000), LiveDiagnosticEventSink(events::add), postWindowMs = 0)
+        live.openInteraction(1, 1000, "SELECT_ITEM", Float.NaN, Float.NaN, 1, 2)
+        live.recordOutcome(1, LiveInteractionTerminal.TIMED_OUT, 2001, "activation_unconfirmed")
+        assertEquals(LiveDiagnosticKind.SELECTION_FAILED, events.single().trigger.kind)
+    }
 }
