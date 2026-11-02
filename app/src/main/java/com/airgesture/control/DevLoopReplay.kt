@@ -20,10 +20,18 @@ internal object DevLoopReplay {
         val events = mutableListOf<LiveDiagnosticSnapshot>()
         val live = LiveDiagnostics(LiveDiagnosticBuffer(3600, 40_000), LiveDiagnosticEventSink(events::add),
             postWindowMs = 0, interactionTimeoutMs = 2500, onTerminal = outcomes::add)
+        val actions = mutableMapOf<Long, String>()
         for (r in records.sortedBy { it.uptimeMs }) when (r.step) {
-            "open" -> live.openInteraction(r.requestId, r.uptimeMs, r.action, r.targetX, r.targetY, r.sessionEpoch, r.inputEpoch)
+            "open" -> {
+                actions[r.requestId] = r.action
+                live.openInteraction(r.requestId, r.uptimeMs, r.action, r.targetX, r.targetY, r.sessionEpoch, r.inputEpoch,
+                    completionTimeoutMs = if (r.action == "POINTER_DRAG") null else 2500)
+            }
             "outcome" -> when (r.outcome) {
-                ActionDispatchOutcome.SUBMITTED -> live.recordDispatch(r.requestId, r.uptimeMs)
+                ActionDispatchOutcome.SUBMITTED -> {
+                    live.recordDispatch(r.requestId, r.uptimeMs)
+                    if (DevLoopSession.isSubmissionOnly(actions[r.requestId].orEmpty())) live.forgetInteraction(r.requestId)
+                }
                 ActionDispatchOutcome.COMPLETED -> live.recordOutcome(r.requestId, LiveInteractionTerminal.SUCCESS, r.uptimeMs)
                 ActionDispatchOutcome.CANCELLED -> live.recordOutcome(r.requestId, LiveInteractionTerminal.CANCELLED, r.uptimeMs)
                 null -> Unit

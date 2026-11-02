@@ -81,6 +81,29 @@ class AirAccessibilityServiceDispatchTest {
         AirRuntime.setPointerState(0f, 0f, tracking = false)
     }
 
+    @Test fun productionDevLoopExportsCompletedAndRejectedRequestsWithoutTestAdapter() {
+        AergisDevLoop.start(service)
+        try {
+            service.dispatchPointerTap()
+            shadowOf(Looper.getMainLooper()).idle()
+            val call = shadow.gesturesDispatched.single()
+            call.callback()!!.onCompleted(call.description())
+            AirRuntime.controlMode = ControlMode.OFF
+            service.dispatchPointerTap()
+        } finally {
+            AergisDevLoop.stop()?.get(10, java.util.concurrent.TimeUnit.SECONDS)
+        }
+        val manifest = java.io.File(service.filesDir, "devloop/session.json").readText()
+        assertTrue(manifest.contains("\"click_success\":1"))
+        assertTrue(manifest.contains("\"action_failures\":1"))
+        assertTrue(manifest.contains("\"clean\":true"))
+        val lines = org.robolectric.shadows.ShadowLog.getLogsForTag("AergisDevLoop").map { it.msg }
+        val output = java.io.File("build/reports/testing-tools/devloop-runtime.log")
+        output.parentFile.mkdirs()
+        output.writeText(lines.joinToString("\n", postfix = "\n"))
+        assertTrue(lines.any { it.contains("\"record\":\"event\"") })
+    }
+
     @Test fun classifierDispatchRetainsTheEpochOfItsRecognitionResult() {
         val captured = AirRuntime.actionEpoch
         AirRuntime.controlMode = ControlMode.PAUSED

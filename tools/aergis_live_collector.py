@@ -117,6 +117,9 @@ def regression_fixture(trace):
             terminals.append('SUCCESS')
         if item.get('record') == 'event':
             kinds.append(item['event_kind'])
+    records += [dict(step='tick', uptime_ms=r['uptime_ms'], seq=r.get('seq', 0)) for r in records
+                if r.get('step') == 'terminal' and r.get('outcome') == 'TIMED_OUT']
+    records.sort(key=lambda r: (r.get('uptime_ms', r.get('event_uptime_ms', 0)), r.get('seq', 0)))
     return dict(schema=1, provenance='captured_device' if trace.get('captured_device') else 'synthetic_contract',
                 session_id=trace.get('session_id'), build_id=trace.get('build_id'), records=records,
                 expected=dict(terminals=terminals, event_kinds=kinds))
@@ -145,9 +148,22 @@ class Collector:
             atomic_json(self.root / 'latest-event.json', data)
             self._rotate('events', self.max_events)
         elif category == 'session':
+            previous = read_json(self.root / 'sessions' / (data['session_id'] + '.json'), {})
+            if previous.get('seq', -1) >= data['seq']:
+                return False
             atomic_json(self.root / 'sessions' / (data['session_id'] + '.json'), data)
             atomic_json(self.root / 'session.json', data)
             self._rotate('sessions', self.max_sessions)
+            if data.get('clean') is True:
+                candidates = [read_json(p, {}) for p in (self.root / 'sessions').glob('*.json')]
+                candidates = [s for s in candidates if s.get('clean') is True and
+                              s.get('session_id') != data['session_id'] and s.get('build_id') != data['build_id'] and
+                              s.get('started_wall_clock_ms', 0) < data.get('started_wall_clock_ms', 0)]
+                if candidates:
+                    before = max(candidates, key=lambda s: s.get('started_wall_clock_ms', 0))
+                    atomic_json(self.root / 'comparison.json', dict(before_build=before['build_id'],
+                                after_build=data['build_id'], before_session=before['session_id'],
+                                after_session=data['session_id'], metrics=compare_sessions(before, data)))
         if category in {'trace', 'event'}:
             path = self.root / 'traces' / (data['session_id'] + '.json')
             trace = read_json(path, dict(schema=1, captured_device=True, session_id=data['session_id'],
@@ -202,7 +218,7 @@ class Collector:
                                  clicks=f"{session.get('click_success', 0)} completed; {session.get('missed_clicks', 0)} missed",
                                  evidence='Android completion callbacks prove dispatched taps completed. Intended attempts before recognition require recorded contact evidence.'),
                     metrics=metrics(session), manifest=session,
-                    latest_event=self.view('event'), history_count=len(list((self.root / 'events').glob('*.json'))))
+                    comparison=read_json(self.root / 'comparison.json', {}), latest_event=self.view('event'), history_count=len(list((self.root / 'events').glob('*.json'))))
 
 
 def main(argv=None):

@@ -18,6 +18,7 @@ internal class DevLoopSession(
     private val trace = ArrayDeque<String>()
     private val frameTrace = ArrayDeque<LiveDiagnosticSample>()
     private val requests = LinkedHashMap<Long, String>()
+    private val seenRequests = LinkedHashSet<Long>()
     private val counts = linkedMapOf("click_attempts" to 0L, "click_success" to 0L, "missed_clicks" to 0L,
         "action_failures" to 0L, "cancelled" to 0L, "submitted_only" to 0L, "frame_count" to 0L,
         "hand_switches" to 0L, "edge_samples" to 0L, "edge_tracked" to 0L, "trace_dropped" to 0L, "queue_dropped" to 0L)
@@ -65,13 +66,16 @@ internal class DevLoopSession(
     }
 
     fun open(id: Long, uptimeMs: Long, action: String, x: Float, y: Float, epoch: Long, input: Long) {
-        if (stopped || !evidenceComplete || requests.containsKey(id)) return
+        if (stopped || !evidenceComplete || id in seenRequests) return
         if (requests.size >= 4096) { invalidateEvidence(1); return }
+        seenRequests.add(id)
+        if (seenRequests.size > 4096) seenRequests.remove(seenRequests.first())
         requests[id] = action
         if (action == "TAP") increment("click_attempts")
         emit("trace", linkedMapOf("step" to "open", "uptime_ms" to uptimeMs, "request_id" to id,
             "action" to action, "target_x" to x, "target_y" to y, "session_epoch" to epoch, "input_epoch" to input))
-        diagnostics.openInteraction(id, uptimeMs, action, x, y, epoch, input)
+        diagnostics.openInteraction(id, uptimeMs, action, x, y, epoch, input,
+            completionTimeoutMs = if (action == "POINTER_DRAG") null else 2500)
     }
 
     fun outcome(outcome: ActionDispatchOutcome, id: Long, uptimeMs: Long) {
@@ -80,7 +84,7 @@ internal class DevLoopSession(
             "request_id" to id, "outcome" to outcome.name))
         if (outcome == ActionDispatchOutcome.SUBMITTED) {
             diagnostics.recordDispatch(id, uptimeMs)
-            if (requests[id] in SUBMISSION_ONLY) {
+            if (isSubmissionOnly(requests[id].orEmpty())) {
                 diagnostics.forgetInteraction(id)
                 requests.remove(id)
                 increment("submitted_only")
@@ -157,7 +161,9 @@ internal class DevLoopSession(
 
     fun stop(uptimeMs: Long, wallClockMs: Long) {
         if (stopped) return
+        emit("trace", linkedMapOf("step" to "stop", "uptime_ms" to uptimeMs))
         diagnostics.finish(uptimeMs)
+        lastUptime = maxOf(lastUptime, uptimeMs)
         lastWall = wallClockMs
         stopped = true
         for (sample in frameTrace) emitSample(sample)
@@ -222,6 +228,7 @@ internal class DevLoopSession(
     private fun percentile(values: ArrayDeque<Long>): Long? = values.sorted().let { if (it.isEmpty()) null else it[(ceil(it.size * .95).toInt() - 1).coerceAtLeast(0)] }
 
     companion object {
+        internal fun isSubmissionOnly(action: String): Boolean = action in SUBMISSION_ONLY
         private val PINCH_PHASES = setOf("PINCHING", "PRESSED", "HOLDING", "DRAGGING")
         private val SUBMISSION_ONLY = setOf("VOLUME_UP", "VOLUME_DOWN", "MEDIA_PLAY_PAUSE", "MEDIA_NEXT", "MEDIA_PREVIOUS",
             "APP_SEARCH", "WEB_SEARCH", "WIFI_CONTROLS", "BLUETOOTH_SETTINGS", "CALIBRATE_POINTER",

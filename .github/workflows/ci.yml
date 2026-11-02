@@ -69,6 +69,16 @@ jobs:
       - name: Run unit tests
         run: ./gradlew test --build-cache --stacktrace --warning-mode all
 
+      - name: Reconstruct production DevLoop evidence and generate replay
+        run: |
+          cp -a app/build/reports/tests app/build/reports/tests-full
+          python3 tools/verify_devloop_pipeline.py app/build/reports/testing-tools/devloop-runtime.log --fixture app/build/reports/testing-tools/devloop-runtime-replay.json
+
+      - name: Replay exported DevLoop session through the production correlator
+        env:
+          AERGIS_DEVLOOP_REPLAY_FIXTURE: ${{ github.workspace }}/app/build/reports/testing-tools/devloop-runtime-replay.json
+        run: ./gradlew :app:testDebugUnitTest --tests '*DevLoopCapturedReplayTest' --no-build-cache --stacktrace
+
       - name: Run Android lint
         run: ./gradlew :app:lint --build-cache --stacktrace --warning-mode all
 
@@ -160,6 +170,7 @@ jobs:
           name: Aergis-reports-${{ github.sha }}
           path: |
             app/build/reports/tests/
+            app/build/reports/tests-full/
             app/build/reports/lint-results*
             app/build/reports/testing-tools/
           if-no-files-found: ignore

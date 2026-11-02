@@ -20,9 +20,10 @@ internal object AergisDevLoop {
         }
     }
 
-    @Synchronized fun stop() {
-        runCatching { worker?.stop() }
+    @Synchronized fun stop(): java.util.concurrent.Future<*>? {
+        val previous = worker
         worker = null
+        return runCatching { previous?.stop() }.getOrNull()
     }
 
     fun sampleFrame(sample: LiveDiagnosticSample, rawX: Float?, rawY: Float?, tracking: Boolean) {

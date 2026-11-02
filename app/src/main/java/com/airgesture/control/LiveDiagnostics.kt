@@ -16,7 +16,7 @@ internal class LiveDiagnostics(
 ) {
     private data class ActiveInteraction(
         val transaction: LiveInteractionTransaction,
-        val deadlineUptimeMs: Long
+        val deadlineUptimeMs: Long?
     )
 
     private data class PendingEvent(
@@ -30,7 +30,7 @@ internal class LiveDiagnostics(
     private val closedRequests = LinkedHashSet<Long>()
     private var wallClockOffsetMs = 0L
     private val pending = ArrayList<PendingEvent>()
-    private val emittedRequestKinds = HashSet<Pair<Long, LiveDiagnosticKind>>()
+    private val emittedRequestKinds = LinkedHashSet<Pair<Long, LiveDiagnosticKind>>()
     private val lastGenericEventAt = HashMap<String, Long>()
 
     init {
@@ -58,7 +58,8 @@ internal class LiveDiagnostics(
         frozenTargetX: Float,
         frozenTargetY: Float,
         sessionEpoch: Long,
-        inputEpoch: Long
+        inputEpoch: Long,
+        completionTimeoutMs: Long? = interactionTimeoutMs
     ) {
         synchronized(lock) {
             if (active.containsKey(requestId) || requestId in closedRequests) return
@@ -72,7 +73,7 @@ internal class LiveDiagnostics(
                     sessionEpoch = sessionEpoch,
                     inputEpoch = inputEpoch
                 ),
-                deadlineUptimeMs = openedUptimeMs + interactionTimeoutMs
+                deadlineUptimeMs = completionTimeoutMs?.let { openedUptimeMs + it }
             )
         }
     }
@@ -183,19 +184,20 @@ internal class LiveDiagnostics(
     ) {
         if (active.isEmpty()) return
         val expired = active.entries
-            .filter { sample.uptimeMs >= it.value.deadlineUptimeMs }
+            .filter { it.value.deadlineUptimeMs?.let { deadline -> sample.uptimeMs >= deadline } == true }
             .map { it.key to it.value }
 
         for ((requestId, current) in expired) {
             if (active.remove(requestId) == null) continue
+            val deadline = current.deadlineUptimeMs ?: continue
             val outcome = current.transaction.timeout(
-                current.deadlineUptimeMs,
+                deadline,
                 "completion_timeout"
             )
             rememberClosed(requestId)
             runCatching { onTerminal(outcome) }
             val wallClockAtDeadline = (sample.wallClockMs -
-                (sample.uptimeMs - current.deadlineUptimeMs)).coerceAtLeast(0L)
+                (sample.uptimeMs - deadline)).coerceAtLeast(0L)
             queueTriggerLocked(
                 LiveDiagnosticTrigger(
                     kind = if (outcome.action == "TAP") {
@@ -204,7 +206,7 @@ internal class LiveDiagnostics(
                         LiveDiagnosticKind.ACTION_FAILED
                     },
                     severity = LiveDiagnosticSeverity.ERROR,
-                    uptimeMs = current.deadlineUptimeMs,
+                    uptimeMs = deadline,
                     wallClockMs = wallClockAtDeadline,
                     requestId = outcome.requestId,
                     action = outcome.action,

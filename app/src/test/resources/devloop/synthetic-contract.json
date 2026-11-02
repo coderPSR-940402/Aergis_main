@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "provenance": "synthetic_contract",
+  "records": [
+    {"step":"open","uptime_ms":1000,"request_id":42,"action":"TAP","target_x":321,"target_y":654},
+    {"step":"outcome","uptime_ms":1100,"request_id":42,"outcome":"COMPLETED"},
+    {"step":"open","uptime_ms":1200,"request_id":43,"action":"TAP","target_x":123,"target_y":456},
+    {"step":"tick","uptime_ms":3700}
+  ],
+  "expected": {"terminals":["SUCCESS","TIMED_OUT"],"event_kinds":["MISSED_CLICK"]}
+}

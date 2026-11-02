@@ -49,6 +49,11 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 class MainActivity : ComponentActivity() {
+    override fun onStop() {
+        AergisDevLoop.checkpoint()
+        super.onStop()
+    }
+
     private var requestedDestination by mutableStateOf<AergisDestination?>(null)
     private var pointerEnabled by mutableStateOf(true)
     private var gesturesEnabled by mutableStateOf(true)

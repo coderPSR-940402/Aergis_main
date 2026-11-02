@@ -106,6 +106,32 @@ class CollectorTest(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual('a54-session', json.loads((self.root / 'session.json').read_text())['session_id'])
 
+    def test_new_build_finalization_automatically_compares_against_previous_session(self):
+        c = Collector(self.root)
+        self.feed(c, record(kind='session', clean=True, state='stopped', started_wall_clock_ms=100,
+                            click_attempts=10, click_success=7, missed_clicks=3))
+        newer = record(kind='session', clean=True, state='stopped', started_wall_clock_ms=200,
+                       click_attempts=10, click_success=9, missed_clicks=1)
+        newer.update(session_id='next-session', build_id='next-sha:1375')
+        self.feed(c, newer)
+        comparison = c.view('latest')['comparison']
+        self.assertEqual('sha:1374', comparison['before_build'])
+        self.assertEqual('next-sha:1375', comparison['after_build'])
+        self.assertEqual('improved', comparison['metrics']['missed_clicks']['assessment'])
+
+    def test_late_old_manifest_cannot_overwrite_finished_session(self):
+        c = Collector(self.root)
+        self.feed(c, record(kind='session', seq=10, clean=True, state='stopped'))
+        self.assertFalse(self.feed(c, record(kind='session', seq=2, clean=False, state='recording')))
+        self.assertTrue(c.view('manifest')['clean'])
+
+    def test_timeout_evidence_generates_a_timer_input_for_replay(self):
+        trace = {'records': [record(kind='trace', step='open', uptime_ms=1000, request_id=42),
+                             record(kind='trace', seq=2, step='terminal', uptime_ms=3500,
+                                    request_id=42, outcome='TIMED_OUT')]}
+        fixture = regression_fixture(trace)
+        self.assertTrue(any(r.get('step') == 'tick' and r['uptime_ms'] == 3500 for r in fixture['records']))
+
 
 if __name__ == "__main__":
     unittest.main()
