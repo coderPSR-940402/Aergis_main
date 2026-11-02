@@ -11,7 +11,8 @@ internal class LiveDiagnostics(
     private val preWindowMs: Long = 30_000L,
     private val postWindowMs: Long = 10_000L,
     private val interactionTimeoutMs: Long = 500L,
-    private val dedupWindowMs: Long = 2_000L
+    private val dedupWindowMs: Long = 2_000L,
+    private val onTerminal: (LiveInteractionOutcome) -> Unit = {}
 ) {
     private data class ActiveInteraction(
         val transaction: LiveInteractionTransaction,
@@ -26,6 +27,8 @@ internal class LiveDiagnostics(
 
     private val lock = Any()
     private val active = LinkedHashMap<Long, ActiveInteraction>()
+    private val closedRequests = LinkedHashSet<Long>()
+    private var wallClockOffsetMs = 0L
     private val pending = ArrayList<PendingEvent>()
     private val emittedRequestKinds = HashSet<Pair<Long, LiveDiagnosticKind>>()
     private val lastGenericEventAt = HashMap<String, Long>()
@@ -40,6 +43,7 @@ internal class LiveDiagnostics(
     fun sample(sample: LiveDiagnosticSample) {
         val ready = ArrayList<LiveDiagnosticSnapshot>()
         synchronized(lock) {
+            wallClockOffsetMs = sample.wallClockMs - sample.uptimeMs
             buffer.add(sample)
             expireInteractionsLocked(sample, ready)
             finalizePendingLocked(sample.uptimeMs, ready)
@@ -57,7 +61,7 @@ internal class LiveDiagnostics(
         inputEpoch: Long
     ) {
         synchronized(lock) {
-            if (active.containsKey(requestId)) return
+            if (active.containsKey(requestId) || requestId in closedRequests) return
             active[requestId] = ActiveInteraction(
                 transaction = LiveInteractionTransaction.open(
                     requestId = requestId,
@@ -104,6 +108,8 @@ internal class LiveDiagnostics(
                 )
             }
 
+            rememberClosed(requestId)
+            runCatching { onTerminal(outcome) }
             when (outcome.terminal) {
                 LiveInteractionTerminal.SUCCESS,
                 LiveInteractionTerminal.CANCELLED -> Unit
@@ -136,6 +142,33 @@ internal class LiveDiagnostics(
         publishSafely(ready)
     }
 
+    /** A submission-only API has no completion callback; absence is not a failed action. */
+    fun forgetInteraction(requestId: Long) {
+        synchronized(lock) { active.remove(requestId); rememberClosed(requestId) }
+    }
+
+    /** Flush truncated post-context and cancel remaining observations on a clean capture stop. */
+    fun finish(uptimeMs: Long) {
+        val ready = ArrayList<LiveDiagnosticSnapshot>()
+        synchronized(lock) {
+            for ((id, current) in active) {
+                val outcome = current.transaction.cancel(uptimeMs, "session_stopped")
+                rememberClosed(id)
+                runCatching { onTerminal(outcome) }
+            }
+            active.clear()
+            for (event in pending) ready += LiveDiagnosticSnapshot(event.trigger, event.before,
+                buffer.snapshotAfter(event.trigger.uptimeMs, postWindowMs))
+            pending.clear()
+        }
+        publishSafely(ready)
+    }
+
+    private fun rememberClosed(id: Long) {
+        closedRequests.add(id)
+        while (closedRequests.size > 4096) closedRequests.remove(closedRequests.first())
+    }
+
     fun trigger(trigger: LiveDiagnosticTrigger) {
         val ready = ArrayList<LiveDiagnosticSnapshot>()
         synchronized(lock) {
@@ -159,6 +192,8 @@ internal class LiveDiagnostics(
                 current.deadlineUptimeMs,
                 "completion_timeout"
             )
+            rememberClosed(requestId)
+            runCatching { onTerminal(outcome) }
             val wallClockAtDeadline = (sample.wallClockMs -
                 (sample.uptimeMs - current.deadlineUptimeMs)).coerceAtLeast(0L)
             queueTriggerLocked(
@@ -193,7 +228,7 @@ internal class LiveDiagnostics(
         kind = kind,
         severity = severity,
         uptimeMs = outcome.finishedUptimeMs,
-        wallClockMs = outcome.finishedUptimeMs,
+        wallClockMs = (outcome.finishedUptimeMs + wallClockOffsetMs).coerceAtLeast(0L),
         requestId = outcome.requestId,
         action = outcome.action,
         reasonCode = reasonCode,
@@ -222,7 +257,9 @@ internal class LiveDiagnostics(
 
     private fun acceptTriggerLocked(trigger: LiveDiagnosticTrigger): Boolean {
         trigger.requestId?.let { requestId ->
-            return emittedRequestKinds.add(requestId to trigger.kind)
+            val accepted = emittedRequestKinds.add(requestId to trigger.kind)
+            if (emittedRequestKinds.size > 4096) emittedRequestKinds.remove(emittedRequestKinds.first())
+            return accepted
         }
 
         val key = trigger.dedupKey ?: buildString {
