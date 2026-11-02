@@ -15,7 +15,7 @@ class LiveDevLoopRuntimeTest {
         live.finish(1020)
         live.sample(LiveDiagnosticSample(20_000, 119_000))
         assertEquals(1, events.size)
-        assertEquals(100_010, events.single().trigger.wallClockMs)
+        assertEquals(100_010L, events.single().trigger.wallClockMs)
         assertEquals(1L, events.single().trigger.requestId)
     }
 
