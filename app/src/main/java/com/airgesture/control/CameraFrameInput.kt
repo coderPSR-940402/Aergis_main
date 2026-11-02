@@ -33,6 +33,7 @@ internal class CapturedCameraFrame private constructor(
     val timestampNs: Long,
     val receivedUptimeMs: Long,
     val receivedElapsedMs: Long,
+    val inputEpoch: Long,
     private val preparePixels: () -> RgbaFrameData,
     private val releasePixels: () -> Unit
 ) : AutoCloseable {
@@ -40,7 +41,8 @@ internal class CapturedCameraFrame private constructor(
     private val closed = AtomicBoolean(false)
 
     constructor(data: RgbaFrameData, receivedUptimeMs: Long, receivedElapsedMs: Long,
-        lease: FrameBufferPool.Lease) : this(data.timestampNs, receivedUptimeMs, receivedElapsedMs,
+        lease: FrameBufferPool.Lease, inputEpoch: Long = AirRuntime.state.value.inputEpoch) :
+        this(data.timestampNs, receivedUptimeMs, receivedElapsedMs, inputEpoch,
         { data }, { lease.close() })
 
     // Only the single inference worker reads pixels; dropped pending frames never convert.
@@ -67,9 +69,9 @@ internal class CapturedCameraFrame private constructor(
     companion object {
         fun fromYuv(pixels: Yuv420Pixels, rotation: Int, timestampNs: Long, cropRect: String,
             receivedUptimeMs: Long, receivedElapsedMs: Long, sourceLease: FrameBufferPool.Lease,
-            rgbaBuffers: FrameBufferPool): CapturedCameraFrame {
+            rgbaBuffers: FrameBufferPool, inputEpoch: Long = AirRuntime.state.value.inputEpoch): CapturedCameraFrame {
             var rgbaLease: FrameBufferPool.Lease? = null
-            return CapturedCameraFrame(timestampNs, receivedUptimeMs, receivedElapsedMs, {
+            return CapturedCameraFrame(timestampNs, receivedUptimeMs, receivedElapsedMs, inputEpoch, {
                 val size = Math.multiplyExact(Math.multiplyExact(pixels.width, pixels.height), 4)
                 val lease = checkNotNull(rgbaBuffers.acquire(size)) { "RGBA conversion buffer unavailable" }
                 rgbaLease = lease
@@ -96,7 +98,9 @@ internal class CameraFrameInput {
     private val yuvBuffers = FrameBufferPool(direct = false)
 
     fun capture(image: ImageProxy, receivedUptimeMs: Long, receivedElapsedMs: Long): CapturedCameraFrame? {
-        if (image.format == ImageFormat.YUV_420_888) return captureYuv(image, receivedUptimeMs, receivedElapsedMs)
+        // Bind authority before any plane read/copy, including a concurrent Pause/Resume.
+        val inputEpoch = AirRuntime.state.value.inputEpoch
+        if (image.format == ImageFormat.YUV_420_888) return captureYuv(image, receivedUptimeMs, receivedElapsedMs, inputEpoch)
         require(image.format == PixelFormat.RGBA_8888) { "Expected CameraX YUV or RGBA output" }
         val data = RgbaFrameData.fromImage(image)
         require(data.width > 0 && data.height > 0)
@@ -119,14 +123,15 @@ internal class CameraFrameInput {
             }
             target.flip()
             return CapturedCameraFrame(data.copy(buffer = target, rowStride = rowBytes),
-                receivedUptimeMs, receivedElapsedMs, lease)
+                receivedUptimeMs, receivedElapsedMs, lease, inputEpoch)
         } catch (failure: Throwable) {
             lease.close()
             throw failure
         }
     }
 
-    private fun captureYuv(image: ImageProxy, receivedUptimeMs: Long, receivedElapsedMs: Long): CapturedCameraFrame? {
+    private fun captureYuv(image: ImageProxy, receivedUptimeMs: Long, receivedElapsedMs: Long,
+        inputEpoch: Long): CapturedCameraFrame? {
         val width = image.width
         val height = image.height
         val planes = image.planes.map { Yuv420Pixels.Plane(it.buffer, it.rowStride, it.pixelStride) }
@@ -136,7 +141,7 @@ internal class CameraFrameInput {
             val pixels = Yuv420Pixels.copy(width, height, planes, lease.buffer)
             return CapturedCameraFrame.fromYuv(pixels, image.imageInfo.rotationDegrees,
                 image.imageInfo.timestamp, image.cropRect.toShortString(), receivedUptimeMs,
-                receivedElapsedMs, lease, rgbaBuffers)
+                receivedElapsedMs, lease, rgbaBuffers, inputEpoch)
         } catch (failure: Throwable) {
             lease.close()
             throw failure

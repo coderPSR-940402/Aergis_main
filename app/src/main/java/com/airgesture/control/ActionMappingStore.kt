@@ -18,8 +18,11 @@ class ActionMappingStore(context: Context) {
         AirAction.valueOf(prefs.getString("map_${action.name}", action.name) ?: action.name)
     }.getOrDefault(action)
 
-    fun setMapping(source: AirAction, target: AirAction) =
+    fun setMapping(source: AirAction, target: AirAction) {
+        val changed = mapping(source) != target
         prefs.edit().putString("map_${source.name}", target.name).apply()
+        if (changed) AirRuntime.invalidatePendingActions()
+    }
 
     fun mapping(gesture: RegisteredGesture): AirAction {
         val fallback = normalizeTarget(gesture, gesture.legacySource?.let(::mapping) ?: gesture.defaultAction)
@@ -29,8 +32,12 @@ class ActionMappingStore(context: Context) {
         return normalizeTarget(gesture, stored)
     }
 
-    fun setMapping(gesture: RegisteredGesture, target: AirAction) =
-        prefs.edit().putString("gesture_${gesture.name}", normalizeTarget(gesture, target).name).apply()
+    fun setMapping(gesture: RegisteredGesture, target: AirAction) {
+        val safeTarget = normalizeTarget(gesture, target)
+        val changed = mapping(gesture) != safeTarget
+        prefs.edit().putString("gesture_${gesture.name}", safeTarget.name).apply()
+        if (changed) AirRuntime.invalidatePendingActions()
+    }
 
     internal fun fillUnassigned(bindings: Map<RegisteredGesture, AirAction>) {
         val changes = bindings.filterKeys { mapping(it) == AirAction.NONE }
@@ -41,6 +48,7 @@ class ActionMappingStore(context: Context) {
         for ((gesture, target) in changes)
             editor.putString("gesture_${gesture.name}", normalizeTarget(gesture, target).name)
         editor.apply()
+        AirRuntime.invalidatePendingActions()
     }
 
     fun tuning(gesture: RegisteredGesture): GestureTuning {
@@ -55,11 +63,13 @@ class ActionMappingStore(context: Context) {
     fun saveBinding(gesture: RegisteredGesture, target: AirAction, tuning: GestureTuning) {
         val value = tuning.bounded()
         val safeTarget = normalizeTarget(gesture, target)
+        val changed = mapping(gesture) != safeTarget || this.tuning(gesture) != value
         val key = "tune_${gesture.name}_"
         prefs.edit().putString("gesture_${gesture.name}", safeTarget.name)
             .putLong(key + "hold", value.holdMs).putLong(key + "repeat", value.repeatDelayMs)
             .putInt(key + "confidence", value.confidencePercent).putInt(key + "volume", value.volumeSteps)
             .putInt(key + "scroll", value.scrollPercent).putLong(key + "longPress", value.longPressMs).apply()
+        if (changed) AirRuntime.invalidatePendingActions()
     }
 
     fun handPreference(): ControlHandPreference = runCatching {

@@ -11,6 +11,26 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class GestureMappingPersistenceTest {
+    @Test fun bindingAndTuningChangesRevokeOldInputWhileNoOpSavesKeepItCurrent() {
+        val context = RuntimeEnvironment.getApplication() as Context
+        val store = ActionMappingStore(context)
+        val gesture = RegisteredGesture.SHAKA
+        val originalAction = store.mapping(gesture)
+        val originalTuning = store.tuning(gesture)
+        val target = if (originalAction == AirAction.BACK) AirAction.HOME else AirAction.BACK
+        try {
+            val before = AirRuntime.state.value.inputEpoch
+            store.saveBinding(gesture,target,originalTuning)
+            assertTrue(AirRuntime.state.value.inputEpoch > before)
+            val saved = AirRuntime.state.value.inputEpoch
+            store.saveBinding(gesture,target,originalTuning)
+            assertEquals("Identical configuration must not starve capture",saved,AirRuntime.state.value.inputEpoch)
+            val tuning = originalTuning.copy(volumeSteps = if (originalTuning.volumeSteps == 1) 2 else 1)
+            store.saveBinding(gesture,target,tuning)
+            assertTrue(AirRuntime.state.value.inputEpoch > saved)
+        } finally { store.saveBinding(gesture,originalAction,originalTuning) }
+    }
+
     @Test fun actionAndTuningPersistTogetherWithoutChangingAnotherGesture() {
         val context = RuntimeEnvironment.getApplication()
         val prefs = context.getSharedPreferences("aergis_mappings", Context.MODE_PRIVATE)

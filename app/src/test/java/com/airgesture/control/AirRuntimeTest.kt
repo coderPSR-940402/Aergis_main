@@ -8,6 +8,32 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AirRuntimeTest {
+    @Test fun returningToTheSameControlModeCannotReauthorizeOldCameraInput() {
+        val previous = AirRuntime.controlMode
+        try {
+            AirRuntime.controlMode = ControlMode.ARMED
+            val captured = AirRuntime.state.value.inputEpoch
+            AirRuntime.controlMode = ControlMode.PAUSED
+            AirRuntime.controlMode = ControlMode.ARMED
+            assertTrue(AirRuntime.state.value.inputEpoch > captured)
+            val current = AirRuntime.state.value.inputEpoch
+            AirRuntime.controlMode = ControlMode.ARMED
+            assertEquals("No-op state writes do not discard current input",current,AirRuntime.state.value.inputEpoch)
+        } finally { AirRuntime.controlMode = previous }
+    }
+
+    @Test fun visionRevocationCannotStarveCurrentCameraFrames() {
+        val before = AirRuntime.state.value
+        AirRuntime.invalidatePendingActions(clearSelection = false)
+        assertTrue(AirRuntime.actionEpoch > before.actionEpoch)
+        assertEquals(before.inputEpoch,AirRuntime.state.value.inputEpoch)
+        AirRuntime.invalidatePendingActions(invalidateFrames = false)
+        assertEquals(before.inputEpoch,AirRuntime.state.value.inputEpoch)
+        AirRuntime.invalidatePendingActions()
+        assertTrue("External configuration invalidation revokes input provenance",
+            AirRuntime.state.value.inputEpoch > before.inputEpoch)
+    }
+
     @Test
     fun pointerToggleInvalidatesQueuedAndHeldActionsOnlyWhenChanged() {
         AirRuntime.pointerEnabled = true

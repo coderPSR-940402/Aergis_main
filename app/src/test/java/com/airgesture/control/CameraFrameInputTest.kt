@@ -15,6 +15,39 @@ import java.nio.ByteBuffer
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class CameraFrameInputTest {
+    @Test fun authorityIsCapturedBeforePlaneCopyEvenWhenPauseResumesDuringCopy() {
+        val previous = AirRuntime.controlMode
+        AirRuntime.controlMode = ControlMode.ARMED
+        val captured = AirRuntime.state.value.inputEpoch
+        val plane = proxy(ImageProxy.PlaneProxy::class.java) { name -> when (name) {
+            "getBuffer" -> ByteBuffer.wrap(byteArrayOf(1,2,3,4))
+            "getRowStride", "getPixelStride" -> 4
+            else -> error(name)
+        } }
+        val info = proxy(ImageInfo::class.java) { name -> when (name) {
+            "getTimestamp" -> 123000000L; "getRotationDegrees" -> 0; else -> error(name)
+        } }
+        val image = proxy(ImageProxy::class.java) { name -> when (name) {
+            "getWidth", "getHeight" -> 1
+            "getFormat" -> android.graphics.PixelFormat.RGBA_8888
+            "getImageInfo" -> info; "getCropRect" -> Rect(0,0,1,1)
+            "getPlanes" -> {
+                AirRuntime.controlMode = ControlMode.PAUSED
+                AirRuntime.controlMode = ControlMode.ARMED
+                arrayOf(plane)
+            }
+            else -> error(name)
+        } }
+        try {
+            val frame = CameraFrameInput().capture(image,150L,200L)!!
+            try {
+                assertEquals(captured,frame.inputEpoch)
+                assertTrue("The copied exposure must retain the obsolete context",
+                    frame.inputEpoch != AirRuntime.state.value.inputEpoch)
+            } finally { frame.close() }
+        } finally { AirRuntime.controlMode = previous }
+    }
+
     @Test fun packedRgbaBulkCopyRetainsPixelsAfterSourceReuse() {
         val pixels = byteArrayOf(1,2,3,4,5,6,7,8)
         val source = ByteBuffer.wrap(pixels)

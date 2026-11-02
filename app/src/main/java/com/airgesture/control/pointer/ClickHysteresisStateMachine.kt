@@ -14,6 +14,7 @@ class ClickHysteresisStateMachine(
     private var currentState = State.IDLE
     private var observedOpen = false
     private var contactSince: Long? = null
+    private var lastContactAt: Long? = null
     private var contactSampleIntervalMs = 0L
     private var lastClickAt: Long? = null
     private var lastTimestampMs: Long? = null
@@ -35,6 +36,7 @@ class ClickHysteresisStateMachine(
             // Release is evidence for the next occurrence, never an output command.
             observedOpen = true
             contactSince = null
+            lastContactAt = null
             contactSampleIntervalMs = 0L
             currentState = if (coolingDown) State.REFRACTORY else State.IDLE
             return false
@@ -49,20 +51,29 @@ class ClickHysteresisStateMachine(
         if (hypot(dNorm, depthSeparation) >= releaseThreshold) {
             currentState = State.IDLE
             contactSince = null
+            lastContactAt = null
             contactSampleIntervalMs = 0L
             return false
         }
 
         // Lock before contact, rather than after the finger movement has shifted the target.
         currentState = State.ENGAGING
-        if (dNorm >= engageThreshold) {
+        // A projected-distance refit may briefly cross the contact boundary while
+        // the fingers remain together. Retain pending evidence for a bounded time,
+        // but confirm only on another actual contact, never on the hysteresis band.
+        if (lastContactAt?.let { timestampMs - it > CONTACT_TOLERANCE_MS } == true) {
             contactSince = null
+            lastContactAt = null
+            contactSampleIntervalMs = 0L
+        }
+        if (dNorm >= engageThreshold) {
             return false
         }
         val start = contactSince ?: timestampMs.also {
             contactSince = it
             contactSampleIntervalMs = previous?.let { prior -> timestampMs - prior } ?: 0L
         }
+        lastContactAt = timestampMs
         // At slow cadence a contact may occupy one frame: accept the already observed
         // open-to-contact transition now. High-rate one-frame glitches still need
         // short internal evidence; there is no user-facing hold command or release tap.
@@ -80,10 +91,15 @@ class ClickHysteresisStateMachine(
         currentState = State.IDLE
         observedOpen = false
         contactSince = null
+        lastContactAt = null
         lastClickAt = null
         lastTimestampMs = null
         contactSampleIntervalMs = 0L
     }
 
-    private companion object { const val MAX_GAP_MS = 350L }
+    private companion object {
+        const val MAX_GAP_MS = 350L
+        // The recorded interruption spans 233 ms of sensor time (two band samples).
+        const val CONTACT_TOLERANCE_MS = 250L
+    }
 }

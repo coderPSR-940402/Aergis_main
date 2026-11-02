@@ -58,8 +58,8 @@ class GestureCaptureService : Service(), LifecycleOwner {
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_START)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
-        executor = Executors.newSingleThreadExecutor()
-        captureExecutor = Executors.newSingleThreadExecutor()
+        executor = trackingExecutor("aergis-inference")
+        captureExecutor = trackingExecutor("aergis-capture")
         createChannel()
         startForeground(NOTIFICATION_ID, notification())
         AirRuntime.running = true
@@ -79,6 +79,17 @@ class GestureCaptureService : Service(), LifecycleOwner {
 
     // Capture must be explicitly started again after Android kills this process.
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_NOT_STICKY
+
+    private fun trackingExecutor(name: String): ExecutorService = Executors.newSingleThreadExecutor { task ->
+        Thread({
+            // Camera delivery and native work are interactive input, even while the
+            // foreground app is busy. Set priority on the worker itself, including
+            // any replacement thread created by the executor.
+            runCatching { android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_DISPLAY) }
+                .onFailure { Log.w("GestureCaptureService", "Interactive worker priority unavailable", it) }
+            task.run()
+        }, name)
+    }
 
     @ExperimentalGetImage
     @androidx.annotation.OptIn(androidx.camera.camera2.interop.ExperimentalCamera2Interop::class)
