@@ -15,6 +15,14 @@
 *.apks
 /app/src/main/assets/gesture_recognizer.task
 
+# Private signing material
+# The checked-in preview key is intentionally public and must remain available to CI.
+*.jks
+*.keystore
+*.p12
+*.pfx
+!ci/aergis-preview.keystore
+
 # Python tooling
 __pycache__/
 *.py[cod]
