@@ -8,6 +8,8 @@ import os
 from pathlib import Path
 import re
 import sys
+import signal
+import subprocess
 import tempfile
 
 PREFIX = 'AERGISTEL|'
@@ -105,12 +107,13 @@ def compare_sessions(before, after):
 
 def regression_fixture(trace):
     """Generate expectations from recorded terminal evidence, never from requests alone."""
-    records = trace.get('records', [])
+    records = sorted(trace.get('records', []), key=lambda r: (r.get('uptime_ms', r.get('event_uptime_ms', 0)), r.get('seq', 0)))
+    terminal_ids = {r.get('request_id') for r in records if r.get('step') == 'terminal'}
     terminals, kinds = [], []
     for item in records:
         if item.get('step') == 'terminal':
             terminals.append(item['outcome'])
-        elif item.get('step') == 'outcome' and item.get('outcome') == 'COMPLETED':
+        elif item.get('step') == 'outcome' and item.get('outcome') == 'COMPLETED' and item.get('request_id') not in terminal_ids:
             terminals.append('SUCCESS')
         if item.get('record') == 'event':
             kinds.append(item['event_kind'])
@@ -204,20 +207,27 @@ class Collector:
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command', choices=['collect', 'latest', 'session', 'event', 'manifest', 'history', 'status', 'replay', 'regression', 'compare'])
+    parser.add_argument('command', choices=['watch', 'collect', 'latest', 'session', 'event', 'manifest', 'history', 'status', 'replay', 'regression', 'compare'])
     parser.add_argument('--root', type=Path, default=Path.home() / 'agent-gates/aergis-live')
+    parser.add_argument('--rish', default='rish')
     parser.add_argument('--before', type=Path)
     parser.add_argument('--after', type=Path)
     parser.add_argument('--json', action='store_true', help='Structured output (the default)')
     args = parser.parse_args(argv)
     collector = Collector(args.root)
-    if args.command == 'collect':
-        for line in sys.stdin:
+    if args.command in {'collect', 'watch'}:
+        child = None
+        if args.command == 'watch':
+            child = subprocess.Popen([args.rish, '-c', '/system/bin/logcat -v raw -T 2000 -s AergisDevLoop:I *:S'],
+                                     stdout=subprocess.PIPE, text=True)
+            signal.signal(signal.SIGTERM, lambda *_: child.terminate())
+        stream = child.stdout if child else sys.stdin
+        for line in stream:
             try:
                 collector.accept(line)
             except OSError as exc:
                 print(json.dumps(dict(state='collector_error', error=str(exc))), file=sys.stderr)
-        return 0
+        return child.wait() if child else 0
     if args.command == 'compare':
         if not args.before or not args.after:
             parser.error('compare requires --before and --after')

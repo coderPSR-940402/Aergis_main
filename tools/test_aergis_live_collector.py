@@ -1,6 +1,8 @@
 import json
 import tempfile
 import unittest
+import subprocess
+import sys
 from pathlib import Path
 
 try:
@@ -80,6 +82,29 @@ class CollectorTest(unittest.TestCase):
         self.assertAlmostEqual(0.2, result["click_success_rate"]["delta"])
         self.assertEqual("improved", result["missed_clicks"]["assessment"])
         self.assertEqual("insufficient_evidence", result["edge_tracking_rate"]["assessment"])
+
+    def test_captured_terminal_is_not_counted_twice_and_replay_is_time_ordered(self):
+        trace = {"captured_device": True, "records": [
+            record(kind="trace", seq=1, step="open", uptime_ms=1000, request_id=42, action="TAP"),
+            record(kind="trace", seq=2, step="outcome", uptime_ms=1100, request_id=42, outcome="COMPLETED"),
+            record(kind="trace", seq=3, step="terminal", uptime_ms=1100, request_id=42, outcome="SUCCESS"),
+            record(kind="trace", seq=4, step="sample", uptime_ms=1050)]}
+        fixture = regression_fixture(trace)
+        self.assertEqual(["SUCCESS"], fixture["expected"]["terminals"])
+        self.assertEqual([1000, 1050, 1100, 1100], [r["uptime_ms"] for r in fixture["records"]])
+
+    def test_no_replay_session_means_no_invented_device_provenance(self):
+        self.assertEqual("synthetic_contract", regression_fixture({})["provenance"])
+
+    def test_watch_consumes_existing_rish_log_stream_without_a_second_relay(self):
+        rish = self.root / 'rish'
+        line = 'AERGISTEL|' + json.dumps(record(kind='session', clean=True, state='stopped'))
+        rish.write_text('#!' + sys.executable + '\nprint(' + repr(line) + ')\n')
+        rish.chmod(0o700)
+        result = subprocess.run([sys.executable, 'tools/aergis_live_collector.py', 'watch',
+                                 '--root', str(self.root), '--rish', str(rish)], capture_output=True, text=True)
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual('a54-session', json.loads((self.root / 'session.json').read_text())['session_id'])
 
 
 if __name__ == "__main__":

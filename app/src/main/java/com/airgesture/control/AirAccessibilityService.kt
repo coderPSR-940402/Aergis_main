@@ -188,6 +188,10 @@ class AirAccessibilityService : AccessibilityService() {
         val feedbackId = AirRuntime.beginActionFeedback(action)
         fun recordOutcome(outcome: ActionDispatchOutcome) = AirRuntime.recordActionFeedback(outcome, feedbackId)
         val requestedHotspot = visibleHotspot
+        val diagnosticTarget = requestedHotspot?.takeIf { action.usesPointerTouch && it.epoch == expectedEpoch }?.point
+        AergisDevLoop.openAction(feedbackId, SystemClock.uptimeMillis(), action.name,
+            diagnosticTarget?.x ?: Float.NaN, diagnosticTarget?.y ?: Float.NaN,
+            expectedEpoch, AirRuntime.state.value.inputEpoch)
         if (TestingTools.state.value.status == RecordingStatus.RECORDING) {
             TestingTools.event("action_requested", org.json.JSONObject().put("action", action.name)
                 .put("target", DiagnosticFrameData.pointer(AirRuntime.pointerSnapshot())).put("epoch", expectedEpoch)

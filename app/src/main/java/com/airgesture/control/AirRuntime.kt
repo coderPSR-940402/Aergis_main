@@ -298,9 +298,10 @@ object AirRuntime {
         return id
     }
     internal fun recordActionFeedback(outcome: ActionDispatchOutcome, id: Long) {
+        val now = android.os.SystemClock.uptimeMillis()
         recordActionTelemetry(outcome, id)
-        _state.update { current -> current.copy(actionFeedback = current.actionFeedback?.result(id, outcome,
-            android.os.SystemClock.uptimeMillis())) }
+        AergisDevLoop.recordActionOutcome(outcome, id, now)
+        _state.update { current -> current.copy(actionFeedback = current.actionFeedback?.result(id, outcome, now)) }
     }
 
     internal fun recordActionDispatchOutcome(outcome: ActionDispatchOutcome) = recordActionTelemetry(outcome, null)

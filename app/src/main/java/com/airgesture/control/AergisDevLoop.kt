@@ -8,6 +8,33 @@ package com.airgesture.control
  * runtime; DevLoop only mirrors them into the diagnostic correlator.
  */
 internal object AergisDevLoop {
+    @Volatile private var worker: DevLoopWorker? = null
+
+    @Synchronized fun start(context: android.content.Context) {
+        if (worker != null) return
+        runCatching {
+            DevLoopWorker(java.io.File(context.filesDir, "devloop"),
+                "${BuildConfig.SOURCE_COMMIT}:${BuildConfig.VERSION_CODE}",
+                android.os.SystemClock::uptimeMillis, System::currentTimeMillis,
+                { android.util.Log.i("AergisDevLoop", it) }).also { worker = it; it.start() }
+        }
+    }
+
+    @Synchronized fun stop() {
+        runCatching { worker?.stop() }
+        worker = null
+    }
+
+    fun sampleFrame(sample: LiveDiagnosticSample, rawX: Float?, rawY: Float?, tracking: Boolean) {
+        runCatching { worker?.observe { sample(sample, rawX, rawY, tracking) } }
+    }
+
+    fun checkpoint() {
+        val now = android.os.SystemClock.uptimeMillis()
+        val wall = System.currentTimeMillis()
+        runCatching { worker?.observe { checkpoint(now, wall) } }
+    }
+
     @Volatile
     private var diagnostics: LiveDiagnostics? = null
 
@@ -32,6 +59,7 @@ internal object AergisDevLoop {
         sessionEpoch: Long,
         inputEpoch: Long
     ) {
+        runCatching { worker?.observe { open(requestId, openedUptimeMs, action, frozenTargetX, frozenTargetY, sessionEpoch, inputEpoch) } }
         val current = diagnostics ?: return
         runCatching {
             current.openInteraction(
@@ -51,6 +79,7 @@ internal object AergisDevLoop {
         requestId: Long,
         uptimeMs: Long
     ) {
+        runCatching { worker?.observe { outcome(outcome, requestId, uptimeMs) } }
         val current = diagnostics ?: return
         runCatching {
             when (outcome) {

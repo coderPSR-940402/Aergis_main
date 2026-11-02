@@ -52,6 +52,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
     private var activeDelegate = "UNAVAILABLE"
     private val lineageComparison = PointerLineageComparison()
     private var lastPointerOwnerId: String? = null
+    private var diagnosticOwnerId: String? = null
     private var lastPointerHandedness: String? = null
     private var lastFilterMode = PointerFilterMode.CURRENT
     private var lastPointerAt = 0L
@@ -200,6 +201,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 diagnosticResult = result
                 frameAspectRatio = CameraCoordinateTransform.uprightAspectRatio(image.width, image.height, image.rotationDegrees)
                 currentPixels = image
+                diagnosticOwnerId = null
                 try { publishWithAge(result, timestamp, nowIn(source), image.rotationDegrees, frameAge(), frame.inputEpoch) }
                 finally { currentPixels = null }
                 if (frame.inputEpoch == AirRuntime.state.value.inputEpoch)
@@ -208,6 +210,15 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 lastPipelineAgeMs = frameAge().coerceAtLeast(0L)
                 metrics.recordFrame(publishEnd, frameAgeAtStart, preEnd - preStart,
                     inferenceEnd - preEnd, publishEnd - inferenceEnd, lastPipelineAgeMs)
+                runCatching {
+                    val observed = AirRuntime.state.value
+                    AergisDevLoop.sampleFrame(LiveDiagnosticSample(publishEnd, System.currentTimeMillis(),
+                        frameId = timestamp, sessionEpoch = observed.actionEpoch, inputEpoch = frame.inputEpoch,
+                        handId = diagnosticOwnerId, pointerX = observed.pointer.x, pointerY = observed.pointer.y,
+                        gesture = observed.lastGesture, contactState = observed.pointerInteraction.name,
+                        cameraAgeMs = lastPipelineAgeMs, inferenceMs = inferenceEnd - preEnd),
+                        observed.rawPointer.x, observed.rawPointer.y, observed.rawPointer.tracking)
+                }
                 diagnosticTrace?.put("timing", org.json.JSONObject()
                     .put("timeSource", source.name).put("frameAgeAtStartMs", frameAgeAtStart)
                     .put("captureToAnalysisMs", analysisStartUptime - frame.receivedUptimeMs)
@@ -415,6 +426,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         var gestureScore = if (categoryName != null) gesture?.score() ?: 0f else 0f
         val indexTip = selectedHand?.getOrNull(INDEX_TIP)
         val commandOwnerId = handSelection?.ownerId
+        diagnosticOwnerId = commandOwnerId
         diagnosticTrace?.put("selectedHandIndex", pointerHandIndex ?: org.json.JSONObject.NULL)
             ?.put("commandOwnerId", commandOwnerId ?: org.json.JSONObject.NULL)
 

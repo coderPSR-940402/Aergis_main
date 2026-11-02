@@ -142,6 +142,11 @@ internal class DevLoopSession(
         }
     }
 
+    fun checkpoint(uptimeMs: Long, wallClockMs: Long) {
+        tick(uptimeMs, wallClockMs)
+        if (!stopped) checkpoint(false)
+    }
+
     fun invalidateEvidence(dropped: Long) {
         counts["queue_dropped"] = counts.getValue("queue_dropped") + dropped
         evidenceComplete = false
