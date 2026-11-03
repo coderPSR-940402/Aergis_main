@@ -5,6 +5,21 @@ import org.junit.Test
 import java.nio.file.Files
 
 class LiveDevLoopRuntimeTest {
+    @Test fun replayRetainsBothRawInputAndDisplayedPointerForTheSameFrame() {
+        val root = Files.createTempDirectory("devloop-raw-filtered").toFile()
+        val lines = mutableListOf<String>()
+        val session = DevLoopSession(root, "synthetic", "motion", lines::add)
+        session.start(1000, 100_000)
+        session.sample(LiveDiagnosticSample(1100, 100_100, frameId = 99, handId = "owner",
+            pointerX = .6f, pointerY = .7f), rawX = .3f, rawY = .4f, tracking = true)
+        session.stop(1200, 100_200)
+        val row = lines.single { it.contains("\"step\":\"sample\"") }
+        assertTrue(row.contains("\"raw_x\":0.3"))
+        assertTrue(row.contains("\"raw_y\":0.4"))
+        assertTrue(row.contains("\"pointer_x\":0.6"))
+        assertTrue(row.contains("\"frame_id\":99"))
+    }
+
     @Test fun nearContactGeometrySurvivesWithoutCrossingTheRecognitionThreshold() {
         val root = Files.createTempDirectory("devloop-near-contact").toFile()
         val lines = mutableListOf<String>()
