@@ -9,10 +9,11 @@ class LiveDevLoopRuntimeTest {
         val root = Files.createTempDirectory("devloop-final-first").toFile()
         var stopping = false
         val lines = mutableListOf<String>()
+        val durableBeforeTransport = mutableListOf<Boolean>()
         val session = DevLoopSession(root, "sha", "id", { line ->
             if (stopping && line.contains("\"step\":\"sample\"")) {
-                assertTrue("Lost logcat must not lose finalization", root.resolve("session.json").readText().contains("\"clean\":true"))
-                assertTrue(lines.any { it.contains("\"state\":\"stopped\"") })
+                durableBeforeTransport.add(root.resolve("session.json").readText().contains("\"clean\":true") &&
+                    lines.any { it.contains("\"state\":\"stopped\"") })
             }
             lines.add(line)
         })
@@ -20,6 +21,7 @@ class LiveDevLoopRuntimeTest {
         session.sample(LiveDiagnosticSample(1100, 100_100, frameId = 99))
         stopping = true
         session.stop(1200, 100_200)
+        assertTrue("Lost logcat must not lose finalization", durableBeforeTransport.isNotEmpty() && durableBeforeTransport.all { it })
     }
 
     @Test fun periodicManifestCarriesTheActualObservationHeartbeat() {

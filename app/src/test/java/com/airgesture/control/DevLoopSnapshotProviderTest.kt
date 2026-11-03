@@ -8,8 +8,10 @@ import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class DevLoopSnapshotProviderTest {
     @Test fun durableSnapshotRecoversAnEndedSessionWithoutClaimingACleanExit() {
         val context = ApplicationProvider.getApplicationContext<Context>()
