@@ -4,12 +4,15 @@ import unittest
 import subprocess
 import sys
 import base64
+from unittest.mock import patch
+from urllib.parse import urlsplit, parse_qs
+import shlex
 from pathlib import Path
 
 try:
-    from tools.aergis_live_collector import Collector, parse_line, compare_sessions, regression_fixture
+    from tools.aergis_live_collector import Collector, parse_line, compare_sessions, regression_fixture, sync_device
 except ImportError:
-    from aergis_live_collector import Collector, parse_line, compare_sessions, regression_fixture
+    from aergis_live_collector import Collector, parse_line, compare_sessions, regression_fixture, sync_device
 
 
 def record(kind="event", seq=1, **extra):
@@ -190,6 +193,50 @@ class CollectorTest(unittest.TestCase):
     def test_collector_that_has_stopped_reporting_is_not_healthy_forever(self):
         self.root.joinpath('collector-health.json').write_text('{"state":"connected","checked_wall_clock_ms":1000}')
         self.assertEqual('stale', Collector(self.root).view('latest')['collector']['state'])
+
+    def test_recovered_final_manifest_cannot_collide_with_a_collected_trace_sequence(self):
+        c = Collector(self.root)
+        self.feed(c, record(kind='session', state='recording', seq=40))
+        self.feed(c, record(kind='trace', step='open', request_id=1, seq=41))
+        self.assertTrue(self.feed(c, record(kind='session', state='unclean', clean=False, seq=41)))
+        self.assertEqual('unclean', c.view('session')['state'])
+        self.assertEqual(1, len(c.replay()['records']))
+
+    def test_late_recording_cannot_resurrect_a_finalized_session(self):
+        c = Collector(self.root)
+        self.feed(c, record(kind='session', state='unclean', clean=False, seq=41))
+        self.assertFalse(self.feed(c, record(kind='session', state='recording', clean=False, seq=100)))
+        self.assertEqual('unclean', c.view('session')['state'])
+
+    def test_prior_session_event_and_history_are_retrievable_by_identity(self):
+        c = Collector(self.root)
+        self.feed(c, record(kind='event', event_kind='MISSED_CLICK', request_id=42))
+        other = record(kind='event', event_kind='HAND_LOST', seq=2)
+        other['session_id'] = 'new'
+        self.feed(c, other)
+        self.assertEqual(42, c.view('event', session_id='a54-session').get('request_id'))
+        self.assertEqual(1, len(c.view('history', session_id='a54-session')))
+
+    def test_missing_local_trace_is_rebuilt_despite_watermark_and_old_dedup(self):
+        c = Collector(self.root)
+        opening = record(kind='trace', seq=5, step='open', request_id=42, target_x=321)
+        self.feed(c, opening)
+        (self.root / 'traces/a54-session.json').unlink()
+        (self.root / 'sync.json').write_text('{"a54-session":10}')
+        manifest = record(kind='session', seq=10, state='stopped', clean=True)
+        def shell(argv, **_):
+            uri = shlex.split(argv[-1])[3]
+            params = parse_qs(urlsplit(uri).query)
+            after = int(params.get('after_seq', ['0'])[0])
+            data = dict(schema=2, manifest=manifest, session_history=[manifest],
+                        snapshot_id='fixed', next_offset=None, trace_truncated=False,
+                        records=[opening] if after < 5 else [])
+            payload = base64.b64encode(json.dumps(data).encode()).decode()
+            return subprocess.CompletedProcess(argv, 0, 'Row: 0 payload=' + payload, '')
+        with patch('subprocess.run', side_effect=shell):
+            sync_device(c, 'rish')
+        self.assertEqual([42], [r['request_id'] for r in c.replay()['records']])
+        self.assertFalse(c.replay()['sync_incomplete'])
 
     def test_replay_pages_fit_relay_limit_and_reassemble_without_lost_targets(self):
         c = Collector(self.root)

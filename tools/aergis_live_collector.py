@@ -151,12 +151,14 @@ class Collector:
         data = parse_line(line)
         if data is None:
             return False
-        key = f"{data['session_id']}:{data['seq']}"
+        identity = f"{data['session_id']}:{data['seq']}"
+        key = f"{data['record']}|{identity}"
         if key in self.seen:
             return False
         category = data['record']
         # Write idempotently first, persist dedup last: an interrupted write is safely replayed.
-        filename = hashlib.sha256(key.encode()).hexdigest() + '.json'
+        # Keep v1 event filenames stable while namespacing dedup for recovered manifests.
+        filename = hashlib.sha256(identity.encode()).hexdigest() + '.json'
         if category == 'event':
             atomic_json(self.root / 'events' / filename, data)
             atomic_json(self.root / 'latest-event.json', data)
@@ -164,6 +166,8 @@ class Collector:
         elif category == 'session':
             previous = read_json(self.root / 'sessions' / (data['session_id'] + '.json'), {})
             if previous.get('seq', -1) >= data['seq']:
+                return False
+            if previous.get('state') in {'stopped', 'unclean'} and data.get('state') == 'recording':
                 return False
             atomic_json(self.root / 'sessions' / (data['session_id'] + '.json'), data)
             current = read_json(self.root / 'session.json', {})
@@ -231,9 +235,14 @@ class Collector:
         if name in {'manifest', 'session'}:
             return session
         if name == 'event':
+            target = session_id or session.get('session_id')
+            if target:
+                events = [read_json(p, {}) for p in (self.root / 'events').glob('*.json')]
+                return max((e for e in events if e.get('session_id') == target), key=lambda e: e.get('seq', 0), default={})
             return read_json(self.root / 'latest-event.json', {})
         if name == 'history':
-            return [read_json(p) for p in sorted((self.root / 'events').glob('*.json'), key=lambda p: p.stat().st_mtime_ns)]
+            events = [read_json(p) for p in sorted((self.root / 'events').glob('*.json'), key=lambda p: p.stat().st_mtime_ns)]
+            return [e for e in events if not session_id or e.get('session_id') == session_id]
         if name == 'replay':
             trace = self.replay(session_id)
             revision = hashlib.sha256(json.dumps(trace, sort_keys=True).encode()).hexdigest()
@@ -290,8 +299,10 @@ def sync_device(collector, rish):
         if result.returncode != 0 or not match:
             raise RuntimeError('durable_snapshot_unavailable')
         page = json.loads(base64.b64decode(match[1], validate=True))
-        if page.get('schema') != 2 or page.get('state') == 'snapshot_changed':
+        if page.get('schema') != 2 or page.get('state') in {'snapshot_changed', 'snapshot_expired'}:
             raise RuntimeError('snapshot_changed')
+        atomic_json(collector.root / 'collector-health.json', dict(schema=1, state='syncing',
+                    checked_wall_clock_ms=int(time.time() * 1000), page_offset=params.get('offset', 0)))
         return page
 
     initial = query(offset=0)
@@ -301,14 +312,24 @@ def sync_device(collector, rish):
     if current.get('session_id') and current['session_id'] not in identities:
         identities.append(current['session_id'])
     watermarks = read_json(collector.root / 'sync.json', {})
+    def digest(trace, seq):
+        rows = sorted((r for r in trace.get('records', []) if r.get('seq', 0) <= seq), key=lambda r: r.get('seq', 0))
+        return hashlib.sha256(json.dumps(rows, sort_keys=True).encode()).hexdigest()
     for session_id in identities:
-        after_seq = watermarks.get(session_id, 0)
+        trace_path = collector.root / 'traces' / (session_id + '.json')
+        local = read_json(trace_path, {})
+        cursor = watermarks.get(session_id, {})
+        valid = (isinstance(cursor, dict) and isinstance(local.get('records'), list) and
+                 not local.get('sync_incomplete') and cursor.get('digest') == digest(local, cursor.get('seq', 0)))
+        after_seq = cursor['seq'] if valid else 0
+        if not valid:
+            # A cursor without its evidence cannot skip reconstruction; dedup is not storage.
+            collector.seen = [k for k in collector.seen if not k.startswith(('trace|' + session_id + ':', 'event|' + session_id + ':'))]
         page = query(session_id=session_id, offset=0, after_seq=after_seq)
         revision = page['snapshot_id']
         manifest = page.get('manifest', {})
         if manifest:
             collector.accept(PREFIX + json.dumps(manifest))
-        trace_path = collector.root / 'traces' / (session_id + '.json')
         trace = read_json(trace_path, dict(schema=1, captured_device=True, session_id=session_id,
                                           build_id=manifest.get('build_id'), records=[], truncated=False))
         # Incomplete synchronization is never presented as a replayable complete trace.
@@ -325,21 +346,24 @@ def sync_device(collector, rish):
                 trace = read_json(trace_path, {})
                 trace.update(sync_incomplete=False, truncated=bool(trace.get('truncated') or page.get('trace_truncated')))
                 atomic_json(trace_path, trace)
-                watermarks[session_id] = manifest.get('seq', after_seq)
+                seq = manifest.get('seq', after_seq)
+                watermarks[session_id] = dict(seq=seq, digest=digest(trace, seq))
                 break
             page = query(session_id=session_id, offset=page['next_offset'], snapshot=revision, after_seq=after_seq)
         else:
             raise RuntimeError('snapshot_page_limit')
     # Bound cursor state with the same session retention as evidence.
     atomic_json(collector.root / 'sync.json', {k: watermarks[k] for k in identities if k in watermarks})
+    collector._rotate('traces', collector.max_sessions)
+    return initial.get('capture_state', 'unknown')
 
 
 def watch_cycle(collector, rish):
     health = dict(schema=1, checked_wall_clock_ms=int(time.time() * 1000), state='checking')
     atomic_json(collector.root / 'collector-health.json', health)
     try:
-        sync_device(collector, rish)
-        health.update(state='connected', durable_sync=True)
+        capture_state = sync_device(collector, rish)
+        health.update(state='connected', durable_sync=True, capture_state=capture_state)
     except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as exc:
         health.update(state='recovery_needed', durable_sync=False,
                       reason_code=str(exc) if isinstance(exc, RuntimeError) else 'shell_unavailable')

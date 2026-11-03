@@ -34,6 +34,17 @@ class DevLoopSnapshotProvider : ContentProvider() {
             require(file.length() <= 16 * 1024 * 1024)
             JSONObject(file.readText())
         }.getOrElse { JSONObject() }
+        val offset = uri.getQueryParameter("offset")?.toIntOrNull() ?: 0
+        val expected = uri.getQueryParameter("snapshot")
+        if (expected != null) {
+            require(expected.matches(Regex("[a-f0-9]{64}"))) { "Invalid snapshot identity" }
+            val frozen = read(File(root, "exports/$expected.json"))
+            if (!frozen.has("snapshot_id")) return JSONObject().put("schema", 2).put("state", "snapshot_expired")
+            val requestedId = uri.getQueryParameter("session_id")
+            require(requestedId == null || requestedId == frozen.optString("session_id"))
+            require((uri.getQueryParameter("after_seq")?.toLongOrNull() ?: 0L) == frozen.optLong("after_seq"))
+            return page(frozen, offset)
+        }
         val current = read(File(root, "session.json"))
         val id = uri.getQueryParameter("session_id") ?: current.optString("session_id")
         require(id.isEmpty() || id.matches(Regex("[A-Za-z0-9_.:-]{1,160}"))) { "Invalid session identity" }
@@ -65,20 +76,37 @@ class DevLoopSnapshotProvider : ContentProvider() {
         val fingerprint = manifest.toString() + trace.toString() + after + captureState
         val revision = MessageDigest.getInstance("SHA-256").digest(fingerprint.toByteArray())
             .joinToString("") { "%02x".format(it.toInt() and 255) }
-        val expected = uri.getQueryParameter("snapshot")
-        if (expected != null && expected != revision) return JSONObject().put("schema", 2).put("state", "snapshot_changed")
-        val offset = uri.getQueryParameter("offset")?.toIntOrNull() ?: 0
-        require(offset in 0..rows.size) { "Invalid evidence offset" }
         val result = JSONObject().put("schema", 2).put("capture_state", captureState)
             .put("manifest", manifest).put("session_history", history).put("snapshot_id", revision)
             .put("trace_truncated", trace.optBoolean("truncated", true)).put("total_records", rows.size)
+            .put("session_id", id).put("after_seq", after).put("records", JSONArray(rows))
+        // An active session can checkpoint every five seconds while a large replay is paged.
+        // Freeze this revision on disk so a slow shell cannot continually restart at page one.
+        val exports = File(root, "exports").apply { mkdirs() }
+        val target = File(exports, "$revision.json")
+        if (!target.isFile) {
+            val temporary = File(exports, ".$revision.tmp")
+            temporary.writeText(result.toString())
+            java.nio.file.Files.move(temporary.toPath(), target.toPath(),
+                java.nio.file.StandardCopyOption.ATOMIC_MOVE, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+        }
+        exports.listFiles()?.filter { it.extension == "json" }?.sortedBy { it.lastModified() }
+            ?.dropLast(16)?.forEach { it.delete() }
+        return page(result, offset)
+    }
+
+    private fun page(snapshot: JSONObject, offset: Int): JSONObject {
+        val rows = snapshot.getJSONArray("records")
+        require(offset in 0..rows.length()) { "Invalid evidence offset" }
+        val result = JSONObject(snapshot.toString()).apply { remove("records") }
         val page = JSONArray()
-        for (row in rows.drop(offset).take(24)) {
+        for (index in offset until minOf(offset + 24, rows.length())) {
+            val row = rows.getJSONObject(index)
             if (result.toString().length + page.toString().length + row.toString().length > 22000) break
             page.put(row)
         }
         val end = offset + page.length()
-        return result.put("records", page).put("next_offset", if (end < rows.size) end else JSONObject.NULL)
+        return result.put("records", page).put("next_offset", if (end < rows.length()) end else JSONObject.NULL)
     }
 
     override fun getType(uri: Uri) = "application/json"
