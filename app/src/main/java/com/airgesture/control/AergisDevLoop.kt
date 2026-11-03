@@ -9,6 +9,12 @@ package com.airgesture.control
  */
 internal object AergisDevLoop {
     @Volatile private var worker: DevLoopWorker? = null
+    private var finalizing: java.util.concurrent.Future<*>? = null
+
+    /** Serializes the capture lifecycle boundary with read-only shell snapshot queries. */
+    @Synchronized fun <T> readEvidence(block: (String) -> T): T = block(
+        if (worker != null) "active" else if (finalizing?.isDone == false) "finalizing" else "inactive"
+    )
 
     @Synchronized fun start(context: android.content.Context) {
         if (worker != null) return
@@ -23,7 +29,7 @@ internal object AergisDevLoop {
     @Synchronized fun stop(): java.util.concurrent.Future<*>? {
         val previous = worker
         worker = null
-        return runCatching { previous?.stop() }.getOrNull()
+        return runCatching { previous?.stop() }.getOrNull().also { finalizing = it }
     }
 
     fun sampleFrame(sample: LiveDiagnosticSample, rawX: Float?, rawY: Float?, tracking: Boolean) {

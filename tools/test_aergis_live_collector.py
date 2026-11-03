@@ -3,6 +3,7 @@ import tempfile
 import unittest
 import subprocess
 import sys
+import base64
 from pathlib import Path
 
 try:
@@ -101,7 +102,7 @@ class CollectorTest(unittest.TestCase):
         line = 'AERGISTEL|' + json.dumps(record(kind='session', clean=True, state='stopped'))
         rish.write_text('#!' + sys.executable + '\nprint(' + repr(line) + ')\n')
         rish.chmod(0o700)
-        result = subprocess.run([sys.executable, 'tools/aergis_live_collector.py', 'watch',
+        result = subprocess.run([sys.executable, 'tools/aergis_live_collector.py', 'watch', '--once',
                                  '--root', str(self.root), '--rish', str(rish)], capture_output=True, text=True)
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual('a54-session', json.loads((self.root / 'session.json').read_text())['session_id'])
@@ -168,6 +169,75 @@ class CollectorTest(unittest.TestCase):
         self.assertEqual([], fixture['expected']['event_kinds'])
         self.assertEqual(['HAND_LOST'], fixture['recorded_observation_kinds'])
         self.assertEqual('interaction_correlation', fixture['replay_scope'])
+
+    def test_old_recording_is_stale_without_inventing_a_clean_or_unclean_exit(self):
+        c = Collector(self.root)
+        self.feed(c, record(kind='session', state='recording', clean=False,
+                            observed_wall_clock_ms=1000, click_success=7))
+        view = c.view('latest')
+        self.assertEqual('stale', view.get('capture_status'))
+        self.assertNotEqual('Session is recording', view['summary']['termination'])
+        self.assertEqual('recording', view['manifest']['state'])
+        self.assertEqual(7, view['metrics']['click_success'])
+
+    def test_captured_a54_ended_session_cannot_be_presented_as_live(self):
+        evidence = json.loads(Path('tools/fixtures/devloop/a54-1381-stale-manifest.json').read_text())
+        c = Collector(self.root)
+        self.feed(c, evidence['manifest'])
+        self.assertEqual('stale', c.view('latest')['capture_status'])
+        self.assertEqual(7, c.view('latest')['metrics']['click_success'])
+
+    def test_collector_that_has_stopped_reporting_is_not_healthy_forever(self):
+        self.root.joinpath('collector-health.json').write_text('{"state":"connected","checked_wall_clock_ms":1000}')
+        self.assertEqual('stale', Collector(self.root).view('latest')['collector']['state'])
+
+    def test_replay_pages_fit_relay_limit_and_reassemble_without_lost_targets(self):
+        c = Collector(self.root)
+        for seq in range(1, 201):
+            self.feed(c, record(kind='trace', seq=seq, step='open', request_id=seq,
+                                target_x=321, target_y=654))
+        page = c.view('replay')
+        self.assertLess(len(json.dumps(page, indent=2).encode()), 24000)
+        self.assertIn('next_offset', page)
+        records = list(page['records'])
+        while page['next_offset'] is not None:
+            page = c.view('replay', offset=page['next_offset'], snapshot=page['snapshot_id'])
+            records.extend(page['records'])
+        self.assertEqual(list(range(1, 201)), [r['request_id'] for r in records])
+        self.assertTrue(all(r['target_x'] == 321 for r in records))
+
+    def test_replay_revision_change_is_explicit_instead_of_mixing_pages(self):
+        c = Collector(self.root)
+        self.feed(c, record(kind='trace', step='open', request_id=1))
+        page = c.view('replay')
+        self.assertIn('snapshot_id', page)
+        self.feed(c, record(kind='trace', seq=2, step='open', request_id=2))
+        self.assertEqual('snapshot_changed', c.view('replay', snapshot=page['snapshot_id'])['state'])
+
+    def test_late_prior_session_does_not_replace_the_current_session(self):
+        c = Collector(self.root)
+        current = record(kind='session', state='recording', started_wall_clock_ms=200)
+        current['session_id'] = 'new'
+        self.feed(c, current)
+        self.feed(c, record(kind='session', seq=9, state='unclean', started_wall_clock_ms=100))
+        self.assertEqual('new', c.view('session')['session_id'])
+        self.assertEqual(2, len(c.view('latest')['session_history']))
+
+    def test_watch_resyncs_durable_final_manifest_when_logcat_has_lost_it(self):
+        rish = self.root / 'rish'
+        final = record(kind='session', state='stopped', clean=True, click_success=7)
+        payload = dict(schema=2, manifest=final, session_history=[final], records=[],
+                       next_offset=None, snapshot_id='fixture', trace_truncated=False)
+        encoded = base64.b64encode(json.dumps(payload).encode()).decode()
+        rish.write_text('#!' + sys.executable + '\nimport sys\n'
+                        'if "content query" in sys.argv[-1]: print("Row: 0 payload=' + encoded + '")\n')
+        rish.chmod(0o700)
+        result = subprocess.run([sys.executable, 'tools/aergis_live_collector.py', 'watch', '--once',
+                                 '--root', str(self.root), '--rish', str(rish)], capture_output=True, text=True)
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual('stopped', Collector(self.root).view('session')['state'])
+        self.assertEqual(7, Collector(self.root).view('session')['click_success'])
+        self.assertEqual('connected', Collector(self.root).view('latest')['collector']['state'])
 
 
 if __name__ == "__main__":

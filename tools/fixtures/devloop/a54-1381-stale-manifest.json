@@ -1,0 +1,43 @@
+{
+  "provenance": "captured_device_summary",
+  "session_id": "7189f081-b590-43dc-8bcc-4d4684d83a8c",
+  "build_id": "1a0ca7a13257909c120ad89317b58e98efffabf4:1381",
+  "manifest": {
+    "schema": 1,
+    "record": "session",
+    "session_id": "7189f081-b590-43dc-8bcc-4d4684d83a8c",
+    "build_id": "1a0ca7a13257909c120ad89317b58e98efffabf4:1381",
+    "seq": 2740,
+    "state": "recording",
+    "clean": false,
+    "started_wall_clock_ms": 1793657545438,
+    "click_attempts": 7,
+    "click_success": 7,
+    "missed_clicks": 0,
+    "action_failures": 0,
+    "cancelled": 5,
+    "submitted_only": 2,
+    "frame_count": 2372,
+    "hand_switches": 17,
+    "edge_samples": 169,
+    "edge_tracked": 6,
+    "trace_dropped": 573,
+    "queue_dropped": 0,
+    "frame_age_p95_ms": 256,
+    "inference_p95_ms": 90,
+    "hand_loss_recovery_p95_ms": 1725,
+    "pinch_jump_max": 0.26226216377596817
+  },
+  "events_summary": {
+    "TRACKING_JUMP": 2,
+    "HAND_LOST": 4
+  },
+  "user_report": {
+    "capture_ended": true,
+    "exact_end_time": "unknown"
+  },
+  "limitations": [
+    "Manifest remained at sequence 2740 across repeated reads after the user reported capture had ended.",
+    "The Toolbox replay response was truncated at 65536 bytes; this file is not a complete replay or a gesture root-cause fixture."
+  ]
+}

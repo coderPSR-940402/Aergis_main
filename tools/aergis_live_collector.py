@@ -11,6 +11,10 @@ import sys
 import signal
 import subprocess
 import tempfile
+import base64
+import time
+import shlex
+from urllib.parse import urlencode
 
 PREFIX = 'AERGISTEL|'
 KINDS = {'MISSED_CLICK', 'ACTION_FAILED', 'SELECTION_FAILED', 'HAND_LOST', 'TRACKING_JUMP',
@@ -23,7 +27,8 @@ NUMBERS = {'seq', 'request_id', 'uptime_ms', 'event_uptime_ms', 'wall_clock_ms',
            'stopped_wall_clock_ms', 'click_attempts', 'click_success', 'missed_clicks', 'action_failures',
            'cancelled', 'submitted_only', 'frame_count', 'frame_age_p95_ms', 'inference_p95_ms',
            'pinch_jump_max', 'hand_switches', 'hand_loss_recovery_p95_ms', 'edge_samples',
-           'pre_window_ms', 'post_window_ms', 'context_sample_count', 'context_event_seq', 'edge_tracked', 'trace_dropped', 'queue_dropped', 'before_count', 'after_count'}
+           'pre_window_ms', 'post_window_ms', 'context_sample_count', 'context_event_seq', 'edge_tracked', 'trace_dropped', 'queue_dropped', 'before_count', 'after_count',
+           'observed_wall_clock_ms', 'finalized_wall_clock_ms'}
 
 
 def parse_line(line):
@@ -107,7 +112,7 @@ def compare_sessions(before, after):
 
 def regression_fixture(trace):
     """Generate expectations from recorded terminal evidence, never from requests alone."""
-    if trace.get('truncated'):
+    if trace.get('truncated') or trace.get('sync_incomplete'):
         raise ValueError('incomplete trace: bounded retention removed records; collect a shorter complete session')
     records = sorted(trace.get('records', []), key=lambda r: (r.get('uptime_ms', r.get('event_uptime_ms', 0)), r.get('seq', 0)))
     open_ids = {r.get('request_id') for r in records if r.get('step') == 'open'}
@@ -161,7 +166,10 @@ class Collector:
             if previous.get('seq', -1) >= data['seq']:
                 return False
             atomic_json(self.root / 'sessions' / (data['session_id'] + '.json'), data)
-            atomic_json(self.root / 'session.json', data)
+            current = read_json(self.root / 'session.json', {})
+            if (current.get('session_id') == data['session_id'] or not current or
+                    data.get('started_wall_clock_ms', 0) >= current.get('started_wall_clock_ms', 0)):
+                atomic_json(self.root / 'session.json', data)
             self._rotate('sessions', self.max_sessions)
             if data.get('clean') is True:
                 candidates = [read_json(p, {}) for p in (self.root / 'sessions').glob('*.json')]
@@ -207,8 +215,19 @@ class Collector:
         for path in files[:-count]:
             path.unlink()
 
-    def view(self, name):
+    def replay(self, session_id=None):
         session = read_json(self.root / 'session.json', {})
+        trace_id = session_id or session.get('session_id') or read_json(self.root / 'latest-trace.json', {}).get('session_id', '')
+        if trace_id and not re.fullmatch(r'[\w:.-]{1,160}', trace_id):
+            raise ValueError('invalid session identity')
+        return read_json(self.root / 'traces' / (trace_id + '.json'), {})
+
+    def view(self, name, session_id=None, offset=0, snapshot=None):
+        session = read_json(self.root / 'session.json', {})
+        if session_id:
+            if not re.fullmatch(r'[\w:.-]{1,160}', session_id):
+                raise ValueError('invalid session identity')
+            session = read_json(self.root / 'sessions' / (session_id + '.json'), {})
         if name in {'manifest', 'session'}:
             return session
         if name == 'event':
@@ -216,12 +235,31 @@ class Collector:
         if name == 'history':
             return [read_json(p) for p in sorted((self.root / 'events').glob('*.json'), key=lambda p: p.stat().st_mtime_ns)]
         if name == 'replay':
-            trace_id = session.get('session_id') or read_json(self.root / 'latest-trace.json', {}).get('session_id', '')
-            return read_json(self.root / 'traces' / (trace_id + '.json'), {})
+            trace = self.replay(session_id)
+            revision = hashlib.sha256(json.dumps(trace, sort_keys=True).encode()).hexdigest()
+            if snapshot and snapshot != revision:
+                return dict(state='snapshot_changed', snapshot_id=revision, records=[])
+            rows = trace.get('records', [])
+            if type(offset) is not int or not 0 <= offset <= len(rows):
+                raise ValueError('invalid replay offset')
+            result = {k: v for k, v in trace.items() if k != 'records'}
+            result.update(records=[], snapshot_id=revision, offset=offset, total_records=len(rows), next_offset=None)
+            for row in rows[offset:offset + 24]:
+                candidate = dict(result, records=result['records'] + [row])
+                if len(json.dumps(candidate, indent=2).encode()) > 22000:
+                    break
+                result['records'].append(row)
+            end = offset + len(result['records'])
+            result['next_offset'] = end if end < len(rows) else None
+            return result
         clean = session.get('clean')
         state = session.get('state')
+        heartbeat = session.get('observed_wall_clock_ms', 0)
+        fresh = 0 <= int(time.time() * 1000) - heartbeat <= 30_000
+        capture_status = 'stale' if state == 'recording' and not fresh else state or 'unknown'
         termination = ('Session finished normally' if clean is True else 'Previous session ended unexpectedly'
-                       if state == 'unclean' else 'Session is recording' if state == 'recording' else 'No session received yet')
+                       if state == 'unclean' else 'Recording status is stale; session end has not been recovered'
+                       if capture_status == 'stale' else 'Session is recording' if state == 'recording' else 'No session received yet')
         comparison = read_json(self.root / 'comparison.json', {})
         if comparison.get('after_session') != session.get('session_id'):
             comparison = {}
@@ -230,12 +268,97 @@ class Collector:
             event = {}
         history = [read_json(p, {}) for p in (self.root / 'sessions').glob('*.json')]
         history.sort(key=lambda s: s.get('started_wall_clock_ms', 0))
+        health = read_json(self.root / 'collector-health.json', {'state': 'unknown'})
+        if health.get('state') != 'unknown' and not 0 <= int(time.time() * 1000) - health.get('checked_wall_clock_ms', 0) <= 30_000:
+            health = dict(health, state='stale', reason_code='collector_not_reporting')
         return dict(schema=1, session_id=session.get('session_id'), build_id=session.get('build_id'),
+                    capture_status=capture_status, collector=health,
                     summary=dict(termination=termination,
                                  clicks=f"{session.get('click_success', 0)} completed; {session.get('missed_clicks', 0)} missed",
                                  evidence='Android completion callbacks prove dispatched taps completed. Intended attempts before recognition require recorded contact evidence.'),
                     metrics=metrics(session), manifest=session,
                     comparison=comparison, session_history=history, latest_event=event, history_count=len(list((self.root / 'events').glob('*.json'))))
+
+
+def sync_device(collector, rish):
+    """Recover atomic app files through the existing authorized shell, independently of logcat."""
+    def query(**params):
+        uri = 'content://com.airgesture.control.devloop/snapshot?' + urlencode(params)
+        result = subprocess.run([rish, '-c', 'content query --uri ' + shlex.quote(uri) + ' --projection payload'],
+                                capture_output=True, text=True, timeout=20)
+        match = re.search(r'payload=([A-Za-z0-9+/=]+)', result.stdout)
+        if result.returncode != 0 or not match:
+            raise RuntimeError('durable_snapshot_unavailable')
+        page = json.loads(base64.b64decode(match[1], validate=True))
+        if page.get('schema') != 2 or page.get('state') == 'snapshot_changed':
+            raise RuntimeError('snapshot_changed')
+        return page
+
+    initial = query(offset=0)
+    history = initial.get('session_history', [])
+    identities = [s['session_id'] for s in history if s.get('session_id')]
+    current = initial.get('manifest', {})
+    if current.get('session_id') and current['session_id'] not in identities:
+        identities.append(current['session_id'])
+    watermarks = read_json(collector.root / 'sync.json', {})
+    for session_id in identities:
+        after_seq = watermarks.get(session_id, 0)
+        page = query(session_id=session_id, offset=0, after_seq=after_seq)
+        revision = page['snapshot_id']
+        manifest = page.get('manifest', {})
+        if manifest:
+            collector.accept(PREFIX + json.dumps(manifest))
+        trace_path = collector.root / 'traces' / (session_id + '.json')
+        trace = read_json(trace_path, dict(schema=1, captured_device=True, session_id=session_id,
+                                          build_id=manifest.get('build_id'), records=[], truncated=False))
+        # Incomplete synchronization is never presented as a replayable complete trace.
+        trace.update(sync_incomplete=True)
+        atomic_json(trace_path, trace)
+        for _ in range(200):
+            if page.get('snapshot_id') != revision:
+                raise RuntimeError('snapshot_changed')
+            for row in page.get('records', []):
+                if row.get('session_id') != session_id:
+                    raise RuntimeError('snapshot_identity_mismatch')
+                collector.accept(PREFIX + json.dumps(row))
+            if page.get('next_offset') is None:
+                trace = read_json(trace_path, {})
+                trace.update(sync_incomplete=False, truncated=bool(trace.get('truncated') or page.get('trace_truncated')))
+                atomic_json(trace_path, trace)
+                watermarks[session_id] = manifest.get('seq', after_seq)
+                break
+            page = query(session_id=session_id, offset=page['next_offset'], snapshot=revision, after_seq=after_seq)
+        else:
+            raise RuntimeError('snapshot_page_limit')
+    # Bound cursor state with the same session retention as evidence.
+    atomic_json(collector.root / 'sync.json', {k: watermarks[k] for k in identities if k in watermarks})
+
+
+def watch_cycle(collector, rish):
+    health = dict(schema=1, checked_wall_clock_ms=int(time.time() * 1000), state='checking')
+    atomic_json(collector.root / 'collector-health.json', health)
+    try:
+        sync_device(collector, rish)
+        health.update(state='connected', durable_sync=True)
+    except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as exc:
+        health.update(state='recovery_needed', durable_sync=False,
+                      reason_code=str(exc) if isinstance(exc, RuntimeError) else 'shell_unavailable')
+    # Legacy builds remain readable, but lost logcat is never mistaken for a current heartbeat.
+    try:
+        result = subprocess.run([rish, '-c', '/system/bin/logcat -d -v raw -T 2000 -s AergisDevLoop:I *:S'],
+                                capture_output=True, text=True, timeout=15)
+        if result.returncode == 0:
+            for line in result.stdout.splitlines():
+                collector.accept(line)
+        elif not health.get('durable_sync'):
+            health.update(state='unavailable', reason_code='shizuku_unavailable')
+    except (OSError, subprocess.TimeoutExpired):
+        if not health.get('durable_sync'):
+            health.update(state='unavailable', reason_code='shell_unavailable')
+    health['checked_wall_clock_ms'] = int(time.time() * 1000)
+    atomic_json(collector.root / 'collector-health.json', health)
+    atomic_json(collector.root / 'latest.json', collector.view('latest'))
+    return health
 
 
 def main(argv=None):
@@ -246,29 +369,45 @@ def main(argv=None):
     parser.add_argument('--before', type=Path)
     parser.add_argument('--after', type=Path)
     parser.add_argument('--json', action='store_true', help='Structured output (the default)')
+    parser.add_argument('--once', action='store_true', help='Run one recovery/poll cycle')
+    parser.add_argument('--session', dest='session_id')
+    parser.add_argument('--offset', type=int, default=0)
+    parser.add_argument('--snapshot')
     args = parser.parse_args(argv)
     collector = Collector(args.root)
-    if args.command in {'collect', 'watch'}:
-        child = None
-        if args.command == 'watch':
-            child = subprocess.Popen([args.rish, '-c', '/system/bin/logcat -v raw -T 2000 -s AergisDevLoop:I *:S'],
-                                     stdout=subprocess.PIPE, text=True)
-            signal.signal(signal.SIGTERM, lambda *_: child.terminate())
-        stream = child.stdout if child else sys.stdin
-        for line in stream:
+    if args.command == 'watch':
+        stopping = False
+        def stop(*_):
+            nonlocal stopping
+            stopping = True
+        signal.signal(signal.SIGTERM, stop)
+        while not stopping:
+            try:
+                watch_cycle(collector, args.rish)
+            except OSError:
+                pass  # A temporary filesystem failure is retried by this supervised collector.
+            if args.once:
+                return 0
+            for _ in range(50):
+                if stopping:
+                    break
+                time.sleep(.1)
+        return 0
+    if args.command == 'collect':
+        for line in sys.stdin:
             try:
                 collector.accept(line)
             except OSError as exc:
                 print(json.dumps(dict(state='collector_error', error=str(exc))), file=sys.stderr)
-        return child.wait() if child else 0
+        return 0
     if args.command == 'compare':
         if not args.before or not args.after:
             parser.error('compare requires --before and --after')
         result = compare_sessions(read_json(args.before, {}), read_json(args.after, {}))
     elif args.command == 'regression':
-        result = regression_fixture(collector.view('replay'))
+        result = regression_fixture(collector.replay(args.session_id))
     else:
-        result = collector.view(args.command)
+        result = collector.view(args.command, session_id=args.session_id, offset=args.offset, snapshot=args.snapshot)
     print(json.dumps(result, indent=2, allow_nan=False))
     return 0
 

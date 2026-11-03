@@ -13,8 +13,8 @@ import sys
 import tempfile
 import time
 
-MARKER = '# Aergis DevLoop integration v1'
-CATALOG = '''
+MARKER = '# Aergis DevLoop integration v2'
+LEGACY_CATALOG = '''
 # Aergis DevLoop integration v1
 task('aergis.devloop', 'Aergis test session',
      'Show recorded successes, failures, session state, and replay evidence in plain language.',
@@ -22,13 +22,37 @@ task('aergis.devloop', 'Aergis test session',
      params={'view': param('choice', 'Evidence to show', 'latest',
              choices=['latest', 'session', 'event', 'manifest', 'history', 'status', 'replay'])})
 '''
-CORE = '''
+LEGACY_CORE = '''
 # Aergis DevLoop integration v1
 _devloop_original_builtin = builtin
 def builtin(name, values):
     if name == 'aergisdevloop':
         from aergis_live_collector import Collector
         return Collector(Path.home() / 'agent-gates/aergis-live').view(values.get('view', 'latest'))
+    return _devloop_original_builtin(name, values)
+'''
+
+CATALOG = '''
+# Aergis DevLoop integration v2
+task('aergis.devloop', 'Aergis test session',
+     'Show session health, proven outcomes, and complete replay pages.',
+     builtin='aergisdevloop', changes=False,
+     params={'view': param('choice', 'Evidence to show', 'latest',
+             choices=['latest', 'session', 'event', 'manifest', 'history', 'status', 'replay']),
+             'session': param('text', 'Session ID (or latest)', 'latest'),
+             'offset': param('int', 'Replay page offset', 0, min=0, max=3600),
+             'snapshot': param('text', 'Replay snapshot ID (or first)', 'first')})
+'''
+CORE = '''
+# Aergis DevLoop integration v2
+_devloop_original_builtin = builtin
+def builtin(name, values):
+    if name == 'aergisdevloop':
+        from aergis_live_collector import Collector
+        return Collector(Path.home() / 'agent-gates/aergis-live').view(values.get('view', 'latest'),
+            session_id=None if values.get('session', 'latest') == 'latest' else values['session'],
+            offset=int(values.get('offset', 0)),
+            snapshot=None if values.get('snapshot', 'first') == 'first' else values['snapshot'])
     return _devloop_original_builtin(name, values)
 '''
 
@@ -51,6 +75,12 @@ def install(server, service=True):
     if 'def task(' not in files['catalog.py'] or 'def builtin(' not in files['core.py']:
         raise ValueError('This is not a supported Toolbox server. No files were changed.')
     patch = dict(files)
+    # Replace only our exact v1 block; preserve unrelated later extensions.
+    for name, old, new in [('catalog.py', LEGACY_CATALOG, CATALOG), ('core.py', LEGACY_CORE, CORE)]:
+        if '# Aergis DevLoop integration v1' in patch[name]:
+            if old not in patch[name]:
+                raise ValueError('Modified DevLoop v1 integration; refusing to overwrite local work')
+            patch[name] = patch[name].replace(old, new, 1)
     if MARKER not in patch['catalog.py']:
         patch['catalog.py'] += CATALOG
     if MARKER not in patch['core.py']:
@@ -78,8 +108,8 @@ def install(server, service=True):
         atomic(boot, '#!' + str(prefix / 'bin/sh') + '\nsv up ' + shlex.quote(str(run.parent)) + '\n')
         boot.chmod(0o700)
         if shutil.which('sv'):
-            status = subprocess.run(['sv', 'up', str(run.parent)], capture_output=True, text=True, timeout=10)
-            result['service'] = 'started' if status.returncode == 0 else 'installed_needs_supervisor'
+            status = subprocess.run(['sv', 'restart', str(run.parent)], capture_output=True, text=True, timeout=10)
+            result['service'] = 'supervised' if status.returncode == 0 else 'installed_needs_supervisor'
             reloaded = subprocess.run(['sv', 'restart', str(prefix / 'var/service/atb-agent'),
                                       str(prefix / 'var/service/atb-dashboard')], capture_output=True, text=True, timeout=20)
             result['runtime_reload'] = 'reloaded' if reloaded.returncode == 0 else 'needs_restart'

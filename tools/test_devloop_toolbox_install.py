@@ -31,9 +31,17 @@ def builtin(name, values):
             task, data, old = json.loads(result.stdout)
             self.assertEqual('aergisdevloop', task['builtin'])
             self.assertFalse(task['changes'])
+            self.assertIn('offset', task['params'])
+            self.assertIn('session', task['params'])
+            self.assertIn('snapshot', task['params'])
             self.assertIn('summary', data)
             self.assertEqual({'existing': True}, old)
             self.assertTrue(list((server / 'devloop-backups').glob('*.json')))
+            # The real Toolbox normalizer returns integer parameters as strings and rejects empty text.
+            result = subprocess.run([sys.executable, '-c', "import core,json; print(json.dumps(core.builtin('aergisdevloop',{'view':'replay','offset':'0','session':'latest','snapshot':'first'})))"],
+                                    cwd=server, capture_output=True, text=True)
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertEqual([], json.loads(result.stdout)['records'])
 
 
 

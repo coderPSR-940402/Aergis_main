@@ -36,6 +36,8 @@ internal class DevLoopSession(
     private var seq = 0L
     private var stopped = false
     private var evidenceComplete = true
+    private var traceTruncated = false
+    private var heldRelay: MutableList<String>? = null
     private var previousSessionId: String? = null
     private val diagnostics = LiveDiagnostics(buffer, LiveDiagnosticEventSink { snapshot ->
         runCatching { store.publish(snapshot) }
@@ -201,6 +203,9 @@ internal class DevLoopSession(
 
     fun stop(uptimeMs: Long, wallClockMs: Long) {
         if (stopped) return
+        // Persist the complete terminal snapshot before a burst can overflow logcat or lose rish.
+        val finalRecords = mutableListOf<String>()
+        heldRelay = finalRecords
         emit("trace", linkedMapOf("step" to "stop", "uptime_ms" to uptimeMs))
         diagnostics.finish(uptimeMs)
         lastUptime = maxOf(lastUptime, uptimeMs)
@@ -209,6 +214,8 @@ internal class DevLoopSession(
         for (sample in frameTrace) emitSample(sample)
         runCatching { store.stopSession(true, wallClockMs) }
         checkpoint(true)
+        heldRelay = null
+        for (line in finalRecords) runCatching { relay(line) }
     }
 
     private fun terminal(outcome: LiveInteractionOutcome) {
@@ -231,7 +238,8 @@ internal class DevLoopSession(
 
     private fun checkpoint(clean: Boolean) {
         val fields = linkedMapOf<String, Any?>("state" to if (clean) "stopped" else "recording", "clean" to clean,
-            "started_wall_clock_ms" to startedWall, "stopped_wall_clock_ms" to if (clean) lastWall else null)
+            "started_wall_clock_ms" to startedWall, "observed_wall_clock_ms" to lastWall,
+            "stopped_wall_clock_ms" to if (clean) lastWall else null)
         fields.putAll(counts)
         fields["frame_age_p95_ms"] = percentile(ages)
         fields["inference_p95_ms"] = percentile(inference)
@@ -239,22 +247,26 @@ internal class DevLoopSession(
         fields["pinch_jump_max"] = pinchJumpMax
         val json = envelope("session", fields)
         runCatching {
-            write(File(root, "session.json"), json)
+            val records = trace.joinToString(",")
+            val traceJson = "{\"schema\":1,\"session_id\":${value(sessionId)},\"build_id\":${value(buildId)},\"truncated\":$traceTruncated,\"records\":[$records]}"
+            write(File(root, "traces/$sessionId.json"), traceJson)
+            write(File(root, "trace.json"), traceJson)
             write(File(root, "sessions/$sessionId.json"), json)
+            write(File(root, "session.json"), json)
             File(root, "sessions").listFiles()?.filter { it.extension == "json" }?.sortedBy { it.lastModified() }
-                ?.dropLast(10)?.forEach { it.delete() }
-            write(File(root, "trace.json"), "{\"schema\":1,\"session_id\":${value(sessionId)},\"build_id\":${value(buildId)},\"records\":[${trace.joinToString(",")}]}" )
+                ?.dropLast(10)?.forEach { old -> File(root, "traces/${old.name}").delete(); old.delete() }
         }
         runCatching { relay(LiveDiagnosticRelay.PREFIX + json) }
     }
 
     private fun emit(record: String, fields: Map<String, Any?>) {
         val json = envelope(record, fields)
-        if (record == "trace") {
+        if (record == "trace" || record == "event") {
             trace.addLast(json)
-            if (trace.size > 3600) { trace.removeFirst(); increment("trace_dropped") }
+            if (trace.size > 3600) { trace.removeFirst(); traceTruncated = true; increment("trace_dropped") }
         }
-        runCatching { relay(LiveDiagnosticRelay.PREFIX + json) }
+        val line = LiveDiagnosticRelay.PREFIX + json
+        heldRelay?.add(line) ?: runCatching { relay(line) }
     }
 
     private fun envelope(record: String, fields: Map<String, Any?>): String {

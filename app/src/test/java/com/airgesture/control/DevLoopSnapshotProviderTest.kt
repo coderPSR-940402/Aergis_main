@@ -20,7 +20,7 @@ class DevLoopSnapshotProviderTest {
         context.contentResolver.query(Uri.parse("content://com.airgesture.control.devloop/snapshot"), null, null, null, null).use { cursor ->
             assertNotNull("A stopped capture must be readable without logcat", cursor)
             assertTrue(cursor!!.moveToFirst())
-            val result = JSONObject(cursor.getString(0))
+            val result = JSONObject(String(android.util.Base64.decode(cursor.getString(0), android.util.Base64.DEFAULT)))
             assertEquals("inactive", result.getString("capture_state"))
             val manifest = result.getJSONObject("manifest")
             assertEquals("unclean", manifest.getString("state"))
