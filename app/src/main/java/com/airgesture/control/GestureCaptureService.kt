@@ -68,6 +68,7 @@ class GestureCaptureService : Service(), LifecycleOwner {
         AirRuntime.pointerEnabled = mappings.pointerEnabled()
         AirRuntime.gesturesEnabled = mappings.gesturesEnabled()
         AirRuntime.pointerClickingEnabled = mappings.pointerClickingEnabled()
+        AergisDevLoop.start(this)
         runCatching { visionEngine = GestureRecognitionEngine(this) }
             .onFailure {
                 AirRuntime.visionReady = false
@@ -235,7 +236,13 @@ class GestureCaptureService : Service(), LifecycleOwner {
         AirRuntime.setPointerState(AirRuntime.pointerX, AirRuntime.pointerY, tracking = false)
         AirRuntime.gesturesEnabled = false
         AirAccessibilityService.instance?.updatePointer(0f, 0f, false)
+        AergisDevLoop.stop()
         super.onDestroy()
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        AergisDevLoop.checkpoint()
+        super.onTaskRemoved(rootIntent)
     }
 
     override fun onBind(intent: Intent?): IBinder? = null

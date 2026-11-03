@@ -9,6 +9,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -79,6 +80,44 @@ class AirAccessibilityServiceDispatchTest {
         AirRuntime.controlMode = ControlMode.OFF
         AirRuntime.setForegroundContext(ForegroundContextState())
         AirRuntime.setPointerState(0f, 0f, tracking = false)
+    }
+
+    @Test fun productionDevLoopExportsCompletedAndRejectedRequestsWithoutTestAdapter() {
+        AergisDevLoop.start(service)
+        try {
+            service.dispatchPointerTap()
+            shadowOf(Looper.getMainLooper()).idle()
+            val call = shadow.gesturesDispatched.single()
+            call.callback()!!.onCompleted(call.description())
+            AirRuntime.controlMode = ControlMode.OFF
+            service.dispatchPointerTap()
+        } finally {
+            AergisDevLoop.stop()?.get(10, java.util.concurrent.TimeUnit.SECONDS)
+        }
+        val manifest = java.io.File(service.filesDir, "devloop/session.json").readText()
+        assertTrue(manifest.contains("\"click_success\":1"))
+        assertTrue(manifest.contains("\"action_failures\":1"))
+        assertTrue(manifest.contains("\"clean\":true"))
+        val lines = org.robolectric.shadows.ShadowLog.getLogsForTag("AergisDevLoop").map { it.msg }
+        val output = java.io.File("build/reports/testing-tools/devloop-runtime.log")
+        output.parentFile.mkdirs()
+        output.writeText(lines.joinToString("\n", postfix = "\n"))
+        val durable = mutableListOf<String>()
+        var uri = android.net.Uri.parse("content://com.airgesture.control.devloop/snapshot")
+        while (true) {
+            val page = service.contentResolver.query(uri, null, null, null, null).use { cursor ->
+                assertNotNull(cursor)
+                assertTrue(cursor!!.moveToFirst())
+                val payload = cursor.getString(0)
+                durable.add("Row: 0 payload=$payload")
+                org.json.JSONObject(String(android.util.Base64.decode(payload, android.util.Base64.DEFAULT)))
+            }
+            if (page.isNull("next_offset")) break
+            uri = uri.buildUpon().clearQuery().appendQueryParameter("offset", page.getInt("next_offset").toString())
+                .appendQueryParameter("snapshot", page.getString("snapshot_id")).build()
+        }
+        java.io.File(output.parentFile, "devloop-snapshot.log").writeText(durable.joinToString("\n", postfix = "\n"))
+        assertTrue(lines.any { it.contains("\"record\":\"event\"") })
     }
 
     @Test fun classifierDispatchRetainsTheEpochOfItsRecognitionResult() {
