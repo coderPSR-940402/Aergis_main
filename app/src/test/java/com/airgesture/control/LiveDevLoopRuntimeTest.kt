@@ -11,6 +11,7 @@ class LiveDevLoopRuntimeTest {
         val session = DevLoopSession(root, "synthetic", "contact", lines::add)
         session.start(1000, 100_000)
         session.contactGeometry(10000, 1100, "owner", 7, 8, .12f, .1f, "before_recognition_gates")
+        session.contactDecision(10000, 1100, "recognized_for_dispatch")
         session.open(42, 1110, "TAP", 321f, 654f, 7, 8)
         session.outcome(ActionDispatchOutcome.COMPLETED, 42, 1120)
         session.contactGeometry(10033, 1133, "owner", 7, 8, .8f, .1f, "before_recognition_gates")
@@ -29,10 +30,22 @@ class LiveDevLoopRuntimeTest {
         val session = DevLoopSession(root, "synthetic", "contact", lines::add)
         session.start(1000, 100_000)
         session.contactGeometry(10000, 1100, "owner", 7, 8, .12f, .1f, "clicking_disabled")
+        session.contactDecision(10000, 1100, "recognized_for_dispatch")
         session.open(43, 5000, "TAP", 321f, 654f, 7, 8)
         val open = lines.single { it.contains("\"step\":\"open\"") }
         assertFalse("A later action cannot explain an old ignored contact", open.contains("\"contact_id\""))
         session.stop(5100, 104_100)
+    }
+
+    @Test fun nearbyTapWithoutRecognitionEvidenceCannotExplainAContact() {
+        val root = Files.createTempDirectory("devloop-unrelated-tap").toFile()
+        val lines = mutableListOf<String>()
+        val session = DevLoopSession(root, "synthetic", "contact", lines::add)
+        session.start(1000, 100_000)
+        session.contactGeometry(10000, 1100, "owner", 7, 8, .12f, .1f, "clicking_disabled")
+        session.open(44, 1110, "TAP", 321f, 654f, 7, 8)
+        assertFalse(lines.single { it.contains("\"step\":\"open\"") }.contains("\"contact_id\""))
+        session.stop(1200, 100_200)
     }
 
     @Test fun stableContactEvidenceIsSampledWithoutDuplicateDecisionFlooding() {
