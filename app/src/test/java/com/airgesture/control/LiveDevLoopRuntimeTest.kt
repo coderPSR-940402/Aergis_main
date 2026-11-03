@@ -5,6 +5,16 @@ import org.junit.Test
 import java.nio.file.Files
 
 class LiveDevLoopRuntimeTest {
+    @Test fun firstCaptureAfterUpgradePreservesTheLegacyPrivateTrace() {
+        val root = Files.createTempDirectory("devloop-legacy-trace").toFile()
+        root.resolve("session.json").writeText("""{"schema":1,"session_id":"old","build_id":"sha:1381","seq":10,"state":"recording","clean":false}""")
+        root.resolve("session.open").writeText("{}")
+        root.resolve("trace.json").writeText("""{"schema":1,"session_id":"old","build_id":"sha:1381","records":[{"request_id":42,"step":"open","seq":1}]}""")
+        DevLoopSession(root, "new-sha", "new", {}).start(1000, 100_000)
+        assertTrue("Starting the new recorder must not erase pre-upgrade evidence", root.resolve("traces/old.json").isFile)
+        assertTrue(root.resolve("traces/old.json").readText().contains("\"request_id\":42"))
+    }
+
     @Test fun finalManifestIsDurableBeforeBulkFrameTransport() {
         val root = Files.createTempDirectory("devloop-final-first").toFile()
         var stopping = false
