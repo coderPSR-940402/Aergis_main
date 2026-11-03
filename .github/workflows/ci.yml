@@ -72,7 +72,7 @@ jobs:
       - name: Reconstruct production DevLoop evidence and generate replay
         run: |
           cp -a app/build/reports/tests app/build/reports/tests-full
-          python3 tools/verify_devloop_pipeline.py app/build/reports/testing-tools/devloop-runtime.log --fixture app/build/reports/testing-tools/devloop-runtime-replay.json
+          python3 tools/verify_devloop_pipeline.py app/build/reports/testing-tools/devloop-runtime.log --snapshot app/build/reports/testing-tools/devloop-snapshot.log --fixture app/build/reports/testing-tools/devloop-runtime-replay.json
 
       - name: Replay exported DevLoop session through the production correlator
         env:

@@ -41,6 +41,8 @@ class DevLoopSnapshotProviderTest {
             .put("build_id", "sha:1381").put("seq", i).put("request_id", i).put("target_x", 321))
         root.resolve("trace.json").writeText(JSONObject().put("session_id", "pages").put("truncated", false).put("records", records).toString())
         val first = query()
+        // The producer checkpoints between page one and page two.
+        root.resolve("trace.json").writeText("""{"session_id":"pages","records":[]}""")
         val seen = mutableListOf<Int>()
         var page = first
         while (true) {
@@ -53,7 +55,6 @@ class DevLoopSnapshotProviderTest {
             page = query("?offset=${page.getInt("next_offset")}&snapshot=${first.getString("snapshot_id")}")
         }
         assertEquals((1..200).toList(), seen)
-        root.resolve("trace.json").writeText("""{"session_id":"pages","records":[]}""")
         assertEquals(24, query("?snapshot=${first.getString("snapshot_id")}").getJSONArray("records").length())
         assertNotEquals(first.getString("snapshot_id"), query().getString("snapshot_id"))
     }

@@ -235,6 +235,10 @@ class CollectorTest(unittest.TestCase):
             return subprocess.CompletedProcess(argv, 0, 'Row: 0 payload=' + payload, '')
         with patch('subprocess.run', side_effect=shell):
             sync_device(c, 'rish')
+        # Now lose the file with the new structured cursor and persistent dedup intact.
+        (self.root / 'traces/a54-session.json').unlink()
+        with patch('subprocess.run', side_effect=shell):
+            sync_device(c, 'rish')
         self.assertEqual([42], [r['request_id'] for r in c.replay()['records']])
         self.assertFalse(c.replay()['sync_incomplete'])
 

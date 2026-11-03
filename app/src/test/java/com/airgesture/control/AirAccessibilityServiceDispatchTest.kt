@@ -101,6 +101,21 @@ class AirAccessibilityServiceDispatchTest {
         val output = java.io.File("build/reports/testing-tools/devloop-runtime.log")
         output.parentFile.mkdirs()
         output.writeText(lines.joinToString("\n", postfix = "\n"))
+        val durable = mutableListOf<String>()
+        var uri = android.net.Uri.parse("content://com.airgesture.control.devloop/snapshot")
+        while (true) {
+            val page = service.contentResolver.query(uri, null, null, null, null).use { cursor ->
+                assertNotNull(cursor)
+                assertTrue(cursor!!.moveToFirst())
+                val payload = cursor.getString(0)
+                durable.add("Row: 0 payload=$payload")
+                org.json.JSONObject(String(android.util.Base64.decode(payload, android.util.Base64.DEFAULT)))
+            }
+            if (page.isNull("next_offset")) break
+            uri = uri.buildUpon().clearQuery().appendQueryParameter("offset", page.getInt("next_offset").toString())
+                .appendQueryParameter("snapshot", page.getString("snapshot_id")).build()
+        }
+        java.io.File(output.parentFile, "devloop-snapshot.log").writeText(durable.joinToString("\n", postfix = "\n"))
         assertTrue(lines.any { it.contains("\"record\":\"event\"") })
     }
 

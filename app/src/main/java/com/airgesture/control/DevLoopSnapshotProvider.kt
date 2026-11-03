@@ -106,7 +106,7 @@ class DevLoopSnapshotProvider : ContentProvider() {
             page.put(row)
         }
         val end = offset + page.length()
-        return result.put("records", page).put("next_offset", if (end < rows.length()) end else JSONObject.NULL)
+        return result.put("records", page).put("offset", offset).put("next_offset", if (end < rows.length()) end else JSONObject.NULL)
     }
 
     override fun getType(uri: Uri) = "application/json"
