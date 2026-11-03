@@ -33,10 +33,12 @@ internal class DevLoopSession(
     private var pointerStepMax: Double? = null
     private data class Contact(val id: Long, val owner: String, val epoch: Long, val input: Long,
         var frameId: Long, var observedAt: Long, var linked: Boolean = false,
-        var geometryGate: String = "", var decisionGate: String = "", var recognizedFrame: Long? = null)
+        var decisionGate: String = "", var recognizedFrame: Long? = null)
     private var contact: Contact? = null
     private var contactSequence = 0L
     private var lastContactTraceFrame: Long? = null
+    private var lastGeometryBand: String? = null
+    private var lastGeometryGate: String? = null
     private var lastOwner: String? = null
     private var lostAt: Long? = null
     private var lastFrame: LiveDiagnosticSample? = null
@@ -145,25 +147,31 @@ internal class DevLoopSession(
         if (owner == null || !distance.isFinite() || !depth.isFinite() || distance < 0 || depth < 0) return
         if (distance >= .32f) {
             finishContact(uptimeMs, "released")
-            return
         }
         if (contact == null && distance < .18f) {
             contact = Contact(++contactSequence, owner, epoch, input, frameId, uptimeMs)
             increment("contact_candidates")
             lastContactTraceFrame = null
         }
-        val active = contact ?: return
-        active.frameId = frameId
-        active.observedAt = uptimeMs
-        active.recognizedFrame = null
-        if (active.geometryGate != gate || lastContactTraceFrame?.let { frameId - it >= 100 } != false) {
+        val active = contact
+        if (active != null) {
+            active.frameId = frameId
+            active.observedAt = uptimeMs
+            active.recognizedFrame = null
+        }
+        val band = if (distance < .18f) "closed" else if (distance < .32f) "near" else "separated"
+        // Keep approaches that never meet recognition's threshold, including brief
+        // band transitions between periodic samples. They are not inferred attempts.
+        if (lastGeometryGate != gate || lastGeometryBand != band ||
+            lastContactTraceFrame?.let { frameId - it >= 100 || frameId <= it } != false) {
             emit("trace", linkedMapOf("step" to "contact_geometry", "uptime_ms" to uptimeMs,
-                "source_frame_id" to frameId, "contact_id" to active.id, "hand_id" to owner,
+                "source_frame_id" to frameId, "contact_id" to active?.id, "hand_id" to owner,
                 "session_epoch" to epoch, "input_epoch" to input, "contact_distance" to distance,
                 "contact_depth" to depth, "gate" to gate))
             lastContactTraceFrame = frameId
         }
-        active.geometryGate = gate
+        lastGeometryBand = band
+        lastGeometryGate = gate
     }
 
     fun contactDecision(frameId: Long, uptimeMs: Long, gate: String) {
@@ -214,6 +222,8 @@ internal class DevLoopSession(
 
     fun sample(sample: LiveDiagnosticSample, rawX: Float? = null, rawY: Float? = null, tracking: Boolean = false) {
         if (stopped) return
+        val recorded = sample.copy(rawPointerX = rawX, rawPointerY = rawY,
+            rawTracking = if (rawX != null && rawY != null) tracking else null)
         val observedConditions = mutableListOf<Pair<LiveDiagnosticKind, String>>()
         increment("frame_count")
         sample.cameraAgeMs?.let { bounded(ages, it) }
@@ -256,9 +266,9 @@ internal class DevLoopSession(
                 }
             } else lastPointerDelta = null
         } else lastPointerDelta = null
-        lastFrame = sample
+        lastFrame = recorded
         if (frameTrace.lastOrNull()?.let { sample.uptimeMs - it.uptimeMs >= 100 } != false) {
-            frameTrace.addLast(sample)
+            frameTrace.addLast(recorded)
             if (frameTrace.size > 600) { frameTrace.removeFirst(); increment("trace_dropped") }
         }
         // Observations from different producer threads may arrive out of timestamp order.
@@ -266,7 +276,7 @@ internal class DevLoopSession(
         if (sample.uptimeMs >= lastUptime) {
             lastUptime = sample.uptimeMs
             lastWall = sample.wallClockMs
-            diagnostics.sample(sample)
+            diagnostics.sample(recorded)
             for ((kind, reason) in observedConditions) diagnostics.trigger(LiveDiagnosticTrigger(kind,
                 LiveDiagnosticSeverity.WARNING, sample.uptimeMs, sample.wallClockMs,
                 reasonCode = reason, sessionEpoch = sample.sessionEpoch, inputEpoch = sample.inputEpoch))
@@ -341,6 +351,7 @@ internal class DevLoopSession(
     private fun emitSample(s: LiveDiagnosticSample, contextEventSeq: Long? = null) = emit("trace", linkedMapOf("step" to "sample",
         "context_event_seq" to contextEventSeq, "uptime_ms" to s.uptimeMs, "wall_clock_ms" to s.wallClockMs, "frame_id" to s.frameId,
         "hand_id" to s.handId, "pointer_x" to s.pointerX, "pointer_y" to s.pointerY,
+        "raw_x" to s.rawPointerX, "raw_y" to s.rawPointerY, "raw_tracking" to s.rawTracking,
         "contact_state" to s.contactState, "camera_age_ms" to s.cameraAgeMs, "inference_ms" to s.inferenceMs,
         "frame_gap_ms" to s.analyzedFrameGapMs, "session_epoch" to s.sessionEpoch, "input_epoch" to s.inputEpoch))
 

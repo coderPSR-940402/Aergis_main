@@ -61,7 +61,7 @@ def parse_line(line):
             result[key] = value
         elif key in NUMBERS and type(value) in (int, float) and math.isfinite(value):
             result[key] = value
-        elif key in {'clean', 'post_window_complete', 'evidence_complete'} and type(value) is bool:
+        elif key in {'clean', 'post_window_complete', 'evidence_complete', 'raw_tracking'} and type(value) is bool:
             result[key] = value
     return result
 
