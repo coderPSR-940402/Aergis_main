@@ -107,6 +107,12 @@ def quality_findings(session):
     age = session.get('frame_age_p95_ms')
     if age is not None and age > 100:
         add('frame_delay', age, f'Frame age p95 is {age} ms, above the 100 ms responsiveness review budget.')
+    inference = session.get('inference_p95_ms')
+    if inference is not None and inference > 50:
+        add('inference_cost', inference, f'Inference p95 is {inference} ms, above the 50 ms processing review budget.')
+    recovery = session.get('hand_loss_recovery_p95_ms')
+    if recovery is not None and recovery > 500:
+        add('hand_loss_recovery', recovery, f'Observed owner return after hand loss p95: {recovery} ms.')
     jump = session.get('pinch_jump_max')
     if jump is not None and jump > .15:
         add('pinch_pointer_jump', jump, f'Largest recorded pointer step during pinch: {jump:.3f} normalized screen units.')
@@ -114,6 +120,7 @@ def quality_findings(session):
         ('trace_dropped', 'trace_loss', 'Trace rows discarded by bounded retention'),
         ('queue_dropped', 'observation_loss', 'Observations lost before recording'),
         ('cancelled', 'cancelled_actions', 'Cancelled actions across all action types'),
+        ('hand_switches', 'owner_changes', 'Controlling-owner ID changes'),
         ('pointer_reversals', 'pointer_reversals', 'Small rapid pointer direction reversals; deliberate movement is possible'),
         ('contacts_without_action', 'contact_without_action', 'Observed closed-contact episodes without a linked action; intent is unknown'),
     ):

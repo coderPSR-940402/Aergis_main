@@ -32,7 +32,8 @@ internal class DevLoopSession(
     private var lastPointerDelta: Pair<Double, Double>? = null
     private var pointerStepMax: Double? = null
     private data class Contact(val id: Long, val owner: String, val epoch: Long, val input: Long,
-        var frameId: Long, var linked: Boolean = false, var geometryGate: String = "", var decisionGate: String = "")
+        var frameId: Long, var observedAt: Long, var linked: Boolean = false,
+        var geometryGate: String = "", var decisionGate: String = "", var recognizedFrame: Long? = null)
     private var contact: Contact? = null
     private var contactSequence = 0L
     private var lastContactTraceFrame: Long? = null
@@ -117,7 +118,9 @@ internal class DevLoopSession(
         if (seenRequests.size > 4096) seenRequests.remove(seenRequests.first())
         requests[id] = action
         if (action == "TAP") increment("click_attempts")
-        val matchingContact = contact?.takeIf { action == "TAP" && it.epoch == epoch && it.input == input }
+        val matchingContact = contact?.takeIf { action == "TAP" && !it.linked &&
+            it.epoch == epoch && it.input == input && it.recognizedFrame == it.frameId &&
+            uptimeMs - it.observedAt in 0..350 }
         if (matchingContact != null && !matchingContact.linked) {
             matchingContact.linked = true
             increment("contacts_linked")
@@ -145,12 +148,14 @@ internal class DevLoopSession(
             return
         }
         if (contact == null && distance < .18f) {
-            contact = Contact(++contactSequence, owner, epoch, input, frameId)
+            contact = Contact(++contactSequence, owner, epoch, input, frameId, uptimeMs)
             increment("contact_candidates")
             lastContactTraceFrame = null
         }
         val active = contact ?: return
         active.frameId = frameId
+        active.observedAt = uptimeMs
+        active.recognizedFrame = null
         if (active.geometryGate != gate || lastContactTraceFrame?.let { frameId - it >= 100 } != false) {
             emit("trace", linkedMapOf("step" to "contact_geometry", "uptime_ms" to uptimeMs,
                 "source_frame_id" to frameId, "contact_id" to active.id, "hand_id" to owner,
@@ -163,6 +168,7 @@ internal class DevLoopSession(
 
     fun contactDecision(frameId: Long, uptimeMs: Long, gate: String) {
         val active = contact?.takeIf { it.frameId == frameId } ?: return
+        active.recognizedFrame = frameId.takeIf { gate == "recognized_for_dispatch" }
         if (active.decisionGate == gate) return
         emit("trace", linkedMapOf("step" to "contact_decision", "uptime_ms" to uptimeMs,
             "source_frame_id" to frameId, "contact_id" to active.id, "gate" to gate))
@@ -278,6 +284,7 @@ internal class DevLoopSession(
 
     fun tick(uptimeMs: Long, wallClockMs: Long) {
         if (stopped || uptimeMs < lastUptime) return
+        if (contact?.let { uptimeMs - it.observedAt > 350 } == true) finishContact(uptimeMs, "observation_expired")
         lastUptime = uptimeMs
         lastWall = wallClockMs
         diagnostics.sample(LiveDiagnosticSample(uptimeMs, wallClockMs))

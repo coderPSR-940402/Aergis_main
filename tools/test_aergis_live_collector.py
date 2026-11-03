@@ -27,7 +27,8 @@ class CollectorTest(unittest.TestCase):
         view = c.view('latest')
         self.assertTrue(view.get('findings'), 'Recorded latency and pointer problems must reach the summary')
         codes = {finding['code'] for finding in view['findings']}
-        self.assertTrue({'frame_delay', 'pinch_pointer_jump', 'trace_loss'} <= codes)
+        self.assertTrue({'frame_delay', 'pinch_pointer_jump', 'trace_loss', 'owner_changes',
+                         'inference_cost', 'hand_loss_recovery'} <= codes)
         self.assertIsNone(view['metrics'].get('intended_click_success_rate'))
         self.assertEqual('unknown', view.get('coverage', {}).get('unrecognized_pinches'))
         self.assertEqual('unknown', view.get('coverage', {}).get('target_activation'))

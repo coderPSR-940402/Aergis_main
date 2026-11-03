@@ -10,6 +10,7 @@ package com.airgesture.control
 internal object AergisDevLoop {
     @Volatile private var worker: DevLoopWorker? = null
     private var finalizing: java.util.concurrent.Future<*>? = null
+    private val contactValidator = com.airgesture.control.filtering.KinematicValidator()
 
     /** Serializes the capture lifecycle boundary with read-only shell snapshot queries. */
     @Synchronized fun <T> readEvidence(block: (String) -> T): T = block(
@@ -42,9 +43,8 @@ internal object AergisDevLoop {
         gate: String) {
         val current = worker ?: return
         runCatching {
-            val validator = com.airgesture.control.filtering.KinematicValidator()
-            val distance = validator.calculateNormalizedFingerDistance(points, aspect)
-            val depth = validator.calculateNormalizedFingerDepthDistance(points, aspect, depthScale)
+            val distance = contactValidator.calculateNormalizedFingerDistance(points, aspect)
+            val depth = contactValidator.calculateNormalizedFingerDepthDistance(points, aspect, depthScale)
             val now = android.os.SystemClock.uptimeMillis()
             current.observe { contactGeometry(frameId, now, owner, epoch, input, distance, depth, gate) }
         }
