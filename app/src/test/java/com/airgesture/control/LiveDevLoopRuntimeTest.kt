@@ -5,6 +5,31 @@ import org.junit.Test
 import java.nio.file.Files
 
 class LiveDevLoopRuntimeTest {
+    @Test fun finalManifestIsDurableBeforeBulkFrameTransport() {
+        val root = Files.createTempDirectory("devloop-final-first").toFile()
+        var stopping = false
+        val lines = mutableListOf<String>()
+        val session = DevLoopSession(root, "sha", "id", { line ->
+            if (stopping && line.contains("\"step\":\"sample\"")) {
+                assertTrue("Lost logcat must not lose finalization", root.resolve("session.json").readText().contains("\"clean\":true"))
+                assertTrue(lines.any { it.contains("\"state\":\"stopped\"") })
+            }
+            lines.add(line)
+        })
+        session.start(1000, 100_000)
+        session.sample(LiveDiagnosticSample(1100, 100_100, frameId = 99))
+        stopping = true
+        session.stop(1200, 100_200)
+    }
+
+    @Test fun periodicManifestCarriesTheActualObservationHeartbeat() {
+        val root = Files.createTempDirectory("devloop-heartbeat").toFile()
+        val session = DevLoopSession(root, "sha", "id", {})
+        session.start(1000, 100_000)
+        session.tick(6000, 105_000)
+        assertTrue(root.resolve("session.json").readText().contains("\"observed_wall_clock_ms\":105000"))
+    }
+
     @Test fun stoppingFlushesPostWindowAndCancelsUnfinishedWorkWithoutInventingMisses() {
         val events = mutableListOf<LiveDiagnosticSnapshot>()
         val live = LiveDiagnostics(LiveDiagnosticBuffer(100, 60_000), LiveDiagnosticEventSink(events::add))
