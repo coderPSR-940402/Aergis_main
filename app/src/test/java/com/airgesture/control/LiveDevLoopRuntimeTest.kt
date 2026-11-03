@@ -5,6 +5,51 @@ import org.junit.Test
 import java.nio.file.Files
 
 class LiveDevLoopRuntimeTest {
+    @Test fun contactLinksRetainTheAuthoritativeRequestAndFrozenTarget() {
+        val root = Files.createTempDirectory("devloop-contact-link").toFile()
+        val lines = mutableListOf<String>()
+        val session = DevLoopSession(root, "synthetic", "contact", lines::add)
+        session.start(1000, 100_000)
+        session.contactGeometry(10000, 1100, "owner", 7, 8, .12f, .1f, "before_recognition_gates")
+        session.open(42, 1110, "TAP", 321f, 654f, 7, 8)
+        session.outcome(ActionDispatchOutcome.COMPLETED, 42, 1120)
+        session.contactGeometry(10033, 1133, "owner", 7, 8, .8f, .1f, "before_recognition_gates")
+        session.stop(1200, 100_200)
+        val open = lines.single { it.contains("\"step\":\"open\"") }
+        assertTrue(open.contains("\"request_id\":42"))
+        assertTrue(open.contains("\"contact_id\":1"))
+        assertTrue(open.contains("\"target_x\":321.0"))
+        assertTrue(open.contains("\"target_y\":654.0"))
+        assertTrue(root.resolve("session.json").readText().contains("\"contacts_linked\":1"))
+    }
+
+    @Test fun laterTapCannotBeAttributedToAStaleContactEpisode() {
+        val root = Files.createTempDirectory("devloop-stale-contact").toFile()
+        val lines = mutableListOf<String>()
+        val session = DevLoopSession(root, "synthetic", "contact", lines::add)
+        session.start(1000, 100_000)
+        session.contactGeometry(10000, 1100, "owner", 7, 8, .12f, .1f, "clicking_disabled")
+        session.open(43, 5000, "TAP", 321f, 654f, 7, 8)
+        val open = lines.single { it.contains("\"step\":\"open\"") }
+        assertFalse("A later action cannot explain an old ignored contact", open.contains("\"contact_id\""))
+        session.stop(5100, 104_100)
+    }
+
+    @Test fun stableContactEvidenceIsSampledWithoutDuplicateDecisionFlooding() {
+        val root = Files.createTempDirectory("devloop-contact-bound").toFile()
+        val lines = mutableListOf<String>()
+        val session = DevLoopSession(root, "synthetic", "contact", lines::add)
+        session.start(1000, 100_000)
+        repeat(100) { i ->
+            session.contactGeometry(10000L + i * 16, 1100L + i * 16, "owner", 7, 8,
+                .12f, .1f, "before_recognition_gates")
+            session.contactDecision(10000L + i * 16, 1100L + i * 16, "awaiting_contact_confirmation_or_release")
+        }
+        session.stop(3000, 102_000)
+        assertTrue("A stable episode must retain bounded samples, not two records per input frame", lines.size < 24)
+        assertEquals(1, lines.count { it.contains("\"step\":\"contact_decision\"") })
+    }
+
     @Test fun smallPointerReversalsAreMeasuredOutsidePinchWithoutInventingFailures() {
         val root = Files.createTempDirectory("devloop-pointer-reversals").toFile()
         val session = DevLoopSession(root, "synthetic", "motion", {})
