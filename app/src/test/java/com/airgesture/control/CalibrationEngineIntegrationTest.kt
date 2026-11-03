@@ -59,6 +59,35 @@ class CalibrationEngineIntegrationTest {
         assertTrue(AirRuntime.pointerTracking)
     }
 
+    @Test fun devLoopRecordsClosedContactEvenWhenClickingIsDisabled() {
+        val context = RuntimeEnvironment.getApplication() as Context
+        AergisDevLoop.start(context)
+        try {
+            AirRuntime.pointerClickingEnabled = false
+            fun contact(distance: Float) = hand().toMutableList().apply {
+                this[4] = NormalizedLandmark.create(.5f, .5f, 0f)
+                this[12] = NormalizedLandmark.create(.5f + distance * .2f, .5f, 0f)
+            }
+            publish(contact(.8f), 1000)
+            publish(contact(.12f), 1033)
+            publish(contact(.12f), 1066)
+            publish(contact(.8f), 1100)
+        } finally { AergisDevLoop.stop()?.get(5, java.util.concurrent.TimeUnit.SECONDS) }
+        val root = java.io.File(context.filesDir, "devloop")
+        val trace = org.json.JSONObject(root.resolve("trace.json").readText()).getJSONArray("records")
+        val geometry = (0 until trace.length()).map(trace::getJSONObject).filter {
+            it.optString("step") == "contact_geometry" && it.optDouble("contact_distance", 1.0) < .18
+        }
+        assertTrue("Closed geometry before action recognition must be retained", geometry.isNotEmpty())
+        assertEquals("clicking_disabled", geometry.first().getString("gate"))
+        assertFalse("A geometric candidate has no invented request", geometry.first().has("request_id"))
+        val manifest = org.json.JSONObject(root.resolve("session.json").readText())
+        assertEquals(1, manifest.optInt("contact_candidates", -1))
+        assertEquals(1, manifest.optInt("contacts_without_action", -1))
+        assertEquals(0, manifest.getInt("click_attempts"))
+        assertEquals(0, manifest.getInt("missed_clicks"))
+    }
+
     @Test fun clippedWristCannotResetVisibleOwnedPinchConfirmation() {
         fun pose(distance: Float, wrist: Float) = hand().toMutableList().apply {
             this[0] = NormalizedLandmark.create(wrist,wrist,0f)

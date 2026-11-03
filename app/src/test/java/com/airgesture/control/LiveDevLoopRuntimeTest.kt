@@ -5,6 +5,36 @@ import org.junit.Test
 import java.nio.file.Files
 
 class LiveDevLoopRuntimeTest {
+    @Test fun smallPointerReversalsAreMeasuredOutsidePinchWithoutInventingFailures() {
+        val root = Files.createTempDirectory("devloop-pointer-reversals").toFile()
+        val session = DevLoopSession(root, "synthetic", "motion", {})
+        session.start(1000, 100_000)
+        listOf(.5f, .52f, .5f, .52f).forEachIndexed { i, x ->
+            session.sample(LiveDiagnosticSample(1100L + i * 33, 100_100L + i * 33,
+                handId = "owner", sessionEpoch = 1, inputEpoch = 2,
+                pointerX = x, pointerY = .5f, contactState = "AIMING", cameraAgeMs = 180))
+        }
+        session.stop(1300, 100_300)
+        val manifest = root.resolve("session.json").readText()
+        assertTrue("Small rapid reversals must not disappear below the pinch jump threshold",
+            manifest.contains("\"pointer_reversals\":2"))
+        assertTrue(manifest.contains("\"slow_frame_count\":4"))
+        assertTrue(manifest.contains("\"missed_clicks\":0"))
+    }
+
+    @Test fun pointerStatisticsDoNotBridgeOwnershipOrEpochChanges() {
+        val root = Files.createTempDirectory("devloop-motion-boundary").toFile()
+        val session = DevLoopSession(root, "synthetic", "motion", {})
+        session.start(1000, 100_000)
+        session.sample(LiveDiagnosticSample(1100, 100_100, handId = "one", sessionEpoch = 1,
+            pointerX = .1f, pointerY = .5f, contactState = "PINCHING"))
+        session.sample(LiveDiagnosticSample(1133, 100_133, handId = "one", sessionEpoch = 2,
+            pointerX = .9f, pointerY = .5f, contactState = "PINCHING"))
+        session.stop(1200, 100_200)
+        assertFalse("A discontinuity across authority epochs is not a pinch movement measurement",
+            root.resolve("session.json").readText().contains("\"pinch_jump_max\""))
+    }
+
     @Test fun firstCaptureAfterUpgradePreservesTheLegacyPrivateTrace() {
         val root = Files.createTempDirectory("devloop-legacy-trace").toFile()
         root.resolve("session.json").writeText("""{"schema":1,"session_id":"old","build_id":"sha:1381","seq":10,"state":"recording","clean":false}""")
