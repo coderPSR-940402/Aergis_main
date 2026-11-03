@@ -36,6 +36,25 @@ internal object AergisDevLoop {
         runCatching { worker?.observe { sample(sample, rawX, rawY, tracking) } }
     }
 
+    /** Copy geometry before recognition/action gates; never feed it back into control. */
+    fun recordContactGeometry(points: List<com.airgesture.control.filtering.Point3D>,
+        aspect: Float, depthScale: Float, frameId: Long, owner: String?, epoch: Long, input: Long,
+        gate: String) {
+        val current = worker ?: return
+        runCatching {
+            val validator = com.airgesture.control.filtering.KinematicValidator()
+            val distance = validator.calculateNormalizedFingerDistance(points, aspect)
+            val depth = validator.calculateNormalizedFingerDepthDistance(points, aspect, depthScale)
+            val now = android.os.SystemClock.uptimeMillis()
+            current.observe { contactGeometry(frameId, now, owner, epoch, input, distance, depth, gate) }
+        }
+    }
+
+    fun recordContactDecision(frameId: Long, gate: String) {
+        val now = android.os.SystemClock.uptimeMillis()
+        runCatching { worker?.observe { contactDecision(frameId, now, gate) } }
+    }
+
     fun recordSelectionUnconfirmed(requestId: Long, reason: String) {
         val now = android.os.SystemClock.uptimeMillis()
         runCatching { worker?.observe { selectionUnconfirmed(requestId, now, reason) } }
