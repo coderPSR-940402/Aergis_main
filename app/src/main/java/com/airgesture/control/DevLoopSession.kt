@@ -64,9 +64,22 @@ internal class DevLoopSession(
     fun start(uptimeMs: Long, wallClockMs: Long) {
         require(sessionId.matches(Regex("[A-Za-z0-9_.-]{1,100}")))
         val previous = File(root, "session.json").takeIf { it.isFile }?.readText()
+        val oldId = previous?.let {
+            Regex("\"session_id\":\"([A-Za-z0-9_.-]+)\"").find(it)?.groupValues?.get(1)
+        }
+        // v1 only kept the active replay at trace.json. Archive it before the first
+        // v2 checkpoint can replace that file with the new session's evidence.
+        if (oldId != null) {
+            val legacyTrace = File(root, "trace.json").takeIf { it.isFile }?.readText()
+            val traceId = legacyTrace?.let {
+                Regex("\"session_id\":\"([A-Za-z0-9_.-]+)\"").find(it)?.groupValues?.get(1)
+            }
+            if (legacyTrace != null && traceId == oldId) {
+                write(File(root, "traces/$oldId.json"), legacyTrace)
+            }
+        }
         val unclean = store.startSession(buildId, wallClockMs)
         if (unclean && previous != null) {
-            val oldId = Regex("\"session_id\":\"([A-Za-z0-9_.-]+)\"").find(previous)?.groupValues?.get(1)
             if (oldId != null) {
                 previousSessionId = oldId
                 val oldSeq = Regex("\"seq\":([0-9]+)").find(previous)?.groupValues?.get(1)?.toLongOrNull() ?: 0L

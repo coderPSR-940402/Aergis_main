@@ -38,7 +38,7 @@ class DevLoopSnapshotProvider : ContentProvider() {
         val expected = uri.getQueryParameter("snapshot")
         if (expected != null) {
             require(expected.matches(Regex("[a-f0-9]{64}"))) { "Invalid snapshot identity" }
-            val frozen = read(File(root, "exports/$expected.json"))
+            val frozen = read(findEvidenceFile(File(root, "exports"), expected))
             if (!frozen.has("snapshot_id")) return JSONObject().put("schema", 2).put("state", "snapshot_expired")
             val requestedId = uri.getQueryParameter("session_id")
             require(requestedId == null || requestedId == frozen.optString("session_id"))
@@ -47,8 +47,9 @@ class DevLoopSnapshotProvider : ContentProvider() {
         }
         val current = read(File(root, "session.json"))
         val id = uri.getQueryParameter("session_id") ?: current.optString("session_id")
-        require(id.isEmpty() || id.matches(Regex("[A-Za-z0-9_.:-]{1,160}"))) { "Invalid session identity" }
-        val manifest = if (id == current.optString("session_id")) current else read(File(root, "sessions/$id.json"))
+        require(id.isEmpty() || id.matches(Regex("[A-Za-z0-9][A-Za-z0-9_.-]{0,99}"))) { "Invalid session identity" }
+        val manifest = if (id == current.optString("session_id")) current
+            else read(findEvidenceFile(File(root, "sessions"), id))
         fun recover(value: JSONObject): JSONObject {
             if (value.optString("state") == "recording" &&
                 (value.optString("session_id") != current.optString("session_id") || captureState == "inactive")) {
@@ -64,7 +65,7 @@ class DevLoopSnapshotProvider : ContentProvider() {
         File(root, "sessions").listFiles()?.filter { it.extension == "json" }
             ?.sortedByDescending { it.lastModified() }?.take(10)?.reversed()?.forEach { history.put(recover(read(it))) }
         if (history.length() == 0 && manifest.has("session_id")) history.put(manifest)
-        val traceFile = File(root, "traces/$id.json")
+        val traceFile = findEvidenceFile(File(root, "traces"), id)
         val trace = if (traceFile.isFile) read(traceFile) else read(File(root, "trace.json")).let {
             if (it.optString("session_id") == id) it else JSONObject()
         }
@@ -108,6 +109,13 @@ class DevLoopSnapshotProvider : ContentProvider() {
         val end = offset + page.length()
         return result.put("records", page).put("offset", offset).put("next_offset", if (end < rows.length()) end else JSONObject.NULL)
     }
+
+    /** Resolve only an existing direct JSON child; caller-controlled text never becomes a path. */
+    private fun findEvidenceFile(directory: File, identity: String): File =
+        directory.listFiles()?.firstOrNull { file ->
+            file.isFile && file.extension == "json" && file.nameWithoutExtension == identity &&
+                file.canonicalFile.parentFile == directory.canonicalFile
+        } ?: File(directory, ".missing")
 
     override fun getType(uri: Uri) = "application/json"
     override fun insert(uri: Uri, values: ContentValues?): Uri = throw SecurityException("Read only")
