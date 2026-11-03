@@ -32,6 +32,30 @@ class DevLoopSnapshotProviderTest {
         } finally { ShadowBinder.setCallingUid(uid) }
     }
 
+    @Test fun pathLikeSessionAndSnapshotIdentitiesAreRejected() {
+        assertThrows(IllegalArgumentException::class.java) { query("?session_id=..") }
+        assertThrows(IllegalArgumentException::class.java) { query("?session_id=..%2Foutside") }
+        assertThrows(IllegalArgumentException::class.java) { query("?snapshot=..%2Foutside") }
+        assertThrows(IllegalArgumentException::class.java) { query("?snapshot=${"a".repeat(63)}g") }
+    }
+
+    @Test fun validHistoricalSessionIdentityStillReadsItsOwnFiles() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val root = java.io.File(context.filesDir, "devloop").apply { mkdirs() }
+        root.resolve("session.json").writeText("""{"session_id":"current","seq":1,"state":"recording"}""")
+        root.resolve("sessions").mkdirs()
+        root.resolve("traces").mkdirs()
+        root.resolve("sessions/prior-123.json").writeText(
+            """{"schema":1,"record":"session","session_id":"prior-123","build_id":"sha:1381","seq":2,"state":"stopped","clean":true}""")
+        root.resolve("traces/prior-123.json").writeText(
+            """{"session_id":"prior-123","truncated":false,"records":[{"seq":1,"step":"open","request_id":42}]}""")
+
+        val result = query("?session_id=prior-123")
+
+        assertEquals("prior-123", result.getString("session_id"))
+        assertEquals(42, result.getJSONArray("records").getJSONObject(0).getInt("request_id"))
+    }
+
     @Test fun durableReplayPagesRemainImmutableAcrossNewCheckpoints() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val root = java.io.File(context.filesDir, "devloop").apply { mkdirs() }
