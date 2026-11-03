@@ -5,6 +5,21 @@ import org.junit.Test
 import java.nio.file.Files
 
 class LiveDevLoopRuntimeTest {
+    @Test fun nearContactGeometrySurvivesWithoutCrossingTheRecognitionThreshold() {
+        val root = Files.createTempDirectory("devloop-near-contact").toFile()
+        val lines = mutableListOf<String>()
+        val session = DevLoopSession(root, "synthetic", "contact", lines::add)
+        session.start(1000, 100_000)
+        session.contactGeometry(10000, 1100, "owner", 7, 8, .8f, .1f, "before_recognition_gates")
+        session.contactGeometry(10033, 1133, "owner", 7, 8, .24f, .1f, "before_recognition_gates")
+        session.contactGeometry(10066, 1166, "owner", 7, 8, .8f, .1f, "before_recognition_gates")
+        session.stop(1200, 100_200)
+        assertTrue("The same recognition threshold must not hide its own near misses",
+            lines.any { it.contains("\"contact_distance\":0.24") })
+        assertTrue(root.resolve("session.json").readText().contains("\"contact_candidates\":0"))
+        assertTrue(root.resolve("session.json").readText().contains("\"missed_clicks\":0"))
+    }
+
     @Test fun contactLinksRetainTheAuthoritativeRequestAndFrozenTarget() {
         val root = Files.createTempDirectory("devloop-contact-link").toFile()
         val lines = mutableListOf<String>()
