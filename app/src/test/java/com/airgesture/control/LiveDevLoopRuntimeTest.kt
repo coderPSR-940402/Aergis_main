@@ -54,6 +54,90 @@ class LiveDevLoopRuntimeTest {
         assertTrue(root.resolve("session.json").readText().contains("\"contacts_linked\":1"))
     }
 
+    @Test fun selectionPinchLinksToItsContactWithoutInflatingTapCounters() {
+        val root = Files.createTempDirectory("devloop-selection-contact").toFile()
+        val lines = mutableListOf<String>()
+        val session = DevLoopSession(root, "synthetic", "selection", lines::add)
+        session.start(1000, 100_000)
+        session.contactGeometry(10000, 1100, "owner", 7, 8, .12f, .1f, "before_recognition_gates")
+        session.contactDecision(10000, 1100, "recognized_for_selection_dispatch")
+        session.open(42, 1110, "SELECT_ITEM", Float.NaN, Float.NaN, 7, 8)
+        session.outcome(ActionDispatchOutcome.SUBMITTED, 42, 1115)
+        session.outcome(ActionDispatchOutcome.COMPLETED, 42, 1120)
+        session.contactGeometry(10033, 1133, "owner", 7, 8, .8f, .1f, "before_recognition_gates")
+        session.stop(1200, 100_200)
+        val open = lines.single { it.contains("\"step\":\"open\"") }
+        assertTrue(open.contains("\"request_id\":42"))
+        assertTrue("Recognized selection must explain the same contact", open.contains("\"contact_id\":1"))
+        assertTrue("Selection has no pointer target", open.contains("\"target_x\":null"))
+        assertTrue(open.contains("\"target_y\":null"))
+        assertTrue(lines.single { it.contains("\"step\":\"contact_end\"") }
+            .contains("\"outcome\":\"linked_to_request\""))
+        val manifest = root.resolve("session.json").readText()
+        for ((key, expected) in mapOf("contacts_linked" to 1, "contacts_without_action" to 0,
+                "click_attempts" to 0, "click_success" to 0, "missed_clicks" to 0, "action_failures" to 0))
+            assertTrue(key, manifest.contains("\"$key\":$expected"))
+    }
+
+    @Test fun contactRecognitionCannotLinkADifferentAction() {
+        for ((gate, action) in listOf(
+                "recognized_for_dispatch" to "SELECT_ITEM",
+                "recognized_for_selection_dispatch" to "TAP",
+                "recognized_for_selection_dispatch" to "HOME",
+                "selection_touch_gate_blocked" to "SELECT_ITEM")) {
+            val root = Files.createTempDirectory("devloop-contact-action").toFile()
+            val lines = mutableListOf<String>()
+            val session = DevLoopSession(root, "synthetic", "contact", lines::add)
+            session.start(1000, 100_000)
+            session.contactGeometry(10000, 1100, "owner", 7, 8, .12f, .1f, "before_recognition_gates")
+            session.contactDecision(10000, 1100, gate)
+            session.open(42, 1110, action, Float.NaN, Float.NaN, 7, 8)
+            session.contactGeometry(10033, 1133, "owner", 7, 8, .8f, .1f, "before_recognition_gates")
+            session.stop(1200, 100_200)
+            assertFalse("$gate cannot explain $action",
+                lines.single { it.contains("\"step\":\"open\"") }.contains("\"contact_id\""))
+            assertTrue(root.resolve("session.json").readText().contains("\"contacts_without_action\":1"))
+        }
+    }
+
+    @Test fun selectionContactLinksRequireFreshSameFrameAndEpochEvidence() {
+        // Expired observation, different session/input epoch, or a new frame without recognition.
+        for (scenario in 0..3) {
+            val root = Files.createTempDirectory("devloop-selection-authority").toFile()
+            val lines = mutableListOf<String>()
+            val session = DevLoopSession(root, "synthetic", "contact", lines::add)
+            session.start(1000, 100_000)
+            session.contactGeometry(10000, 1100, "owner", 7, 8, .12f, .1f, "before_recognition_gates")
+            session.contactDecision(10000, 1100, "recognized_for_selection_dispatch")
+            if (scenario == 3)
+                session.contactGeometry(10016, 1116, "owner", 7, 8, .12f, .1f, "before_recognition_gates")
+            session.open(42, if (scenario == 0) 1451 else 1120, "SELECT_ITEM", Float.NaN, Float.NaN,
+                if (scenario == 1) 9 else 7, if (scenario == 2) 9 else 8)
+            assertFalse("Invalid selection correlation scenario $scenario",
+                lines.single { it.contains("\"step\":\"open\"") }.contains("\"contact_id\""))
+            session.stop(1500, 100_500)
+        }
+    }
+
+    @Test fun failedSelectionStillLinksItsRequestWithoutBecomingAMissedTap() {
+        val root = Files.createTempDirectory("devloop-selection-failed").toFile()
+        val lines = mutableListOf<String>()
+        val session = DevLoopSession(root, "synthetic", "selection", lines::add)
+        session.start(1000, 100_000)
+        session.contactGeometry(10000, 1100, "owner", 7, 8, .12f, .1f, "before_recognition_gates")
+        session.contactDecision(10000, 1100, "recognized_for_selection_dispatch")
+        session.open(42, 1110, "SELECT_ITEM", Float.NaN, Float.NaN, 7, 8)
+        session.selectionUnconfirmed(42, 1200, "no_matching_click_event")
+        session.contactGeometry(10133, 1233, "owner", 7, 8, .8f, .1f, "before_recognition_gates")
+        session.stop(1300, 100_300)
+        val manifest = root.resolve("session.json").readText()
+        assertTrue(manifest.contains("\"contacts_linked\":1"))
+        assertTrue(manifest.contains("\"contacts_without_action\":0"))
+        assertTrue(manifest.contains("\"action_failures\":1"))
+        assertTrue(manifest.contains("\"missed_clicks\":0"))
+        assertTrue(lines.any { it.contains("\"event_kind\":\"SELECTION_FAILED\"") })
+    }
+
     @Test fun laterTapCannotBeAttributedToAStaleContactEpisode() {
         val root = Files.createTempDirectory("devloop-stale-contact").toFile()
         val lines = mutableListOf<String>()

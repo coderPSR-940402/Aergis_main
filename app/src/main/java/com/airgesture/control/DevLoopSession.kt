@@ -120,9 +120,15 @@ internal class DevLoopSession(
         if (seenRequests.size > 4096) seenRequests.remove(seenRequests.first())
         requests[id] = action
         if (action == "TAP") increment("click_attempts")
-        val matchingContact = contact?.takeIf { action == "TAP" && !it.linked &&
-            it.epoch == epoch && it.input == input && it.recognizedFrame == it.frameId &&
-            uptimeMs - it.observedAt in 0..350 }
+        val matchingContact = contact?.takeIf {
+            val recognizedAction = when (it.decisionGate) {
+                "recognized_for_dispatch" -> "TAP"
+                "recognized_for_selection_dispatch" -> "SELECT_ITEM"
+                else -> null
+            }
+            action == recognizedAction && !it.linked && it.epoch == epoch && it.input == input &&
+                it.recognizedFrame == it.frameId && uptimeMs - it.observedAt in 0..350
+        }
         if (matchingContact != null && !matchingContact.linked) {
             matchingContact.linked = true
             increment("contacts_linked")
@@ -176,7 +182,9 @@ internal class DevLoopSession(
 
     fun contactDecision(frameId: Long, uptimeMs: Long, gate: String) {
         val active = contact?.takeIf { it.frameId == frameId } ?: return
-        active.recognizedFrame = frameId.takeIf { gate == "recognized_for_dispatch" }
+        active.recognizedFrame = frameId.takeIf {
+            gate == "recognized_for_dispatch" || gate == "recognized_for_selection_dispatch"
+        }
         if (active.decisionGate == gate) return
         emit("trace", linkedMapOf("step" to "contact_decision", "uptime_ms" to uptimeMs,
             "source_frame_id" to frameId, "contact_id" to active.id, "gate" to gate))
