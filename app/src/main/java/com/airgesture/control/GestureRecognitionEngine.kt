@@ -442,6 +442,15 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 )
             }
         }
+        AergisDevLoop.recordContactGeometry(reusablePointsList, frameAspectRatio,
+            if (rotationDegrees % 180 != 0) 1f else frameAspectRatio,
+            timestamp, commandOwnerId, AirRuntime.actionEpoch, inputEpoch,
+            when {
+                !controlSafe -> "control_not_armed_or_safe"
+                !AirRuntime.pointerClickingEnabled -> "clicking_disabled"
+                commandOwnerId == null -> "no_controlling_owner"
+                else -> "before_recognition_gates"
+            })
         if (handSelection != null) {
             val directionalEnabled = RegisteredGesture.entries.any { it.isDirectionalGun && mappings.mapping(it) != AirAction.NONE }
             val generic = LandmarkGestureRecognizer.recognize(reusablePointsList, frameAspectRatio)
@@ -584,6 +593,14 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             val anchorProtected = !trusted && refitAnchor != null && touchAllowed && processed.poseEvidence.accepted &&
                 (processed.isPinchApproaching || processed.isPinchPressed)
             val targetTrusted = trusted || anchorProtected
+            AergisDevLoop.recordContactDecision(timestamp, when {
+                !touchAllowed -> "touch_gate_blocked"
+                !processed.poseEvidence.accepted -> "geometry_rejected"
+                !targetTrusted -> "pointer_untrusted"
+                !processed.isClickEngaged -> "awaiting_contact_confirmation_or_release"
+                AirAccessibilityService.instance == null -> "accessibility_unavailable"
+                else -> "recognized_for_dispatch"
+            })
             if (AirRuntime.actionEpoch != pointerEpoch) { resetTrackingState(); return }
             if (!tipUsable && !anchorProtected) {
                 handlePointerGap(observedAtMs, pointerActive, false, "INVALID_TIP", PointerFeedback.INVALID_TIP)
@@ -715,10 +732,18 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                     pinchValidator.calculateNormalizedFingerDistance(reusablePointsList, frameAspectRatio), timestamp,
                     pinchValidator.calculateNormalizedFingerDepthDistance(reusablePointsList, frameAspectRatio, depthScale))
                 pinchInProgress = selectionPinch.isPointerLocked
+                AergisDevLoop.recordContactDecision(timestamp, when {
+                    !clicked -> "awaiting_contact_confirmation_or_release"
+                    AirAccessibilityService.instance == null -> "accessibility_unavailable"
+                    else -> "recognized_for_selection_dispatch"
+                })
                 diagnosticTrace?.put("pinchPressed", selectionPinch.getCurrentState() ==
                     com.airgesture.control.pointer.ClickHysteresisStateMachine.State.CLICKED)
                 if (clicked) AirAccessibilityService.instance?.dispatchSelectionPinch(pointerEpoch)
-            } else selectionPinch.reset()
+            } else {
+                AergisDevLoop.recordContactDecision(timestamp, "selection_touch_gate_blocked")
+                selectionPinch.reset()
+            }
             pinchPointer.reset()
             AirRuntime.pointerInteraction = PointerInteractionPhase.IDLE
             interpreter.reset()

@@ -20,6 +20,30 @@ def record(kind="event", seq=1, **extra):
 
 
 class CollectorTest(unittest.TestCase):
+    def test_device_quality_problems_are_visible_even_with_zero_dispatch_timeouts(self):
+        fixture = json.loads(Path('tools/fixtures/devloop/a54-1392-quality-gap.json').read_text())
+        c = Collector(self.root)
+        self.feed(c, fixture['manifest'])
+        view = c.view('latest')
+        self.assertTrue(view.get('findings'), 'Recorded latency and pointer problems must reach the summary')
+        codes = {finding['code'] for finding in view['findings']}
+        self.assertTrue({'frame_delay', 'pinch_pointer_jump', 'trace_loss', 'owner_changes',
+                         'inference_cost', 'hand_loss_recovery'} <= codes)
+        self.assertIsNone(view['metrics'].get('intended_click_success_rate'))
+        self.assertEqual('unknown', view.get('coverage', {}).get('unrecognized_pinches'))
+        self.assertEqual('unknown', view.get('coverage', {}).get('target_activation'))
+        self.assertEqual(7, view['metrics']['click_success'])
+
+    def test_passive_contact_records_survive_redaction_without_becoming_missed_clicks(self):
+        c = Collector(self.root)
+        self.feed(c, record(kind='trace', step='contact_geometry', contact_id=3,
+                            contact_distance=.12, contact_depth=.4, gate='clicking_disabled'))
+        row = c.replay()['records'][0]
+        self.assertEqual(.12, row.get('contact_distance'))
+        self.assertEqual('clicking_disabled', row.get('gate'))
+        self.assertNotIn('request_id', row)
+        self.assertEqual([], regression_fixture(c.replay())['expected']['event_kinds'])
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
