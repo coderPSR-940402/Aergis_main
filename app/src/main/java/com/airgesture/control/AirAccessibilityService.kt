@@ -170,21 +170,23 @@ class AirAccessibilityService : AccessibilityService() {
         }
     }
 
-    internal fun dispatchSelectionPinch(expectedEpoch: Long = AirRuntime.actionEpoch) =
-        dispatch(AirAction.SELECT_ITEM, origin = ActionOrigin.POINTER, expectedEpoch = expectedEpoch)
+    internal fun dispatchSelectionPinch(expectedEpoch: Long = AirRuntime.actionEpoch, sourceDeadlineMs: Long? = null) =
+        dispatch(AirAction.SELECT_ITEM, origin = ActionOrigin.POINTER, expectedEpoch = expectedEpoch,
+            sourceDeadlineMs = sourceDeadlineMs)
 
     private fun selectionAllowed(): Boolean = isActionAllowed(AirAction.NEXT_ITEM) ||
         (!AirRuntime.pointerEnabled && isActionAllowed(AirAction.SELECT_ITEM, origin = ActionOrigin.POINTER))
 
-    internal fun dispatchPointerTap(expectedEpoch: Long = AirRuntime.actionEpoch) =
-        dispatch(AirAction.TAP, origin = ActionOrigin.POINTER, expectedEpoch = expectedEpoch)
+    internal fun dispatchPointerTap(expectedEpoch: Long = AirRuntime.actionEpoch, sourceDeadlineMs: Long? = null) =
+        dispatch(AirAction.TAP, origin = ActionOrigin.POINTER, expectedEpoch = expectedEpoch,
+            sourceDeadlineMs = sourceDeadlineMs)
 
     fun dispatch(action: AirAction, tuning: GestureTuning = GestureTuning(),
-        expectedEpoch: Long = AirRuntime.actionEpoch) =
-        dispatch(action, tuning, ActionOrigin.GESTURE, expectedEpoch)
+        expectedEpoch: Long = AirRuntime.actionEpoch, sourceDeadlineMs: Long? = null) =
+        dispatch(action, tuning, ActionOrigin.GESTURE, expectedEpoch, sourceDeadlineMs)
 
     private fun dispatch(action: AirAction, tuning: GestureTuning = GestureTuning(), origin: ActionOrigin,
-        expectedEpoch: Long = AirRuntime.actionEpoch) {
+        expectedEpoch: Long, sourceDeadlineMs: Long?) {
         val settings = tuning.bounded()
         if (action == AirAction.NONE) return
         val feedbackId = AirRuntime.beginActionFeedback(action)
@@ -204,7 +206,8 @@ class AirAccessibilityService : AccessibilityService() {
             recordOutcome(ActionDispatchOutcome.PLATFORM_REJECTED)
             return
         }
-        if (!isActionAllowed(action, expectedEpoch, origin)) {
+        fun sourceIsFresh() = sourceDeadlineMs == null || SystemClock.elapsedRealtime() <= sourceDeadlineMs
+        if (!sourceIsFresh() || !isActionAllowed(action, expectedEpoch, origin)) {
             recordOutcome(ActionDispatchOutcome.POLICY_DENIED)
             return
         }
@@ -227,7 +230,7 @@ class AirAccessibilityService : AccessibilityService() {
             // (for example, after a disarm or protected-screen event). Check
             // again immediately before injecting instead of trusting the frame-time
             // decision above.
-            if (!isActionAllowed(action, dispatchEpoch, origin) ||
+            if (!sourceIsFresh() || !isActionAllowed(action, dispatchEpoch, origin) ||
                 (action.usesPointerTouch && pointerGeneration != pointerCommandGeneration.get())) {
                 recordOutcome(ActionDispatchOutcome.POLICY_DENIED)
                 return@post
@@ -267,7 +270,8 @@ class AirAccessibilityService : AccessibilityService() {
                 AirAction.NEXT_ITEM, AirAction.PREVIOUS_ITEM, AirAction.SELECT_ITEM -> {
                     val navigationEpoch = AirRuntime.state.value.selectionEpoch
                     val accepted = screenNavigator.perform(rootInActiveWindow, action, navigationEpoch, feedbackId) {
-                        isActionAllowed(action, dispatchEpoch, origin) && AirRuntime.state.value.selectionEpoch == navigationEpoch
+                        sourceIsFresh() && isActionAllowed(action, dispatchEpoch, origin) &&
+                            AirRuntime.state.value.selectionEpoch == navigationEpoch
                     }
                     mainHandler.removeCallbacks(selectionGuard)
                     selectionEpoch = navigationEpoch

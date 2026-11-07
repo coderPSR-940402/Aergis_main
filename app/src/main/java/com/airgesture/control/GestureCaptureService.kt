@@ -4,7 +4,10 @@ import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.hardware.camera2.CameraCharacteristics
@@ -258,12 +261,39 @@ class GestureCaptureService : Service(), LifecycleOwner {
         .setContentText("Gesture capture and recognition are running")
         .setSmallIcon(android.R.drawable.ic_menu_view)
         .setOngoing(true)
+        .addAction(notificationAction(ACTION_PAUSE, R.string.capture_notification_pause))
+        .addAction(notificationAction(ACTION_STOP, R.string.capture_notification_stop))
         .build()
+
+    private fun notificationAction(action: String, label: Int): Notification.Action =
+        Notification.Action.Builder(null, getText(label), PendingIntent.getBroadcast(this, 0,
+            Intent(this, GestureCaptureNotificationReceiver::class.java).setAction(action),
+            PendingIntent.FLAG_IMMUTABLE)).build()
 
     companion object {
         const val ACTION_START = "com.airgesture.control.START"
         const val ACTION_STOP = "com.airgesture.control.STOP"
+        internal const val ACTION_PAUSE = "com.airgesture.control.PAUSE"
         private const val CHANNEL_ID = "aergis_capture"
         private const val NOTIFICATION_ID = 1001
+    }
+}
+
+/** System notification actions can revoke authority without opening the app or starting capture. */
+class GestureCaptureNotificationReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        if (!AirRuntime.running) return
+        when (intent.action) {
+            GestureCaptureService.ACTION_PAUSE -> {
+                if (AirRuntime.controlMode != ControlMode.ARMED) return
+                AirRuntime.controlMode = ControlMode.PAUSED
+                AirRuntime.setPointerState(AirRuntime.pointerX, AirRuntime.pointerY, tracking = false)
+                AirAccessibilityService.instance?.updatePointer(0f, 0f, false)
+            }
+            GestureCaptureService.ACTION_STOP -> {
+                AirRuntime.controlMode = ControlMode.OFF
+                context.stopService(Intent(context, GestureCaptureService::class.java))
+            }
+        }
     }
 }

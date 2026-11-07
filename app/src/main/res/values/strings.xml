@@ -342,4 +342,6 @@
     <string name="feedback_rejected">Rejected or input busy</string>
     <string name="feedback_unavailable">Target or capability unavailable</string>
     <string name="feedback_failed">Action failed</string>
+    <string name="capture_notification_pause">Pause controls</string>
+    <string name="capture_notification_stop">Stop capture</string>
 </resources>
