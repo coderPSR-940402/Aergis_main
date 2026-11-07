@@ -810,6 +810,39 @@ class CalibrationEngineIntegrationTest {
         }
     }
 
+    @Test fun queuedPinchExpiresBeforeNativeTap() {
+        withMappedBackService { shadow ->
+            AirRuntime.gesturesEnabled = false
+            val looper = org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper())
+            val open = hand()
+            val closed = open.toMutableList().apply { this[4] = NormalizedLandmark.create(.56f, .65f, 0f) }
+            repeat(4) { publish(open, 1000L + it * 100L); looper.idle() }
+            publish(closed, 1400L, delayMs = 590L)
+            assertEquals(PointerInteractionPhase.PRESSED, AirRuntime.pointerInteraction)
+            org.robolectric.shadows.ShadowSystemClock.advanceBy(java.time.Duration.ofMillis(11))
+            looper.idle()
+            assertTrue("A camera tap past its 600 ms budget must never reach Android", shadow.gesturesDispatched.isEmpty())
+
+            // A physical release and a new contact can still dispatch normally.
+            repeat(4) { publish(open, 1500L + it * 100L); looper.idle() }
+            publish(closed, 1900L, delayMs = 590L)
+            looper.idle()
+            assertEquals("Preserve the existing pointer-tap age allowance", 1, shadow.gesturesDispatched.size)
+        }
+    }
+
+    @Test fun queuedClassifierActionExpiresBeforeAndroidDispatch() {
+        withMappedBackService { shadow ->
+            primeClassifier()
+            confirmGesture(1333L, delayMs = 340L)
+            assertEquals(AirAction.BACK, AirRuntime.state.value.actionFeedback?.action)
+            org.robolectric.shadows.ShadowSystemClock.advanceBy(java.time.Duration.ofMillis(11))
+            org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+            assertTrue("A classifier action past its 350 ms budget must never reach Android",
+                shadow.globalActionsPerformed.isEmpty())
+        }
+    }
+
     @Test fun pointerPinchAndMappedCommandsRunIndependently() {
         withMappedBackService { shadow ->
             val looper = org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper())

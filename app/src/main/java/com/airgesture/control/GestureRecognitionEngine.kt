@@ -363,6 +363,11 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         // Bounded command latency includes sensor delivery and inference; cursor motion tolerates more.
         val actionsFresh = freshness.accepted &&
             freshness.ageMs <= VisionResultFreshnessPolicy.DEFAULT_MAX_AGE_MS
+        // Carry the remaining source budget across the main-thread queue. Use elapsed time
+        // for the deadline so a command also expires if the device sleeps before dispatch.
+        val elapsedAtPublication = SystemClock.elapsedRealtime()
+        val commandDeadlineMs = elapsedAtPublication + VisionResultFreshnessPolicy.DEFAULT_MAX_AGE_MS - freshness.ageMs
+        val pointerTapDeadlineMs = elapsedAtPublication + POINTER_MAX_AGE_MS - freshness.ageMs
         diagnosticTrace?.put("actionsFresh", actionsFresh)
         if (!freshness.accepted) {
             Log.d(TAG, "Vision result rejected: ${freshness.reason}")
@@ -544,7 +549,8 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             reusablePointsList[5].distance2DTo(reusablePointsList[17], frameAspectRatio) else 0f
         val motionAction = directMotion.process(motionCenter, motionScale, frameAspectRatio, timestamp,
             commandOwnerId, pointerEpoch, commandTracking && AirRuntime.gesturesEnabled)
-        if (motionAction != null) AirAccessibilityService.instance?.dispatch(motionAction, expectedEpoch = pointerEpoch)
+        if (motionAction != null) AirAccessibilityService.instance?.dispatch(motionAction,
+            expectedEpoch = pointerEpoch, sourceDeadlineMs = commandDeadlineMs)
         var pinchInProgress = motionWasActive
         if (pointerActive && indexTip != null) {
             val dragging = AirAccessibilityService.instance?.precisionDragActive == true
@@ -660,7 +666,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             // Recognition initiates one bounded tap. Release only rearms. The same
             // frame's pinch evidence excludes the classifier before its dispatch gate.
             if (touchAllowed && targetTrusted && processed.isClickEngaged) {
-                AirAccessibilityService.instance?.dispatchPointerTap(pointerEpoch)
+                AirAccessibilityService.instance?.dispatchPointerTap(pointerEpoch, pointerTapDeadlineMs)
             }
 
             // Pointer travel and held contact never dispatch scrolling or drag.
@@ -717,7 +723,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 pinchInProgress = selectionPinch.isPointerLocked
                 diagnosticTrace?.put("pinchPressed", selectionPinch.getCurrentState() ==
                     com.airgesture.control.pointer.ClickHysteresisStateMachine.State.CLICKED)
-                if (clicked) AirAccessibilityService.instance?.dispatchSelectionPinch(pointerEpoch)
+                if (clicked) AirAccessibilityService.instance?.dispatchSelectionPinch(pointerEpoch, commandDeadlineMs)
             } else selectionPinch.reset()
             pinchPointer.reset()
             AirRuntime.pointerInteraction = PointerInteractionPhase.IDLE
@@ -796,7 +802,8 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 }
                 resetPointerTouch()
                 interpreter.resetActions()
-            } else AirAccessibilityService.instance?.dispatch(confirmedAction, gestureTuning ?: GestureTuning(), pointerEpoch)
+            } else AirAccessibilityService.instance?.dispatch(confirmedAction, gestureTuning ?: GestureTuning(),
+                pointerEpoch, commandDeadlineMs)
         }
         AirRuntime.visionError = null
         AirRuntime.visionReady = true
