@@ -21,10 +21,26 @@ internal class DevLoopSession(
     private val seenRequests = LinkedHashSet<Long>()
     private val counts = linkedMapOf("click_attempts" to 0L, "click_success" to 0L, "missed_clicks" to 0L,
         "action_failures" to 0L, "cancelled" to 0L, "submitted_only" to 0L, "frame_count" to 0L,
-        "hand_switches" to 0L, "edge_samples" to 0L, "edge_tracked" to 0L, "trace_dropped" to 0L, "queue_dropped" to 0L)
+        "hand_switches" to 0L, "edge_samples" to 0L, "edge_tracked" to 0L, "trace_dropped" to 0L, "queue_dropped" to 0L,
+        "contact_observation_frames" to 0L, "contact_candidates" to 0L, "contacts_linked" to 0L,
+        "contacts_without_action" to 0L, "contacts_interrupted" to 0L,
+        "pointer_reversals" to 0L, "slow_frame_count" to 0L)
     private val ages = ArrayDeque<Long>()
     private val inference = ArrayDeque<Long>()
+    private val delivery = ArrayDeque<Long>()
+    private val workerQueue = ArrayDeque<Long>()
     private val recovery = ArrayDeque<Long>()
+    private val gaps = ArrayDeque<Long>()
+    private var lastPointerDelta: Pair<Double, Double>? = null
+    private var pointerStepMax: Double? = null
+    private data class Contact(val id: Long, val owner: String, val epoch: Long, val input: Long,
+        var frameId: Long, var observedAt: Long, var linked: Boolean = false,
+        var decisionGate: String = "", var recognizedFrame: Long? = null)
+    private var contact: Contact? = null
+    private var contactSequence = 0L
+    private var lastContactTraceFrame: Long? = null
+    private var lastGeometryBand: String? = null
+    private var lastGeometryGate: String? = null
     private var lastOwner: String? = null
     private var lostAt: Long? = null
     private var lastFrame: LiveDiagnosticSample? = null
@@ -106,10 +122,91 @@ internal class DevLoopSession(
         if (seenRequests.size > 4096) seenRequests.remove(seenRequests.first())
         requests[id] = action
         if (action == "TAP") increment("click_attempts")
+        val matchingContact = contact?.takeIf {
+            val recognizedAction = when (it.decisionGate) {
+                "recognized_for_dispatch" -> "TAP"
+                "recognized_for_selection_dispatch" -> "SELECT_ITEM"
+                else -> null
+            }
+            action == recognizedAction && !it.linked && it.epoch == epoch && it.input == input &&
+                it.recognizedFrame == it.frameId && uptimeMs - it.observedAt in 0..350
+        }
+        if (matchingContact != null && !matchingContact.linked) {
+            matchingContact.linked = true
+            increment("contacts_linked")
+        }
         emit("trace", linkedMapOf("step" to "open", "uptime_ms" to uptimeMs, "request_id" to id,
+            "contact_id" to matchingContact?.id,
             "action" to action, "target_x" to x, "target_y" to y, "session_epoch" to epoch, "input_epoch" to input))
         diagnostics.openInteraction(id, uptimeMs, action, x, y, epoch, input,
             completionTimeoutMs = if (action == "POINTER_DRAG") null else 2500)
+    }
+
+    /** Geometric episodes are observations, never a count of inferred user intentions. */
+    fun contactGeometry(frameId: Long, uptimeMs: Long, owner: String?, epoch: Long, input: Long,
+        distance: Float, depth: Float, gate: String) {
+        if (stopped) return
+        increment("contact_observation_frames")
+        val old = contact
+        if (old != null && (old.owner != owner || old.epoch != epoch || old.input != input ||
+                frameId <= old.frameId || frameId - old.frameId > 350 || !distance.isFinite() || !depth.isFinite())) {
+            finishContact(uptimeMs, "interrupted")
+        }
+        if (owner == null || !distance.isFinite() || !depth.isFinite() || distance < 0 || depth < 0) return
+        if (distance >= .32f) {
+            finishContact(uptimeMs, "released")
+        }
+        if (contact == null && distance < .18f) {
+            contact = Contact(++contactSequence, owner, epoch, input, frameId, uptimeMs)
+            increment("contact_candidates")
+            lastContactTraceFrame = null
+        }
+        val active = contact
+        if (active != null) {
+            active.frameId = frameId
+            active.observedAt = uptimeMs
+            active.recognizedFrame = null
+        }
+        val band = if (distance < .18f) "closed" else if (distance < .32f) "near" else "separated"
+        // Keep approaches that never meet recognition's threshold, including brief
+        // band transitions between periodic samples. They are not inferred attempts.
+        if (lastGeometryGate != gate || lastGeometryBand != band ||
+            lastContactTraceFrame?.let { frameId - it >= 100 || frameId <= it } != false) {
+            emit("trace", linkedMapOf("step" to "contact_geometry", "uptime_ms" to uptimeMs,
+                "source_frame_id" to frameId, "contact_id" to active?.id, "hand_id" to owner,
+                "session_epoch" to epoch, "input_epoch" to input, "contact_distance" to distance,
+                "contact_depth" to depth, "gate" to gate))
+            lastContactTraceFrame = frameId
+        }
+        lastGeometryBand = band
+        lastGeometryGate = gate
+    }
+
+    fun contactDecision(frameId: Long, uptimeMs: Long, gate: String) {
+        val active = contact?.takeIf { it.frameId == frameId } ?: return
+        active.recognizedFrame = frameId.takeIf {
+            gate == "recognized_for_dispatch" || gate == "recognized_for_selection_dispatch"
+        }
+        if (active.decisionGate == gate) return
+        emit("trace", linkedMapOf("step" to "contact_decision", "uptime_ms" to uptimeMs,
+            "source_frame_id" to frameId, "contact_id" to active.id, "gate" to gate))
+        active.decisionGate = gate
+    }
+
+    private fun finishContact(uptimeMs: Long, reason: String) {
+        val active = contact ?: return
+        val outcome = when {
+            active.linked -> "linked_to_request"
+            reason == "released" -> "no_action_observed"
+            else -> "interrupted"
+        }
+        if (outcome == "no_action_observed") increment("contacts_without_action")
+        if (outcome == "interrupted") increment("contacts_interrupted")
+        emit("trace", linkedMapOf("step" to "contact_end", "uptime_ms" to uptimeMs,
+            "source_frame_id" to active.frameId, "contact_id" to active.id, "outcome" to outcome,
+            "reason_code" to reason))
+        contact = null
+        lastContactTraceFrame = null
     }
 
     fun outcome(outcome: ActionDispatchOutcome, id: Long, uptimeMs: Long) {
@@ -135,10 +232,16 @@ internal class DevLoopSession(
 
     fun sample(sample: LiveDiagnosticSample, rawX: Float? = null, rawY: Float? = null, tracking: Boolean = false) {
         if (stopped) return
+        val recorded = sample.copy(rawPointerX = rawX, rawPointerY = rawY,
+            rawTracking = if (rawX != null && rawY != null) tracking else null)
         val observedConditions = mutableListOf<Pair<LiveDiagnosticKind, String>>()
         increment("frame_count")
         sample.cameraAgeMs?.let { bounded(ages, it) }
         sample.inferenceMs?.let { bounded(inference, it) }
+        sample.sensorDeliveryMs?.let { bounded(delivery, it) }
+        sample.workerQueueMs?.let { bounded(workerQueue, it) }
+        sample.analyzedFrameGapMs?.let { bounded(gaps, it) }
+        if ((sample.cameraAgeMs ?: 0) > 100) increment("slow_frame_count")
         if ((sample.cameraAgeMs ?: 0) > 600) observedConditions += LiveDiagnosticKind.CAMERA_DELAY to "pipeline_age_above_600ms"
         if ((sample.inferenceMs ?: 0) > 250) observedConditions += LiveDiagnosticKind.INFERENCE_STALL to "inference_above_250ms"
         val old = lastFrame
@@ -155,18 +258,29 @@ internal class DevLoopSession(
             increment("edge_samples")
             if (tracking) increment("edge_tracked")
         }
-        if (old != null && old.handId == sample.handId && sample.handId != null &&
-            sample.contactState in PINCH_PHASES && old.pointerX != null && old.pointerY != null &&
+        val continuous = old != null && old.handId == sample.handId && sample.handId != null &&
+            old.sessionEpoch == sample.sessionEpoch && old.inputEpoch == sample.inputEpoch &&
+            sample.uptimeMs - old.uptimeMs in 1..350
+        if (continuous && old != null && old.pointerX != null && old.pointerY != null &&
             sample.pointerX != null && sample.pointerY != null) {
-            val jump = hypot((sample.pointerX - old.pointerX).toDouble(), (sample.pointerY - old.pointerY).toDouble())
+            val dx = (sample.pointerX - old.pointerX).toDouble()
+            val dy = (sample.pointerY - old.pointerY).toDouble()
+            val jump = hypot(dx, dy)
             if (jump.isFinite()) {
-                pinchJumpMax = maxOf(pinchJumpMax ?: 0.0, jump)
-                if (jump > .15) observedConditions += LiveDiagnosticKind.TRACKING_JUMP to "pinch_pointer_step_above_0.15"
-            }
-        }
-        lastFrame = sample
+                pointerStepMax = maxOf(pointerStepMax ?: 0.0, jump)
+                val prior = lastPointerDelta
+                if (sample.uptimeMs - old.uptimeMs <= 150 && jump >= .002 && prior != null && hypot(prior.first, prior.second) >= .002 &&
+                    dx * prior.first + dy * prior.second < 0) increment("pointer_reversals")
+                lastPointerDelta = if (sample.uptimeMs - old.uptimeMs <= 150) dx to dy else null
+                if (sample.contactState in PINCH_PHASES) {
+                    pinchJumpMax = maxOf(pinchJumpMax ?: 0.0, jump)
+                    if (jump > .15) observedConditions += LiveDiagnosticKind.TRACKING_JUMP to "pinch_pointer_step_above_0.15"
+                }
+            } else lastPointerDelta = null
+        } else lastPointerDelta = null
+        lastFrame = recorded
         if (frameTrace.lastOrNull()?.let { sample.uptimeMs - it.uptimeMs >= 100 } != false) {
-            frameTrace.addLast(sample)
+            frameTrace.addLast(recorded)
             if (frameTrace.size > 600) { frameTrace.removeFirst(); increment("trace_dropped") }
         }
         // Observations from different producer threads may arrive out of timestamp order.
@@ -174,7 +288,7 @@ internal class DevLoopSession(
         if (sample.uptimeMs >= lastUptime) {
             lastUptime = sample.uptimeMs
             lastWall = sample.wallClockMs
-            diagnostics.sample(sample)
+            diagnostics.sample(recorded)
             for ((kind, reason) in observedConditions) diagnostics.trigger(LiveDiagnosticTrigger(kind,
                 LiveDiagnosticSeverity.WARNING, sample.uptimeMs, sample.wallClockMs,
                 reasonCode = reason, sessionEpoch = sample.sessionEpoch, inputEpoch = sample.inputEpoch))
@@ -192,6 +306,7 @@ internal class DevLoopSession(
 
     fun tick(uptimeMs: Long, wallClockMs: Long) {
         if (stopped || uptimeMs < lastUptime) return
+        if (contact?.let { uptimeMs - it.observedAt > 350 } == true) finishContact(uptimeMs, "observation_expired")
         lastUptime = uptimeMs
         lastWall = wallClockMs
         diagnostics.sample(LiveDiagnosticSample(uptimeMs, wallClockMs))
@@ -209,6 +324,7 @@ internal class DevLoopSession(
     fun invalidateEvidence(dropped: Long) {
         counts["queue_dropped"] = counts.getValue("queue_dropped") + dropped
         evidenceComplete = false
+        finishContact(lastUptime, "observation_loss")
         // A dropped callback is missing recorder evidence, never evidence of a missed click.
         requests.keys.toList().forEach(diagnostics::forgetInteraction)
         requests.clear()
@@ -219,6 +335,7 @@ internal class DevLoopSession(
         // Persist the complete terminal snapshot before a burst can overflow logcat or lose rish.
         val finalRecords = mutableListOf<String>()
         heldRelay = finalRecords
+        finishContact(uptimeMs, "capture_stopped")
         emit("trace", linkedMapOf("step" to "stop", "uptime_ms" to uptimeMs))
         diagnostics.finish(uptimeMs)
         lastUptime = maxOf(lastUptime, uptimeMs)
@@ -246,7 +363,9 @@ internal class DevLoopSession(
     private fun emitSample(s: LiveDiagnosticSample, contextEventSeq: Long? = null) = emit("trace", linkedMapOf("step" to "sample",
         "context_event_seq" to contextEventSeq, "uptime_ms" to s.uptimeMs, "wall_clock_ms" to s.wallClockMs, "frame_id" to s.frameId,
         "hand_id" to s.handId, "pointer_x" to s.pointerX, "pointer_y" to s.pointerY,
+        "raw_x" to s.rawPointerX, "raw_y" to s.rawPointerY, "raw_tracking" to s.rawTracking,
         "contact_state" to s.contactState, "camera_age_ms" to s.cameraAgeMs, "inference_ms" to s.inferenceMs,
+        "sensor_delivery_ms" to s.sensorDeliveryMs, "worker_queue_ms" to s.workerQueueMs,
         "frame_gap_ms" to s.analyzedFrameGapMs, "session_epoch" to s.sessionEpoch, "input_epoch" to s.inputEpoch))
 
     private fun checkpoint(clean: Boolean) {
@@ -256,8 +375,12 @@ internal class DevLoopSession(
         fields.putAll(counts)
         fields["frame_age_p95_ms"] = percentile(ages)
         fields["inference_p95_ms"] = percentile(inference)
+        fields["sensor_delivery_p95_ms"] = percentile(delivery)
+        fields["worker_queue_p95_ms"] = percentile(workerQueue)
         fields["hand_loss_recovery_p95_ms"] = percentile(recovery)
         fields["pinch_jump_max"] = pinchJumpMax
+        fields["pointer_step_max"] = pointerStepMax
+        fields["frame_gap_p95_ms"] = percentile(gaps)
         val json = envelope("session", fields)
         runCatching {
             val records = trace.joinToString(",")

@@ -27,9 +27,10 @@ internal fun ControlScreen(
         foregroundSafety = home.foregroundSafety)
     val shown = ProductSession.from(snapshot, accessibilityEnabled, gesturesEnabled, pointerEnabled, pointerClickingEnabled)
     val armed = home.controlMode == ControlMode.ARMED
+    val pausedManually = home.controlMode == ControlMode.PAUSED
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item {
-            ControlCommandCenter(home.running, armed, shown.canToggleArm, shown.actions, onCapture, onArm)
+            ControlCommandCenter(home.running, armed, shown.canToggleArm, shown.actions, onCapture, onArm, pausedManually)
         }
         if (!accessibilityEnabled) item {
             AergisPanel(accent = AergisColors.Caution) {
@@ -38,7 +39,16 @@ internal fun ControlScreen(
                 AergisButton({ onNavigate(AergisDestination.WELCOME) }, Modifier.fillMaxWidth()) { Text(stringResource(R.string.product_continue)) }
             }
         }
-        if (shown.actions == ProductActionState.PAUSED) item { Text(home.safetyReason, color = AergisColors.Caution) }
+        if (shown.actions == ProductActionState.PAUSED) item {
+            val reason = when {
+                home.foregroundSafety != ForegroundSafety.SAFE -> home.safetyReason
+                pausedManually -> stringResource(R.string.product_manually_paused_help)
+                !accessibilityEnabled -> stringResource(R.string.product_setup_required_help)
+                home.visionError != null -> home.visionError.orEmpty()
+                else -> stringResource(R.string.product_camera_starting)
+            }
+            Text(reason, color = AergisColors.Caution)
+        }
         startError?.let { error -> item { Text(error, color = AergisColors.Error) } }
         home.visionError?.let { error -> item { Text(error, color = AergisColors.Error) } }
         item { ProductInputTiles(assignedCount, onNavigate) }

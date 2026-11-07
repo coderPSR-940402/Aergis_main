@@ -69,15 +69,20 @@ jobs:
       - name: Run unit tests
         run: ./gradlew test --build-cache --stacktrace --warning-mode all
 
-      - name: Reconstruct production DevLoop evidence and generate replay
+      - name: Capture fresh production DevLoop evidence
         run: |
           cp -a app/build/reports/tests app/build/reports/tests-full
+          rm -f app/build/reports/testing-tools/devloop-runtime.log app/build/reports/testing-tools/devloop-snapshot.log
+          ./gradlew :app:testDebugUnitTest --rerun --tests '*AirAccessibilityServiceDispatchTest.productionDevLoopExportsCompletedAndRejectedRequestsWithoutTestAdapter' --no-build-cache --stacktrace
+
+      - name: Reconstruct production DevLoop evidence and generate replay
+        run: |
           python3 tools/verify_devloop_pipeline.py app/build/reports/testing-tools/devloop-runtime.log --snapshot app/build/reports/testing-tools/devloop-snapshot.log --fixture app/build/reports/testing-tools/devloop-runtime-replay.json
 
       - name: Replay exported DevLoop session through the production correlator
         env:
           AERGIS_DEVLOOP_REPLAY_FIXTURE: ${{ github.workspace }}/app/build/reports/testing-tools/devloop-runtime-replay.json
-        run: ./gradlew :app:testDebugUnitTest --tests '*DevLoopCapturedReplayTest' --no-build-cache --stacktrace
+        run: ./gradlew :app:testDebugUnitTest --rerun --tests '*DevLoopCapturedReplayTest' --no-build-cache --stacktrace
 
       - name: Run Android lint
         run: ./gradlew :app:lint --build-cache --stacktrace --warning-mode all
@@ -133,23 +138,29 @@ jobs:
       - name: Generate baseline metadata
         shell: bash
         run: |
-          set -euo pipefail
-          BASELINE_GENERATED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          cat > baseline.json <<EOF
-          {
-            "repository": "${{ github.repository }}",
-            "branch": "${{ github.ref_name }}",
-            "commit": "${{ github.sha }}",
-            "workflow": "${{ github.workflow }}",
-            "run_id": ${{ github.run_id }},
-            "run_number": ${{ github.run_number }},
-            "run_url": "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}",
-            "baseline_ref": "baseline-successful-apk",
-            "generated_at": "$BASELINE_GENERATED_AT"
+          python3 - <<'PYTHON'
+          from datetime import datetime, timezone
+          import json
+          import os
+          from pathlib import Path
+
+          repository = os.environ['GITHUB_REPOSITORY']
+          run_id = int(os.environ['GITHUB_RUN_ID'])
+          metadata = {
+              'repository': repository,
+              'branch': os.environ['GITHUB_REF_NAME'],
+              'commit': os.environ['GITHUB_SHA'],
+              'workflow': os.environ['GITHUB_WORKFLOW'],
+              'run_id': run_id,
+              'run_number': int(os.environ['GITHUB_RUN_NUMBER']),
+              'run_url': f'https://github.com/{repository}/actions/runs/{run_id}',
+              'baseline_ref': 'baseline-successful-apk',
+              'generated_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
           }
-          EOF
-          test -s baseline.json
-          cat baseline.json
+          document = json.dumps(metadata, indent=2) + '\n'
+          Path('baseline.json').write_text(document, encoding='utf-8')
+          print(document, end='')
+          PYTHON
 
       - name: Package the existing-Toolbox collector installer
         run: |

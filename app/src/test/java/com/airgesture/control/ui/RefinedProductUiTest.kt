@@ -63,6 +63,19 @@ class RefinedProductUiTest {
         compose.runOnIdle { assertEquals(1, captures); assertEquals(1, arms) }
     }
 
+    @Test fun manualPauseOffersResumeWithoutRestartingTheCamera() {
+        var resumes = 0
+        var captureChanges = 0
+        compose.setContent {
+            PreviewSurface {
+                ControlCommandCenter(true, false, true, ProductActionState.PAUSED,
+                    { captureChanges++ }, { resumes++ }, pausedManually = true)
+            }
+        }
+        compose.onNodeWithText("Resume controls").assertIsEnabled().performClick()
+        compose.runOnIdle { assertEquals(1, resumes); assertEquals(0, captureChanges) }
+    }
+
     @Test fun stoppedCameraCannotHideDisarmForAnArmedMode() {
         var captures = 0
         var arms = 0

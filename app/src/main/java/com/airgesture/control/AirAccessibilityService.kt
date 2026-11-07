@@ -80,6 +80,8 @@ class AirAccessibilityService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
+        // Create the highlight on main before camera dispatch can read its draw receipt.
+        screenNavigator.clear()
         instance = this
         pointerOverlay = PointerOverlay(this)
         trackingMirror = TrackingMirrorOverlay(this)
@@ -93,9 +95,15 @@ class AirAccessibilityService : AccessibilityService() {
         AirRuntime.setForegroundContext(ForegroundContextPolicy.evaluate(null, null))
     }
 
+    @Synchronized
     fun updatePointer(normalizedX: Float, normalizedY: Float, visible: Boolean, isClicking: Boolean = false) {
+        val epoch = AirRuntime.actionEpoch
+        val previous = pendingPointer
+        // Pointer-off camera frames keep requesting the same hide. Preserve visibility
+        // and authority changes without queueing an overlay task for every hidden frame.
+        if (!visible && !previous.visible && previous.epoch == epoch) return
         pendingPointer = PointerUpdate(normalizedX.coerceIn(0f, 1f), normalizedY.coerceIn(0f, 1f),
-            visible, isClicking, AirRuntime.actionEpoch)
+            visible, isClicking, epoch)
         pendingVersion.incrementAndGet()
         schedulePointerUpdate()
     }
@@ -192,6 +200,10 @@ class AirAccessibilityService : AccessibilityService() {
         val feedbackId = AirRuntime.beginActionFeedback(action)
         fun recordOutcome(outcome: ActionDispatchOutcome) = AirRuntime.recordActionFeedback(outcome, feedbackId)
         val requestedHotspot = visibleHotspot
+        val requestedSearch = if (action == AirAction.SELECT_ITEM) AppSearchActivity.active.get() else null
+        val requestedSearchSelection = requestedSearch?.selectionRevision
+        val requestedSelection = if (action == AirAction.SELECT_ITEM && requestedSearch == null)
+            screenNavigator.drawnSelection() else null
         val diagnosticTarget = requestedHotspot?.takeIf { action.usesPointerTouch && it.epoch == expectedEpoch }?.point
         AergisDevLoop.openAction(feedbackId, SystemClock.uptimeMillis(), action.name,
             diagnosticTarget?.x ?: Float.NaN, diagnosticTarget?.y ?: Float.NaN,
@@ -243,7 +255,13 @@ class AirAccessibilityService : AccessibilityService() {
                 recordOutcome(ActionDispatchOutcome.PLATFORM_REJECTED)
                 return@post
             }
-            if (AppSearchActivity.active.get()?.control(action, ::recordOutcome) == true) return@post
+            val appSearch = AppSearchActivity.active.get()
+            if (action == AirAction.SELECT_ITEM &&
+                (appSearch !== requestedSearch || appSearch?.selectionRevision != requestedSearchSelection)) {
+                recordOutcome(ActionDispatchOutcome.POLICY_DENIED)
+                return@post
+            }
+            if (appSearch?.control(action, ::recordOutcome) == true) return@post
             val nativeTouch = action.usesPointerTouch || action in setOf(AirAction.SCROLL_UP, AirAction.SCROLL_DOWN, AirAction.SWIPE_LEFT, AirAction.SWIPE_RIGHT)
             if (nativeTouch && boundedInput.isBusy) {
                 recordOutcome(ActionDispatchOutcome.PLATFORM_REJECTED)
@@ -269,6 +287,12 @@ class AirAccessibilityService : AccessibilityService() {
                 }
                 AirAction.NEXT_ITEM, AirAction.PREVIOUS_ITEM, AirAction.SELECT_ITEM -> {
                     val navigationEpoch = AirRuntime.state.value.selectionEpoch
+                    if (action == AirAction.SELECT_ITEM && (requestedSelection?.epoch != navigationEpoch ||
+                            screenNavigator.drawnSelection() !== requestedSelection)) {
+                        recordOutcome(if (requestedSelection == null) ActionDispatchOutcome.PLATFORM_UNAVAILABLE
+                            else ActionDispatchOutcome.POLICY_DENIED)
+                        return@post
+                    }
                     val accepted = screenNavigator.perform(rootInActiveWindow, action, navigationEpoch, feedbackId) {
                         sourceIsFresh() && isActionAllowed(action, dispatchEpoch, origin) &&
                             AirRuntime.state.value.selectionEpoch == navigationEpoch
@@ -468,8 +492,9 @@ class AirAccessibilityService : AccessibilityService() {
             screenNavigator.clear()
             mainHandler.removeCallbacks(selectionGuard)
             AirRuntime.setForegroundContext(ForegroundContextPolicy.evaluate(event.packageName, event.className))
-        } else if (selectionEpoch != AirRuntime.state.value.selectionEpoch || !selectionAllowed() ||
-            !screenNavigator.refresh(rootInActiveWindow, AirRuntime.state.value.selectionEpoch)) {
+        } else if (screenNavigator.hasSelection &&
+            (selectionEpoch != AirRuntime.state.value.selectionEpoch || !selectionAllowed() ||
+                !screenNavigator.refresh(rootInActiveWindow, AirRuntime.state.value.selectionEpoch))) {
             screenNavigator.clear()
             mainHandler.removeCallbacks(selectionGuard)
         }

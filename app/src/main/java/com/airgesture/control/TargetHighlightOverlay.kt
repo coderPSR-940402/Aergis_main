@@ -13,6 +13,7 @@ import android.view.WindowManager
 
 internal interface ScreenTargetHighlight {
     val isVisible: Boolean
+    val hasDrawn: Boolean get() = isVisible
     fun show(target: Rect): Boolean
     fun hide()
 }
@@ -21,7 +22,7 @@ internal interface ScreenTargetHighlight {
 internal class TargetHighlightOverlay(context: Context) : ScreenTargetHighlight {
     private val manager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
     private var attached = false
-    private var drawn = false
+    @Volatile private var drawn = false
     private var bounds = Rect()
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.rgb(255, 215, 64); style = Paint.Style.STROKE
@@ -31,12 +32,14 @@ internal class TargetHighlightOverlay(context: Context) : ScreenTargetHighlight 
         override fun onDraw(canvas: Canvas) {
             val origin = IntArray(2); getLocationOnScreen(origin)
             val visible = Rect(bounds)
-            drawn = visible.intersect(Rect(origin[0], origin[1], origin[0]+width, origin[1]+height))
-            if (drawn) canvas.drawRect((visible.left-origin[0]).toFloat(), (visible.top-origin[1]).toFloat(),
+            val inViewport = visible.intersect(Rect(origin[0], origin[1], origin[0]+width, origin[1]+height))
+            if (inViewport) canvas.drawRect((visible.left-origin[0]).toFloat(), (visible.top-origin[1]).toFloat(),
                 (visible.right-origin[0]).toFloat(), (visible.bottom-origin[1]).toFloat(), paint)
+            drawn = inViewport
         }
     }.apply { importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO }
     override val isVisible: Boolean get() = drawn && attached && view.isAttachedToWindow && view.isShown
+    override val hasDrawn: Boolean get() = drawn
     override fun show(target: Rect): Boolean {
         val metrics = android.util.DisplayMetrics()
         @Suppress("DEPRECATION")

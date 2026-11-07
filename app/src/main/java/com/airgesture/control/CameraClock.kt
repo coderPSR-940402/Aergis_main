@@ -19,6 +19,14 @@ internal object CameraClock {
         if (cameraTimestampNs > 0L && realtimeSource) FrameTimeSource.CAMERA_ELAPSED_REALTIME
         else FrameTimeSource.ANALYZER_UPTIME
 
+    fun exposedBefore(source: FrameTimeSource, timestampNs: Long, boundaryElapsedNs: Long): Boolean =
+        source == FrameTimeSource.CAMERA_ELAPSED_REALTIME && timestampNs < boundaryElapsedNs
+
+    fun deliveryMs(source: FrameTimeSource, timestampNs: Long, receivedElapsedMs: Long): Long? =
+        if (source == FrameTimeSource.CAMERA_ELAPSED_REALTIME && timestampNs > 0L)
+            (receivedElapsedMs - timestampNs / 1_000_000L).takeIf { it >= 0L }
+        else null
+
     fun sampleTimestampMs(cameraTimestampNs: Long, receivedUptimeMs: Long): Long =
         if (cameraTimestampNs > 0L) cameraTimestampNs / 1_000_000L else receivedUptimeMs
 

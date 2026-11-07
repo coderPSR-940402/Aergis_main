@@ -18,6 +18,9 @@ class AppSearchActivity : Activity() {
     private var apps = emptyList<App>()
     private var shown = emptyList<App>()
     private var selected = 0
+    private var checkedApp: App? = null
+    @Volatile internal var selectionRevision = 0L
+        private set
     private lateinit var list: ListView
     private lateinit var adapter: ArrayAdapter<String>
 
@@ -34,7 +37,7 @@ class AppSearchActivity : Activity() {
         list = ListView(this).apply { choiceMode = ListView.CHOICE_MODE_SINGLE }
         adapter = ArrayAdapter(this, android.R.layout.simple_list_item_single_choice, mutableListOf<String>())
         list.adapter = adapter
-        list.setOnItemClickListener { _, _, position, _ -> selected = position; launchSelected() }
+        list.setOnItemClickListener { _, _, position, _ -> selected = position; publishSelection(); launchSelected() }
         layout.addView(list, LinearLayout.LayoutParams(-1, 0, 1f))
         setContentView(layout)
         query.addTextChangedListener(object : TextWatcher {
@@ -49,6 +52,14 @@ class AppSearchActivity : Activity() {
         shown = apps.filter { it.label.contains(query, true) || it.packageName.contains(query, true) }
         selected = 0; adapter.clear(); adapter.addAll(shown.map { it.label }); adapter.notifyDataSetChanged()
         if (shown.isNotEmpty()) list.setItemChecked(0, true)
+        publishSelection()
+    }
+    private fun publishSelection() {
+        val app = shown.getOrNull(selected)
+        if (app != checkedApp) {
+            checkedApp = app
+            selectionRevision++
+        }
     }
     internal fun control(action: AirAction, record: (ActionDispatchOutcome) -> Unit = AirRuntime::recordActionDispatchOutcome): Boolean {
         when (action) {
@@ -59,6 +70,7 @@ class AppSearchActivity : Activity() {
             else -> return false
         }
         if (shown.isNotEmpty()) { list.setItemChecked(selected, true); list.smoothScrollToPosition(selected) }
+        publishSelection()
         record(ActionDispatchOutcome.COMPLETED)
         return true
     }
@@ -82,6 +94,9 @@ class AppSearchActivity : Activity() {
         if (outcome == ActionDispatchOutcome.SUBMITTED) finish()
     }
     override fun onResume() { super.onResume(); active = WeakReference(this) }
-    override fun onPause() { if (active.get() === this) active.clear(); super.onPause() }
-    companion object { internal var active = WeakReference<AppSearchActivity>(null) }
+    override fun onPause() { if (active.get() === this) active = WeakReference(null); super.onPause() }
+    companion object {
+        @Volatile internal var active = WeakReference<AppSearchActivity>(null)
+            private set
+    }
 }
