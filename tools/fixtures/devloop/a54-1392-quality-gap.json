@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "provenance": "captured_device_summary",
+  "source": "Android Power Toolbox aergis.devloop latest, completed job devloop-blindspots-20261103-run",
+  "limitations": ["Checkpoint is recording, not a finalized session", "No raw contact geometry was captured", "Warnings and metrics do not establish a gesture source root cause", "User reports missed clicks, lag and jitter; dispatch completions do not measure all intended pinches"],
+  "manifest": {
+    "schema": 1, "record": "session",
+    "session_id": "8d52da3d-1b2a-4001-9712-01bdb55dfacf",
+    "build_id": "0282d44466150be838828dd8ec6dd622c8c73bb0:1392",
+    "seq": 8698, "state": "recording", "clean": false,
+    "started_wall_clock_ms": 1793693373231,
+    "click_attempts": 8, "click_success": 7, "missed_clicks": 0,
+    "action_failures": 0, "cancelled": 5, "submitted_only": 0,
+    "frame_count": 2653, "hand_switches": 11,
+    "edge_samples": 745, "edge_tracked": 17,
+    "trace_dropped": 5695, "queue_dropped": 0,
+    "frame_age_p95_ms": 415, "inference_p95_ms": 103,
+    "hand_loss_recovery_p95_ms": 1964,
+    "pinch_jump_max": 0.46119029086877544
+  }
+}

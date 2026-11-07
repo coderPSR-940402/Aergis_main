@@ -71,8 +71,10 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
     private var timeSource: FrameTimeSource? = null
     private var sensorTimeline: Boolean? = null
     @Volatile internal var cameraTimestampsRealtime = false
+    @Volatile internal var expectedCameraRotationDegrees: Int? = null
     private var lastSubmittedTimestampMs = Long.MIN_VALUE
     private var lastPipelineAgeMs = -1L
+    private val delegateRecovery = VisionDelegateRecovery()
     private var recognizerFailureCount = 0
     private var nextRecognizerRetryAt = 0L
     private var diagnosticTrace: org.json.JSONObject? = null
@@ -116,15 +118,14 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         try {
             val metrics = PipelineMetrics.shared
             val analysisStartUptime = SystemClock.uptimeMillis()
-            metrics.recordAnalyzerFrame(analysisStartUptime)
             // One clock domain for the whole pipeline: the camera frame's own timestamp. Detected once
             // per session so frame age, inter-frame gaps and every filter dt describe physical time.
             val cameraNs = frame.timestampNs
-            val useSensorTimeline = sensorTimeline ?: (cameraNs > 0L).also { sensorTimeline = it }
-            if (useSensorTimeline && cameraNs <= 0L) {
+            if ((cameraTimestampsRealtime || sensorTimeline == true) && cameraNs <= 0L) {
                 metrics.recordOutOfOrderSkip()
                 return
             }
+            val useSensorTimeline = sensorTimeline ?: (cameraNs > 0L).also { sensorTimeline = it }
             val source = timeSource ?: CameraClock.detect(cameraNs, frame.receivedUptimeMs,
                 frame.receivedElapsedMs, cameraTimestampsRealtime).also { timeSource = it }
             // Never change sample-clock origin mid-session after a missing timestamp.
@@ -133,6 +134,12 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             fun frameAge() = CameraClock.ageMs(source, cameraNs, frame.receivedUptimeMs,
                 SystemClock.uptimeMillis(), SystemClock.elapsedRealtime())
             val frameAgeAtStart = frameAge().coerceAtLeast(0L)
+            val sensorDeliveryMs = CameraClock.deliveryMs(source, cameraNs, frame.receivedElapsedMs)
+            val workerQueueMs = analysisStartUptime - frame.receivedUptimeMs
+            fun sourceContextChanged(state: AirRuntimeState): Boolean =
+                frame.inputEpoch != state.inputEpoch ||
+                    CameraClock.exposedBefore(source, cameraNs, state.inputEpochStartedElapsedNs) ||
+                    expectedCameraRotationDegrees?.let { frame.rotationDegrees != it } == true
             // MediaPipe VIDEO mode needs strictly increasing timestamps; never submit older work.
             if (timestamp <= lastSubmittedTimestampMs) {
                 metrics.recordOutOfOrderSkip()
@@ -141,8 +148,10 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             fun discardUnusableExposure(): Boolean {
                 val age = frameAge()
                 val state = AirRuntime.state.value
-                val rejection = FrameAdmissionPolicy.rejection(frame.inputEpoch, state.inputEpoch,
-                    age, state.pointerEnabled, state.controlMode) ?: return false
+                val rejection = if (sourceContextChanged(state))
+                    FrameAdmissionPolicy.Rejection.SOURCE_CONTEXT_CHANGED
+                else FrameAdmissionPolicy.rejection(frame.inputEpoch, state.inputEpoch, age,
+                    state.pointerEnabled, state.controlMode) ?: return false
                 // Source changes already revoked authority. Do not invalidate the new
                 // source again and starve the next waiting exposure. Age/clock failures
                 // retain the existing tracking-gap cancellation behavior.
@@ -184,12 +193,14 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 // exposure's remaining budget. Skip this native call and drain the
                 // latest waiting frame; never reset its timestamp to make it fresh.
                 if (discardUnusableExposure() || closed.get()) return
-                val result = if (currentLandmarker != null) LandmarkOnlyGestureResult(
-                    currentLandmarker.detectForVideo(mpImage, imageProcessingOptions, timestamp))
-                else currentRecognizer!!.recognizeForVideo(mpImage, imageProcessingOptions, timestamp)
+                val result = delegateRecovery.infer(onGpu = activeDelegate == Delegate.GPU.name) {
+                    if (currentLandmarker != null) LandmarkOnlyGestureResult(
+                        currentLandmarker.detectForVideo(mpImage, imageProcessingOptions, timestamp))
+                    else currentRecognizer!!.recognizeForVideo(mpImage, imageProcessingOptions, timestamp)
+                }
                 val inferenceEnd = SystemClock.uptimeMillis()
                 if (closed.get()) return
-                if (frame.inputEpoch != AirRuntime.state.value.inputEpoch) {
+                if (sourceContextChanged(AirRuntime.state.value)) {
                     recordFrameAdmissionRejection(FrameAdmissionPolicy.Rejection.SOURCE_CONTEXT_CHANGED, timestamp, frameAge())
                     return
                 }
@@ -218,12 +229,16 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                         frameId = timestamp, sessionEpoch = observed.actionEpoch, inputEpoch = frame.inputEpoch,
                         handId = diagnosticOwnerId, pointerX = observed.pointer.x, pointerY = observed.pointer.y,
                         gesture = observed.lastGesture, contactState = observed.pointerInteraction.name,
-                        cameraAgeMs = lastPipelineAgeMs, analyzedFrameGapMs = diagnosticFrameGapMs, inferenceMs = inferenceEnd - preEnd),
+                        cameraAgeMs = lastPipelineAgeMs, analyzedFrameGapMs = diagnosticFrameGapMs,
+                        inferenceMs = inferenceEnd - preEnd, sensorDeliveryMs = sensorDeliveryMs,
+                        workerQueueMs = workerQueueMs),
                         observed.rawPointer.x, observed.rawPointer.y, observed.rawPointer.tracking)
                 }
                 diagnosticTrace?.put("timing", org.json.JSONObject()
                     .put("timeSource", source.name).put("frameAgeAtStartMs", frameAgeAtStart)
-                    .put("captureToAnalysisMs", analysisStartUptime - frame.receivedUptimeMs)
+                    .put("captureToAnalysisMs", workerQueueMs)
+                    .put("sensorDeliveryMs", sensorDeliveryMs ?: org.json.JSONObject.NULL)
+                    .put("workerQueueMs", workerQueueMs)
                     .put("preprocessMs", preEnd - preStart).put("inferenceMs", inferenceEnd - preEnd)
                     .put("publishMs", publishEnd - inferenceEnd).put("frameToPointerMs", lastPipelineAgeMs))
             } finally {
@@ -304,10 +319,12 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 .setMinTrackingConfidence(.4f).build()
             return HandLandmarker.createFromOptions(context, options).also { handLandmarkerDelegate = delegate.name }
         }
+        if (!delegateRecovery.preferGpu) return create(Delegate.CPU)
         return runCatching { create(Delegate.GPU) }.getOrElse { create(Delegate.CPU) }
     }
 
     private fun createRecognizerWithGpuFallback(): GestureRecognizer {
+        if (!delegateRecovery.preferGpu) return createRecognizer(Delegate.CPU)
         return runCatching { createRecognizer(Delegate.GPU) }
             .onFailure { Log.w(TAG, "GPU delegate unavailable; falling back to CPU", it) }
             .getOrElse { createRecognizer(Delegate.CPU) }
@@ -363,6 +380,11 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         // Bounded command latency includes sensor delivery and inference; cursor motion tolerates more.
         val actionsFresh = freshness.accepted &&
             freshness.ageMs <= VisionResultFreshnessPolicy.DEFAULT_MAX_AGE_MS
+        // Carry the remaining source budget across the main-thread queue. Use elapsed time
+        // for the deadline so a command also expires if the device sleeps before dispatch.
+        val elapsedAtPublication = SystemClock.elapsedRealtime()
+        val commandDeadlineMs = elapsedAtPublication + VisionResultFreshnessPolicy.DEFAULT_MAX_AGE_MS - freshness.ageMs
+        val pointerTapDeadlineMs = elapsedAtPublication + POINTER_MAX_AGE_MS - freshness.ageMs
         diagnosticTrace?.put("actionsFresh", actionsFresh)
         if (!freshness.accepted) {
             Log.d(TAG, "Vision result rejected: ${freshness.reason}")
@@ -442,6 +464,15 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 )
             }
         }
+        AergisDevLoop.recordContactGeometry(reusablePointsList, frameAspectRatio,
+            if (rotationDegrees % 180 != 0) 1f else frameAspectRatio,
+            timestamp, commandOwnerId, AirRuntime.actionEpoch, inputEpoch,
+            when {
+                !controlSafe -> "control_not_armed_or_safe"
+                !AirRuntime.pointerClickingEnabled -> "clicking_disabled"
+                commandOwnerId == null -> "no_controlling_owner"
+                else -> "before_recognition_gates"
+            })
         if (handSelection != null) {
             val directionalEnabled = RegisteredGesture.entries.any { it.isDirectionalGun && mappings.mapping(it) != AirAction.NONE }
             val generic = LandmarkGestureRecognizer.recognize(reusablePointsList, frameAspectRatio)
@@ -544,7 +575,8 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             reusablePointsList[5].distance2DTo(reusablePointsList[17], frameAspectRatio) else 0f
         val motionAction = directMotion.process(motionCenter, motionScale, frameAspectRatio, timestamp,
             commandOwnerId, pointerEpoch, commandTracking && AirRuntime.gesturesEnabled)
-        if (motionAction != null) AirAccessibilityService.instance?.dispatch(motionAction, expectedEpoch = pointerEpoch)
+        if (motionAction != null) AirAccessibilityService.instance?.dispatch(motionAction,
+            expectedEpoch = pointerEpoch, sourceDeadlineMs = commandDeadlineMs)
         var pinchInProgress = motionWasActive
         if (pointerActive && indexTip != null) {
             val dragging = AirAccessibilityService.instance?.precisionDragActive == true
@@ -584,6 +616,14 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             val anchorProtected = !trusted && refitAnchor != null && touchAllowed && processed.poseEvidence.accepted &&
                 (processed.isPinchApproaching || processed.isPinchPressed)
             val targetTrusted = trusted || anchorProtected
+            AergisDevLoop.recordContactDecision(timestamp, when {
+                !touchAllowed -> "touch_gate_blocked"
+                !processed.poseEvidence.accepted -> "geometry_rejected"
+                !targetTrusted -> "pointer_untrusted"
+                !processed.isClickEngaged -> "awaiting_contact_confirmation_or_release"
+                AirAccessibilityService.instance == null -> "accessibility_unavailable"
+                else -> "recognized_for_dispatch"
+            })
             if (AirRuntime.actionEpoch != pointerEpoch) { resetTrackingState(); return }
             if (!tipUsable && !anchorProtected) {
                 handlePointerGap(observedAtMs, pointerActive, false, "INVALID_TIP", PointerFeedback.INVALID_TIP)
@@ -660,7 +700,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             // Recognition initiates one bounded tap. Release only rearms. The same
             // frame's pinch evidence excludes the classifier before its dispatch gate.
             if (touchAllowed && targetTrusted && processed.isClickEngaged) {
-                AirAccessibilityService.instance?.dispatchPointerTap(pointerEpoch)
+                AirAccessibilityService.instance?.dispatchPointerTap(pointerEpoch, pointerTapDeadlineMs)
             }
 
             // Pointer travel and held contact never dispatch scrolling or drag.
@@ -715,10 +755,18 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                     pinchValidator.calculateNormalizedFingerDistance(reusablePointsList, frameAspectRatio), timestamp,
                     pinchValidator.calculateNormalizedFingerDepthDistance(reusablePointsList, frameAspectRatio, depthScale))
                 pinchInProgress = selectionPinch.isPointerLocked
+                AergisDevLoop.recordContactDecision(timestamp, when {
+                    !clicked -> "awaiting_contact_confirmation_or_release"
+                    AirAccessibilityService.instance == null -> "accessibility_unavailable"
+                    else -> "recognized_for_selection_dispatch"
+                })
                 diagnosticTrace?.put("pinchPressed", selectionPinch.getCurrentState() ==
                     com.airgesture.control.pointer.ClickHysteresisStateMachine.State.CLICKED)
-                if (clicked) AirAccessibilityService.instance?.dispatchSelectionPinch(pointerEpoch)
-            } else selectionPinch.reset()
+                if (clicked) AirAccessibilityService.instance?.dispatchSelectionPinch(pointerEpoch, commandDeadlineMs)
+            } else {
+                AergisDevLoop.recordContactDecision(timestamp, "selection_touch_gate_blocked")
+                selectionPinch.reset()
+            }
             pinchPointer.reset()
             AirRuntime.pointerInteraction = PointerInteractionPhase.IDLE
             interpreter.reset()
@@ -796,7 +844,8 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 }
                 resetPointerTouch()
                 interpreter.resetActions()
-            } else AirAccessibilityService.instance?.dispatch(confirmedAction, gestureTuning ?: GestureTuning(), pointerEpoch)
+            } else AirAccessibilityService.instance?.dispatch(confirmedAction, gestureTuning ?: GestureTuning(),
+                pointerEpoch, commandDeadlineMs)
         }
         AirRuntime.visionError = null
         AirRuntime.visionReady = true

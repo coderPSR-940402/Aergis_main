@@ -1,7 +1,6 @@
 package com.airgesture.control
 
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertThrows
+import org.junit.Assert.*
 import org.junit.Test
 
 class VisionRetryPolicyTest {
@@ -19,5 +18,29 @@ class VisionRetryPolicyTest {
         assertThrows(IllegalArgumentException::class.java) {
             VisionRetryPolicy.delayForFailure(0)
         }
+    }
+
+    @Test fun gpuExecutionFailureSwitchesFutureFramesToCpuWithoutRetryingTheExposure() {
+        val recovery = VisionDelegateRecovery()
+        assertTrue(recovery.preferGpu)
+        var calls = 0
+        val failure = IllegalStateException("GPU execution failed")
+        try {
+            recovery.infer(onGpu = true) { calls++; throw failure }
+            fail("Inference failures must reach the existing cleanup and retry path")
+        } catch (actual: IllegalStateException) {
+            assertSame(failure, actual)
+        }
+        assertEquals(1, calls)
+        assertFalse(recovery.preferGpu)
+        assertEquals("fresh", recovery.infer(onGpu = false) { "fresh" })
+        assertTrue(VisionDelegateRecovery().preferGpu)
+    }
+
+    @Test fun cpuExecutionFailureDoesNotDisableGpu() {
+        val recovery = VisionDelegateRecovery()
+        try { recovery.infer(onGpu = false) { throw IllegalStateException("CPU failure") } }
+        catch (_: IllegalStateException) {}
+        assertTrue(recovery.preferGpu)
     }
 }

@@ -20,6 +20,45 @@ def record(kind="event", seq=1, **extra):
 
 
 class CollectorTest(unittest.TestCase):
+    def test_device_quality_problems_are_visible_even_with_zero_dispatch_timeouts(self):
+        fixture = json.loads(Path('tools/fixtures/devloop/a54-1392-quality-gap.json').read_text())
+        c = Collector(self.root)
+        self.feed(c, fixture['manifest'])
+        view = c.view('latest')
+        self.assertTrue(view.get('findings'), 'Recorded latency and pointer problems must reach the summary')
+        codes = {finding['code'] for finding in view['findings']}
+        self.assertTrue({'frame_delay', 'pinch_pointer_jump', 'trace_loss', 'owner_changes',
+                         'inference_cost', 'hand_loss_recovery'} <= codes)
+        self.assertIsNone(view['metrics'].get('intended_click_success_rate'))
+        self.assertEqual('unknown', view.get('coverage', {}).get('unrecognized_pinches'))
+        self.assertEqual('unknown', view.get('coverage', {}).get('target_activation'))
+        self.assertEqual(7, view['metrics']['click_success'])
+
+    def test_passive_contact_records_survive_redaction_without_becoming_missed_clicks(self):
+        c = Collector(self.root)
+        self.feed(c, record(kind='trace', step='contact_geometry', contact_id=3,
+                            contact_distance=.12, contact_depth=.4, gate='clicking_disabled'))
+        row = c.replay()['records'][0]
+        self.assertEqual(.12, row.get('contact_distance'))
+        self.assertEqual('clicking_disabled', row.get('gate'))
+        self.assertNotIn('request_id', row)
+        self.assertEqual([], regression_fixture(c.replay())['expected']['event_kinds'])
+
+    def test_camera_delivery_and_worker_queue_remain_distinct_and_optional(self):
+        c = Collector(self.root)
+        self.feed(c, record(kind='session', seq=1, frame_age_p95_ms=291,
+                            sensor_delivery_p95_ms=181, worker_queue_p95_ms=38))
+        self.feed(c, record(kind='trace', seq=2, step='sample', frame_id=10,
+                            sensor_delivery_ms=94, worker_queue_ms=8))
+        row = c.replay()['records'][0]
+        self.assertEqual(94, row.get('sensor_delivery_ms'))
+        self.assertEqual(8, row.get('worker_queue_ms'))
+        view = c.view('latest')
+        self.assertEqual(181, view['metrics'].get('sensor_delivery_p95_ms'))
+        self.assertEqual(38, view['metrics'].get('worker_queue_p95_ms'))
+        comparison = compare_sessions({}, view['metrics'])
+        self.assertEqual('insufficient_evidence', comparison['sensor_delivery_p95_ms']['assessment'])
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)

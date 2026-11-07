@@ -20,15 +20,18 @@ PREFIX = 'AERGISTEL|'
 KINDS = {'MISSED_CLICK', 'ACTION_FAILED', 'SELECTION_FAILED', 'HAND_LOST', 'TRACKING_JUMP',
          'CAMERA_DELAY', 'INFERENCE_STALL', 'PROCESS_RESTART'}
 STRINGS = {'record', 'session_id', 'build_id', 'state', 'event_kind', 'severity', 'action',
-           'reason_code', 'step', 'outcome', 'hand_id', 'contact_state', 'gesture', 'previous_session_id'}
+           'reason_code', 'step', 'outcome', 'hand_id', 'contact_state', 'gesture', 'previous_session_id', 'gate'}
 NUMBERS = {'seq', 'request_id', 'uptime_ms', 'event_uptime_ms', 'wall_clock_ms', 'session_epoch',
            'input_epoch', 'target_x', 'target_y', 'pointer_x', 'pointer_y', 'raw_x', 'raw_y',
-           'frame_id', 'camera_age_ms', 'inference_ms', 'frame_gap_ms', 'started_wall_clock_ms',
+           'frame_id', 'camera_age_ms', 'inference_ms', 'sensor_delivery_ms', 'worker_queue_ms', 'frame_gap_ms', 'started_wall_clock_ms',
            'stopped_wall_clock_ms', 'click_attempts', 'click_success', 'missed_clicks', 'action_failures',
-           'cancelled', 'submitted_only', 'frame_count', 'frame_age_p95_ms', 'inference_p95_ms',
+           'cancelled', 'submitted_only', 'frame_count', 'frame_age_p95_ms', 'inference_p95_ms', 'sensor_delivery_p95_ms', 'worker_queue_p95_ms',
            'pinch_jump_max', 'hand_switches', 'hand_loss_recovery_p95_ms', 'edge_samples',
            'pre_window_ms', 'post_window_ms', 'context_sample_count', 'context_event_seq', 'edge_tracked', 'trace_dropped', 'queue_dropped', 'before_count', 'after_count',
-           'observed_wall_clock_ms', 'finalized_wall_clock_ms'}
+           'observed_wall_clock_ms', 'finalized_wall_clock_ms', 'contact_id', 'contact_distance', 'contact_depth',
+           'contact_observation_frames', 'contact_candidates', 'contacts_linked', 'contacts_without_action',
+           'contacts_interrupted', 'pointer_reversals', 'pointer_step_max', 'slow_frame_count',
+           'frame_gap_p95_ms', 'source_frame_id'}
 
 
 def parse_line(line):
@@ -58,7 +61,7 @@ def parse_line(line):
             result[key] = value
         elif key in NUMBERS and type(value) in (int, float) and math.isfinite(value):
             result[key] = value
-        elif key in {'clean', 'post_window_complete', 'evidence_complete'} and type(value) is bool:
+        elif key in {'clean', 'post_window_complete', 'evidence_complete', 'raw_tracking'} and type(value) is bool:
             result[key] = value
     return result
 
@@ -88,15 +91,48 @@ def metrics(session):
     result = {k: session[k] for k in NUMBERS if k in session}
     attempts = result.get('click_attempts', 0)
     result['click_success_rate'] = result.get('click_success', 0) / attempts if attempts else None
+    result['recognized_dispatch_completion_rate'] = result['click_success_rate']
+    # Recognition supplies the denominator. Nothing here counts all user intentions.
+    result['intended_click_success_rate'] = None
     edges = result.get('edge_samples', 0)
     result['edge_tracking_rate'] = result.get('edge_tracked', 0) / edges if edges else None
     return result
 
 
+def quality_findings(session):
+    """Surface measured symptoms; thresholds describe review budgets, not control gates."""
+    findings = []
+    def add(code, value, message):
+        findings.append(dict(code=code, value=value, message=message))
+    age = session.get('frame_age_p95_ms')
+    if age is not None and age > 100:
+        add('frame_delay', age, f'Frame age p95 is {age} ms, above the 100 ms responsiveness review budget.')
+    inference = session.get('inference_p95_ms')
+    if inference is not None and inference > 50:
+        add('inference_cost', inference, f'Inference p95 is {inference} ms, above the 50 ms processing review budget.')
+    recovery = session.get('hand_loss_recovery_p95_ms')
+    if recovery is not None and recovery > 500:
+        add('hand_loss_recovery', recovery, f'Observed owner return after hand loss p95: {recovery} ms.')
+    jump = session.get('pinch_jump_max')
+    if jump is not None and jump > .15:
+        add('pinch_pointer_jump', jump, f'Largest recorded pointer step during pinch: {jump:.3f} normalized screen units.')
+    for field, code, label in (
+        ('trace_dropped', 'trace_loss', 'Trace rows discarded by bounded retention'),
+        ('queue_dropped', 'observation_loss', 'Observations lost before recording'),
+        ('cancelled', 'cancelled_actions', 'Cancelled actions across all action types'),
+        ('hand_switches', 'owner_changes', 'Controlling-owner ID changes'),
+        ('pointer_reversals', 'pointer_reversals', 'Small rapid pointer direction reversals; deliberate movement is possible'),
+        ('contacts_without_action', 'contact_without_action', 'Observed closed-contact episodes without a linked action; intent is unknown'),
+    ):
+        if session.get(field, 0) > 0:
+            add(code, session[field], f'{label}: {session[field]}.')
+    return findings
+
+
 def compare_sessions(before, after):
     a, b = metrics(before), metrics(after)
     names = ('click_success_rate', 'missed_clicks', 'pinch_jump_max', 'hand_switches',
-             'frame_age_p95_ms', 'inference_p95_ms', 'hand_loss_recovery_p95_ms', 'edge_tracking_rate')
+             'frame_age_p95_ms', 'inference_p95_ms', 'sensor_delivery_p95_ms', 'worker_queue_p95_ms', 'hand_loss_recovery_p95_ms', 'edge_tracking_rate')
     result = {}
     for key in names:
         old, new = a.get(key), b.get(key)
@@ -282,9 +318,15 @@ class Collector:
             health = dict(health, state='stale', reason_code='collector_not_reporting')
         return dict(schema=1, session_id=session.get('session_id'), build_id=session.get('build_id'),
                     capture_status=capture_status, collector=health,
+                    findings=quality_findings(session),
+                    coverage=dict(
+                        unrecognized_pinches='geometry_observed_intent_unknown' if session.get('contact_observation_frames', 0) else 'unknown',
+                        target_activation='unknown',
+                        pointer_jitter='reversals_measured' if 'pointer_reversals' in session else 'unknown',
+                        trace='incomplete' if session.get('trace_dropped', 0) or session.get('queue_dropped', 0) else 'no_recorded_loss'),
                     summary=dict(termination=termination,
-                                 clicks=f"{session.get('click_success', 0)} completed; {session.get('missed_clicks', 0)} missed",
-                                 evidence='Android completion callbacks prove dispatched taps completed. Intended attempts before recognition require recorded contact evidence.'),
+                                 clicks=f"{session.get('click_success', 0)} Android completions / {session.get('click_attempts', 0)} recognized TAP requests; {session.get('missed_clicks', 0)} completion timeouts",
+                                 evidence='Completed callbacks are positive dispatch evidence. Unrecognized intended pinches and activation of the intended screen item are not proven by these counts.'),
                     metrics=metrics(session), manifest=session,
                     comparison=comparison, session_history=history, latest_event=event, history_count=len(list((self.root / 'events').glob('*.json'))))
 

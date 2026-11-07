@@ -200,6 +200,98 @@ class AirAccessibilityServiceDispatchTest {
 
     @Test
     @Suppress("DEPRECATION")
+    fun queuedPinchCannotActivateANewerHighlight() {
+        val firstBounds = android.graphics.Rect(10, 10, 100, 100)
+        val secondBounds = android.graphics.Rect(10, 110, 100, 200)
+        fun node(label: String, bounds: android.graphics.Rect) =
+            android.view.accessibility.AccessibilityNodeInfo.obtain().apply {
+                isVisibleToUser = true; isEnabled = true
+                packageName = "com.example.safe"; text = label
+                setBoundsInScreen(bounds)
+            }
+        val root = node("", android.graphics.Rect(0, 0, 500, 500))
+        val first = node("Open", firstBounds).apply { isClickable = true }
+        val second = node("Delete", secondBounds).apply { isClickable = true }
+        shadowOf(root).addChild(first); shadowOf(root).addChild(second)
+        val clicked = mutableListOf<String>()
+        shadowOf(first).setOnPerformActionListener { _, _ -> clicked.add("Open") }
+        shadowOf(second).setOnPerformActionListener { _, _ -> clicked.add("Delete") }
+        val highlight = object : ScreenTargetHighlight {
+            var shown: android.graphics.Rect? = null
+            var drawn = true
+            override val isVisible: Boolean get() = drawn && shown != null
+            override fun show(target: android.graphics.Rect): Boolean { shown = android.graphics.Rect(target); return true }
+            override fun hide() { shown = null }
+        }
+        AirAccessibilityService::class.java.getDeclaredField("screenNavigator\$delegate").apply { isAccessible = true }
+            .set(service, lazyOf(ScreenTargetNavigator(highlight)))
+        shadow.setRootInActiveWindow(root)
+        AirRuntime.pointerEnabled = false
+        val looper = shadowOf(Looper.getMainLooper())
+        try {
+            service.dispatch(AirAction.NEXT_ITEM); looper.idle()
+            assertEquals(firstBounds, highlight.shown)
+
+            service.dispatch(AirAction.NEXT_ITEM)
+            service.dispatchSelectionPinch()
+            looper.idle()
+            assertTrue("The pinch was aimed at Open while Delete was still queued", clicked.isEmpty())
+            assertEquals(secondBounds, highlight.shown)
+
+            val movedBounds = android.graphics.Rect(10, 210, 100, 300)
+            service.dispatchSelectionPinch()
+            second.setBoundsInScreen(movedBounds)
+            val contentChange = android.view.accessibility.AccessibilityEvent.obtain(
+                android.view.accessibility.AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED)
+            service.onAccessibilityEvent(contentChange)
+            looper.idle()
+            assertTrue("A refresh to new bounds requires another deliberate confirmation", clicked.isEmpty())
+            assertEquals(movedBounds, highlight.shown)
+
+            highlight.drawn = false
+            service.dispatchSelectionPinch()
+            highlight.drawn = true
+            looper.idle()
+            assertTrue("A highlight first drawn after the pinch cannot receive it", clicked.isEmpty())
+
+            service.dispatchSelectionPinch(); looper.idle()
+            assertEquals(listOf("Delete"), clicked)
+        } finally { shadow.setRootInActiveWindow(null) }
+    }
+
+    @Test
+    @Suppress("DEPRECATION")
+    fun queuedPinchCannotLaunchANewlySelectedApp() {
+        val intent = android.content.Intent(android.content.Intent.ACTION_MAIN)
+            .addCategory(android.content.Intent.CATEGORY_LAUNCHER)
+        val packages = shadowOf(service.packageManager)
+        for ((label, appPackage) in listOf("! First" to "com.example.first", "! Second" to "com.example.second")) {
+            packages.addResolveInfoForIntent(intent, android.content.pm.ResolveInfo().apply {
+                nonLocalizedLabel = label
+                activityInfo = android.content.pm.ActivityInfo().apply {
+                    packageName = appPackage
+                    name = "$appPackage.MainActivity"
+                    applicationInfo = android.content.pm.ApplicationInfo().apply { packageName = appPackage }
+                }
+            })
+        }
+        val chooser = Robolectric.buildActivity(AppSearchActivity::class.java).setup()
+        val activity = chooser.get()
+        val looper = shadowOf(Looper.getMainLooper())
+        AirRuntime.pointerEnabled = false
+        try {
+            service.dispatch(AirAction.NEXT_ITEM)
+            service.dispatchSelectionPinch()
+            looper.idle()
+            assertEquals(null, shadowOf(activity).nextStartedActivity)
+
+            service.dispatchSelectionPinch(); looper.idle()
+            assertEquals("com.example.second", shadowOf(activity).nextStartedActivity?.component?.packageName)
+        } finally { chooser.pause().stop().destroy() }
+    }
+
+    @Test
+    @Suppress("DEPRECATION")
     fun focusedPaneWithoutRequestedActionKeepsBoundedPointerFreeFallback() {
         fun node(bounds: android.graphics.Rect) = android.view.accessibility.AccessibilityNodeInfo.obtain().apply {
             isVisibleToUser = true; isEnabled = true; setBoundsInScreen(bounds)

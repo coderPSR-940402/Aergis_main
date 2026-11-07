@@ -182,6 +182,9 @@ internal class LiveDiagnosticStore(
         sample.handId?.let { append(",\"hand_id\":${quote(it)}") }
         sample.pointerX?.takeIf { it.isFinite() }?.let { append(",\"pointer_x\":$it") }
         sample.pointerY?.takeIf { it.isFinite() }?.let { append(",\"pointer_y\":$it") }
+        sample.rawPointerX?.takeIf { it.isFinite() }?.let { append(",\"raw_x\":$it") }
+        sample.rawPointerY?.takeIf { it.isFinite() }?.let { append(",\"raw_y\":$it") }
+        sample.rawTracking?.let { append(",\"raw_tracking\":$it") }
         sample.frozenTargetX?.takeIf { it.isFinite() }?.let { append(",\"target_x\":$it") }
         sample.frozenTargetY?.takeIf { it.isFinite() }?.let { append(",\"target_y\":$it") }
         sample.gesture?.let { append(",\"gesture\":${quote(it)}") }
@@ -192,6 +195,8 @@ internal class LiveDiagnosticStore(
         sample.cameraAgeMs?.let { append(",\"camera_age_ms\":$it") }
         sample.analyzedFrameGapMs?.let { append(",\"analyzed_frame_gap_ms\":$it") }
         sample.inferenceMs?.let { append(",\"inference_ms\":$it") }
+        sample.sensorDeliveryMs?.let { append(",\"sensor_delivery_ms\":$it") }
+        sample.workerQueueMs?.let { append(",\"worker_queue_ms\":$it") }
         append('}')
     }
 

@@ -1,6 +1,6 @@
 package com.airgesture.control
 
-import org.junit.Assert.assertEquals
+import org.junit.Assert.*
 import org.junit.Test
 
 class CameraClockTest {
@@ -37,6 +37,22 @@ class CameraClockTest {
         val source = FrameTimeSource.CAMERA_ELAPSED_REALTIME
         assertEquals(700L, CameraClock.ageMs(source, ns(2_000_000), 1_000_500, 1_000_700, 2_000_700))
         assertEquals(-1L, CameraClock.ageMs(source, ns(2_000_001), 1_000_000, 1_000_000, 2_000_000))
+    }
+
+    @Test fun exposureAuthorityUsesNanosecondsOnlyForComparableClocks() {
+        val boundary = ns(2_000_000L) + 10L
+        val realtime = FrameTimeSource.CAMERA_ELAPSED_REALTIME
+        assertTrue(CameraClock.exposedBefore(realtime, boundary - 1, boundary))
+        assertFalse(CameraClock.exposedBefore(realtime, boundary, boundary))
+        assertFalse(CameraClock.exposedBefore(realtime, boundary + 1, boundary))
+        assertFalse(CameraClock.exposedBefore(FrameTimeSource.ANALYZER_UPTIME, boundary - 1, boundary))
+    }
+
+    @Test fun deliveryLatencyIsAbsentForUnknownOrInvalidSensorTime() {
+        assertEquals(181L, CameraClock.deliveryMs(FrameTimeSource.CAMERA_ELAPSED_REALTIME,
+            ns(2_000_000), 2_000_181))
+        assertNull(CameraClock.deliveryMs(FrameTimeSource.ANALYZER_UPTIME, ns(2_000_000), 2_000_181))
+        assertNull(CameraClock.deliveryMs(FrameTimeSource.CAMERA_ELAPSED_REALTIME, ns(2_000_001), 2_000_000))
     }
 
     @Test fun missingOrImplausibleTimestampFallsBackToAnalyzerClock() {

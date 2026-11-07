@@ -59,6 +59,35 @@ class CalibrationEngineIntegrationTest {
         assertTrue(AirRuntime.pointerTracking)
     }
 
+    @Test fun devLoopRecordsClosedContactEvenWhenClickingIsDisabled() {
+        val context = RuntimeEnvironment.getApplication() as Context
+        AergisDevLoop.start(context)
+        try {
+            AirRuntime.pointerClickingEnabled = false
+            fun contact(distance: Float) = hand().toMutableList().apply {
+                this[4] = NormalizedLandmark.create(.5f, .5f, 0f)
+                this[12] = NormalizedLandmark.create(.5f + distance * .2f, .5f, 0f)
+            }
+            publish(contact(.8f), 1000)
+            publish(contact(.12f), 1033)
+            publish(contact(.12f), 1066)
+            publish(contact(.8f), 1100)
+        } finally { AergisDevLoop.stop()?.get(5, java.util.concurrent.TimeUnit.SECONDS) }
+        val root = java.io.File(context.filesDir, "devloop")
+        val trace = org.json.JSONObject(root.resolve("trace.json").readText()).getJSONArray("records")
+        val geometry = (0 until trace.length()).map(trace::getJSONObject).filter {
+            it.optString("step") == "contact_geometry" && it.optDouble("contact_distance", 1.0) < .18
+        }
+        assertTrue("Closed geometry before action recognition must be retained", geometry.isNotEmpty())
+        assertEquals("clicking_disabled", geometry.first().getString("gate"))
+        assertFalse("A geometric candidate has no invented request", geometry.first().has("request_id"))
+        val manifest = org.json.JSONObject(root.resolve("session.json").readText())
+        assertEquals(1, manifest.optInt("contact_candidates", -1))
+        assertEquals(1, manifest.optInt("contacts_without_action", -1))
+        assertEquals(0, manifest.getInt("click_attempts"))
+        assertEquals(0, manifest.getInt("missed_clicks"))
+    }
+
     @Test fun clippedWristCannotResetVisibleOwnedPinchConfirmation() {
         fun pose(distance: Float, wrist: Float) = hand().toMutableList().apply {
             this[0] = NormalizedLandmark.create(wrist,wrist,0f)
@@ -334,6 +363,37 @@ class CalibrationEngineIntegrationTest {
     }
 
     @Test
+    fun cameraCallbackAfterResumeCannotAuthorizeAnExposureFromBeforeResume() {
+        org.robolectric.shadows.ShadowSystemClock.advanceBy(java.time.Duration.ofSeconds(1))
+        engine.cameraTimestampsRealtime = true
+        val exposure = android.os.SystemClock.elapsedRealtimeNanos()
+        org.robolectric.shadows.ShadowSystemClock.advanceBy(java.time.Duration.ofMillis(20))
+        AirRuntime.controlMode = ControlMode.PAUSED
+        AirRuntime.controlMode = ControlMode.ARMED
+        val epoch = AirRuntime.state.value.inputEpoch
+        val lease = FrameBufferPool().acquire(4)!!
+        val frame = CapturedCameraFrame(RgbaFrameData(lease.buffer, 1, 1, 4, 4, 0, exposure, ""),
+            android.os.SystemClock.uptimeMillis(), android.os.SystemClock.elapsedRealtime(), lease)
+        frame.use { engine.analyze(it) }
+        assertEquals(epoch, AirRuntime.state.value.inputEpoch)
+        assertNull(AirRuntime.visionError)
+        assertEquals(1L, PipelineMetrics.shared.snapshot(android.os.SystemClock.uptimeMillis())
+            .rejections["SOURCE_CONTEXT_CHANGED"])
+    }
+
+    @Test
+    fun obsoleteRotationMetadataIsRejectedEvenWithUnknownSensorClock() {
+        engine.expectedCameraRotationDegrees = 90
+        val lease = FrameBufferPool().acquire(4)!!
+        val frame = CapturedCameraFrame(RgbaFrameData(lease.buffer, 1, 1, 4, 4, 0, 1_000_000L, ""),
+            android.os.SystemClock.uptimeMillis(), android.os.SystemClock.elapsedRealtime(), lease)
+        frame.use { engine.analyze(it) }
+        assertNull(AirRuntime.visionError)
+        assertEquals(1L, PipelineMetrics.shared.snapshot(android.os.SystemClock.uptimeMillis())
+            .rejections["SOURCE_CONTEXT_CHANGED"])
+    }
+
+    @Test
     fun hiddenPointerExpiredCommandFramesSkipNativeInitialization() {
         AirRuntime.pointerEnabled = false
         org.robolectric.shadows.ShadowSystemClock.advanceBy(java.time.Duration.ofSeconds(2))
@@ -436,7 +496,8 @@ class CalibrationEngineIntegrationTest {
         org.robolectric.shadows.ShadowSystemClock.advanceBy(java.time.Duration.ofSeconds(2))
         engine.cameraTimestampsRealtime = true
         val lease = FrameBufferPool().acquire(4)!!
-        val frame = CapturedCameraFrame(RgbaFrameData(lease.buffer, 1, 1, 4, 4, 0, 1_000_000L, ""), 0L, 0L, lease)
+        val exposure = (android.os.SystemClock.elapsedRealtime() - 601L) * 1_000_000L
+        val frame = CapturedCameraFrame(RgbaFrameData(lease.buffer, 1, 1, 4, 4, 0, exposure, ""), 0L, 0L, lease)
         val epoch = AirRuntime.actionEpoch
         try {
             engine.analyze(frame)
@@ -807,6 +868,39 @@ class CalibrationEngineIntegrationTest {
             confirmGesture(2700L)
             org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
             assertEquals(2, shadow.globalActionsPerformed.size)
+        }
+    }
+
+    @Test fun queuedPinchExpiresBeforeNativeTap() {
+        withMappedBackService { shadow ->
+            AirRuntime.gesturesEnabled = false
+            val looper = org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper())
+            val open = hand()
+            val closed = open.toMutableList().apply { this[4] = NormalizedLandmark.create(.56f, .65f, 0f) }
+            repeat(4) { publish(open, 1000L + it * 100L); looper.idle() }
+            publish(closed, 1400L, delayMs = 590L)
+            assertEquals(PointerInteractionPhase.PRESSED, AirRuntime.pointerInteraction)
+            org.robolectric.shadows.ShadowSystemClock.advanceBy(java.time.Duration.ofMillis(11))
+            looper.idle()
+            assertTrue("A camera tap past its 600 ms budget must never reach Android", shadow.gesturesDispatched.isEmpty())
+
+            // A physical release and a new contact can still dispatch normally.
+            repeat(4) { publish(open, 1500L + it * 100L); looper.idle() }
+            publish(closed, 1900L, delayMs = 590L)
+            looper.idle()
+            assertEquals("Preserve the existing pointer-tap age allowance", 1, shadow.gesturesDispatched.size)
+        }
+    }
+
+    @Test fun queuedClassifierActionExpiresBeforeAndroidDispatch() {
+        withMappedBackService { shadow ->
+            primeClassifier()
+            confirmGesture(1333L, delayMs = 340L)
+            assertEquals(AirAction.BACK, AirRuntime.state.value.actionFeedback?.action)
+            org.robolectric.shadows.ShadowSystemClock.advanceBy(java.time.Duration.ofMillis(11))
+            org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+            assertTrue("A classifier action past its 350 ms budget must never reach Android",
+                shadow.globalActionsPerformed.isEmpty())
         }
     }
 
