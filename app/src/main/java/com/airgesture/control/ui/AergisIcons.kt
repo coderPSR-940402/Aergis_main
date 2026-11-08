@@ -5,7 +5,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
@@ -91,14 +90,14 @@ internal fun AergisIcon(glyph: AergisGlyph, modifier: Modifier, color: Color = A
 }
 
 @Composable
-internal fun AergisMark(modifier: Modifier) {
+internal fun AergisMark(modifier: Modifier, color: Color) {
     Canvas(modifier.clearAndSetSemantics {}) {
         val path = Path().apply {
             moveTo(size.width * .15f, size.height * .88f)
             lineTo(size.width * .49f, size.height * .12f)
             lineTo(size.width * .82f, size.height * .88f)
         }
-        drawPath(path, Brush.linearGradient(listOf(AergisColors.Yellow, AergisColors.SilverBright, AergisColors.Yellow)),
+        drawPath(path, color,
             style = Stroke(size.width * .075f, cap = StrokeCap.Round, join = StrokeJoin.Round))
     }
 }

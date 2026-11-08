@@ -1,6 +1,7 @@
 package com.airgesture.control.ui
 
-import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -10,11 +11,6 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.heading
@@ -28,17 +24,18 @@ import com.airgesture.control.R
 
 @Composable
 internal fun ProductHeading(title: Int, eyebrow: Int? = null) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        eyebrow?.let { Text(stringResource(it), style = MaterialTheme.typography.labelSmall, color = AergisColors.Muted) }
-        Text(stringResource(title), style = MaterialTheme.typography.headlineLarge, modifier = Modifier.semantics { heading() })
+    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        eyebrow?.let { ProductEyebrow(stringResource(it)) }
+        Text(stringResource(title), style = MaterialTheme.typography.displaySmall, color = AergisColors.Text,
+            modifier = Modifier.semantics { heading() })
     }
 }
 
 @Composable
-internal fun ProductPage(title: Int, content: @Composable ColumnScope.() -> Unit) {
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
+internal fun ProductPage(title: Int, eyebrow: Int? = null, content: @Composable ColumnScope.() -> Unit) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 14.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        ProductHeading(title)
+        ProductHeading(title, eyebrow)
         content()
     }
 }
@@ -46,19 +43,21 @@ internal fun ProductPage(title: Int, content: @Composable ColumnScope.() -> Unit
 @Composable
 internal fun ProductLink(destination: AergisDestination, description: String,
     onNavigate: (AergisDestination) -> Unit) {
-    Surface(onClick = { onNavigate(destination) }, color = androidx.compose.ui.graphics.Color.Transparent,
-        shape = AergisShapes.Control, modifier = Modifier.fillMaxWidth()) {
-        Column {
-            Row(Modifier.fillMaxWidth().heightIn(min = 76.dp).padding(vertical = 16.dp),
-                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+    Surface(
+        onClick = { onNavigate(destination) }, color = AergisColors.Surface,
+        shape = AergisShapes.Card, modifier = Modifier.fillMaxWidth(),
+        border = BorderStroke(1.dp, AergisColors.Outline)
+    ) {
+        Row(Modifier.fillMaxWidth().heightIn(min = 70.dp).padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Box(Modifier.size(42.dp).background(AergisColors.Raised, AergisShapes.Control), contentAlignment = Alignment.Center) {
                 AergisIcon(destination.glyph, Modifier.size(22.dp), AergisColors.Purple)
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                    Text(stringResource(destination.label), style = MaterialTheme.typography.titleSmall)
-                    Text(description, style = MaterialTheme.typography.bodySmall, color = AergisColors.Muted)
-                }
-                AergisIcon(AergisGlyph.ARROW, Modifier.size(18.dp), AergisColors.Muted)
             }
-            HorizontalDivider(color = AergisColors.Outline.copy(alpha = .5f))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(stringResource(destination.label), style = MaterialTheme.typography.titleSmall)
+                Text(description, style = MaterialTheme.typography.bodySmall, color = AergisColors.Muted)
+            }
+            AergisIcon(AergisGlyph.ARROW, Modifier.size(18.dp), AergisColors.Purple)
         }
     }
 }
@@ -74,7 +73,12 @@ internal fun WelcomeScreen(cameraAllowed: Boolean, accessibilityEnabled: Boolean
         LinearProgressIndicator(progress = { (step + 1) / 3f }, modifier = Modifier.fillMaxWidth(), color = AergisColors.Purple)
         when (step) {
             0 -> {
-                GestureIllustration(RegisteredGesture.OPEN_PALM)
+                Surface(shape = AergisShapes.Stage, color = AergisColors.Stage) {
+                    Box(Modifier.fillMaxWidth().height(146.dp), contentAlignment = Alignment.Center) {
+                        CommandField(Modifier.matchParentSize())
+                        HandDiagram(RegisteredGesture.OPEN_PALM, Modifier.size(124.dp), AergisColors.OnStage, AergisColors.Yellow)
+                    }
+                }
                 Text(stringResource(R.string.product_welcome_title), style = MaterialTheme.typography.headlineLarge)
                 Text(stringResource(R.string.product_welcome_help), color = AergisColors.Muted)
                 Text(stringResource(R.string.product_local_setup_note), color = AergisColors.Purple)
@@ -203,10 +207,10 @@ internal fun LearnGesturesScreen(mapping: (RegisteredGesture) -> AirAction,
     ProductPage(R.string.product_learn) {
         RehearsalStatus()
         readiness()
-        SculptedHand(gesture, Modifier.fillMaxWidth().height(140.dp))
+        HandDiagram(gesture, Modifier.fillMaxWidth().height(140.dp))
         Text(stringResource(R.string.product_pose_index, gesture.ordinal + 1, RegisteredGesture.entries.size), color = AergisColors.Muted)
         AergisSection(stringResource(gestureLabelRes(gesture)), stringResource(gestureHelpRes(gesture)))
-        AergisStatusChip(actionLabel(mapping(gesture)), AergisColors.Yellow)
+        AergisStatusChip(actionLabel(mapping(gesture)), AergisColors.Purple)
         AergisPanel {
             Text(stringResource(R.string.product_live_signal,
                 signal?.let { stringResource(gestureLabelRes(it)) } ?: stringResource(R.string.product_live_signal_empty)),
@@ -224,12 +228,6 @@ internal fun LearnGesturesScreen(mapping: (RegisteredGesture) -> AirAction,
         AergisButton({ onEdit(gesture) }, Modifier.fillMaxWidth(), primary = true) { Text(stringResource(R.string.product_assign_pose)) }
         ProductLink(AergisDestination.LIVE, stringResource(R.string.product_live_help), onNavigate)
     }
-}
-
-/** Decorative pose artwork; written pose instructions remain the authoritative guide. */
-@Composable
-private fun GestureIllustration(gesture: RegisteredGesture) {
-    SculptedHand(gesture, Modifier.fillMaxWidth().height(210.dp))
 }
 
 /** Four native corner indicators around the existing raw-pointer preview; no coordinate logic. */
@@ -255,9 +253,9 @@ internal fun CalibrationStepPreview(sampleCount: Int, capturing: Boolean) {
 private fun CalibrationCorner(index: Int, count: Int, capturing: Boolean) {
     val active = capturing && count == index
     val completed = capturing && count > index
-    Surface(shape = AergisShapes.Chip, color = if (active) AergisColors.Yellow else AergisColors.Raised) {
+    Surface(shape = AergisShapes.Chip, color = if (active) AergisColors.Purple else AergisColors.Raised) {
         Text(if (completed) "✓" else (index + 1).toString(), modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-            color = if (active) AergisColors.Background else if (completed) AergisColors.Yellow else AergisColors.Muted,
+            color = if (active) AergisColors.OnStage else if (completed) AergisColors.Purple else AergisColors.Muted,
             style = MaterialTheme.typography.labelMedium)
     }
 }

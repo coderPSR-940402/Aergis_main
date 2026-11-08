@@ -1,6 +1,7 @@
 package com.airgesture.control.ui
 
 import android.os.Build
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
@@ -40,12 +41,13 @@ internal fun ActionMappingPicker(
         Column(Modifier.fillMaxWidth().fillMaxHeight(.92f).imePadding()) {
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                Row(Modifier.fillMaxWidth().background(AergisColors.Raised, AergisShapes.Stage).padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    SculptedHand(source, Modifier.size(72.dp))
+                    HandDiagram(source, Modifier.size(76.dp))
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        ProductEyebrow(stringResource(R.string.product_assign_pose))
-                        Text(gestureName, style = MaterialTheme.typography.headlineSmall)
+                        ProductEyebrow(stringResource(R.string.product_mapping_label))
+                        Text(gestureName, style = MaterialTheme.typography.headlineMedium)
                     }
                 }
                 Text(stringResource(R.string.product_map_intro), color = AergisColors.Muted)

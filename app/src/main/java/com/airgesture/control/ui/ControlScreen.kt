@@ -59,10 +59,7 @@ internal fun ControlScreen(
         armed -> stringResource(R.string.refined_disarm_caption)
         else -> stringResource(R.string.product_hero_ready_help)
     }
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        item {
-            ProductHeading(R.string.product_control, R.string.product_control_kicker)
-        }
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
             ControlCommandCenter(home.running, session.actions, status, detail, primaryLabel,
                 enabled = primaryLabel != R.string.product_waiting_to_arm,
@@ -78,31 +75,22 @@ internal fun ControlScreen(
                 }, onStop = onStop)
         }
         item {
-            AergisPanel {
-                AergisSection(stringResource(R.string.product_feedback_title))
-                val handStatus = when {
-                    !home.running -> R.string.product_camera_off
-                    visionError != null -> R.string.product_tracking_problem
-                    !home.cameraReady || !home.visionReady -> R.string.product_camera_starting
-                    home.handsDetected == 0 -> R.string.product_no_hand
-                    else -> R.string.product_hand_visible
-                }
-                AergisStatusChip(stringResource(handStatus, home.handedness),
-                    if (home.running && home.cameraReady && home.visionReady && home.handsDetected > 0) AergisColors.Success else AergisColors.Muted)
-                ProductLink(AergisDestination.LIVE, stringResource(R.string.product_live_help), onNavigate)
+            val handStatus = when {
+                !home.running -> R.string.product_camera_off
+                visionError != null -> R.string.product_tracking_problem
+                !home.cameraReady || !home.visionReady -> R.string.product_camera_starting
+                home.handsDetected == 0 -> R.string.product_no_hand
+                else -> R.string.product_hand_visible
             }
+            ProductLink(AergisDestination.LIVE, stringResource(handStatus, home.handedness), onNavigate)
         }
         item { AergisSection(stringResource(R.string.product_control_methods)) }
         item { ProductInputTiles(assignedCount, onNavigate) }
-        item {
-            AergisPanel {
-                AergisSection(stringResource(R.string.product_practice_tools))
-                ProductLink(AergisDestination.LEARN, stringResource(R.string.product_learn_help), onNavigate)
-                ProductLink(AergisDestination.PRACTICE, stringResource(R.string.product_practice_help), onNavigate)
-                ProductLink(AergisDestination.CALIBRATION, stringResource(R.string.product_calibration_optional), onNavigate)
-                ProductLink(AergisDestination.PRECISION, stringResource(R.string.product_precision_help), onNavigate)
-            }
-        }
+        item { AergisSection(stringResource(R.string.product_practice_tools)) }
+        item { ProductLink(AergisDestination.LEARN, stringResource(R.string.product_learn_help), onNavigate) }
+        item { ProductLink(AergisDestination.PRACTICE, stringResource(R.string.product_practice_help), onNavigate) }
+        item { ProductLink(AergisDestination.CALIBRATION, stringResource(R.string.product_calibration_optional), onNavigate) }
+        item { ProductLink(AergisDestination.PRECISION, stringResource(R.string.product_precision_help), onNavigate) }
     }
 }
 

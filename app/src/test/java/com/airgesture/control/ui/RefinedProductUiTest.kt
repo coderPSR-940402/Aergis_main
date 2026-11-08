@@ -15,6 +15,7 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import com.airgesture.control.AirRuntime
 import com.airgesture.control.ControlMode
+import com.airgesture.control.MainActivity
 import com.airgesture.control.RegisteredGesture
 import com.airgesture.control.R
 import org.junit.Assert.assertEquals
@@ -46,7 +47,7 @@ class RefinedProductUiTest {
         }
         compose.onNodeWithText("Start capture").performClick()
         compose.runOnIdle { assertEquals(1, captures); assertEquals(0, arms) }
-        screenshot("stopped-command")
+        screenshot("stopped-command", verifyNewSurfaces = true)
     }
 
     @Test fun missingCameraRoutesToPermissionsWithoutStartingCapture() {
@@ -152,16 +153,52 @@ class RefinedProductUiTest {
         }
     }
 
-    private fun screenshot(name: String) {
-        // PixelCopy waits for a hardware-window callback Robolectric does not deliver.
-        // Draw the actual laid-out Compose host using the native-graphics test backend.
-        compose.runOnIdle {
-            val view = compose.activity.window.decorView
-            val bitmap = android.graphics.Bitmap.createBitmap(view.width, view.height, android.graphics.Bitmap.Config.ARGB_8888)
-            view.draw(android.graphics.Canvas(bitmap))
-            val file = File("build/reports/testing-tools/product-ui/$name.png").apply { parentFile!!.mkdirs() }
-            file.outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
-            bitmap.recycle()
+    private fun screenshot(name: String, verifyNewSurfaces: Boolean = false) {
+        compose.runOnIdle { captureProductScreen(compose.activity.window.decorView, name, verifyNewSurfaces) }
+    }
+}
+
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35], qualifiers = "w411dp-h891dp-mdpi")
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
+class MainActivityVisualTest {
+    @get:Rule val compose = createAndroidComposeRule<MainActivity>()
+
+    @Test fun rendersTheRealOnboardingAndPrimaryDestinations() {
+        compose.onNodeWithText("Explore the interface").assertIsDisplayed()
+        capture("welcome")
+        compose.onNodeWithText("Explore the interface").performClick()
+        compose.onNodeWithText("Complete setup").assertIsDisplayed()
+        capture("control-setup")
+        compose.onNodeWithTag("nav-GESTURES").performClick().assertIsSelected()
+        compose.onNodeWithText("Find a gesture or action").assertIsDisplayed()
+        capture("gestures")
+        compose.onNodeWithTag("nav-SETTINGS").performClick().assertIsSelected()
+        compose.onNodeWithText("Control hand").assertIsDisplayed()
+        capture("settings")
+    }
+
+    private fun capture(name: String) {
+        compose.runOnIdle { captureProductScreen(compose.activity.window.decorView, name) }
+    }
+}
+
+private fun captureProductScreen(view: android.view.View, name: String, verifyNewSurfaces: Boolean = false) {
+    // PixelCopy waits for a hardware-window callback Robolectric does not deliver.
+    val bitmap = android.graphics.Bitmap.createBitmap(view.width, view.height, android.graphics.Bitmap.Config.ARGB_8888)
+    try {
+        view.draw(android.graphics.Canvas(bitmap))
+        if (verifyNewSurfaces) {
+            // Detect accidental fallback to the previous all-charcoal shell and cards.
+            val canvasColor = android.graphics.Color.rgb(241, 239, 235)
+            assertEquals(canvasColor, bitmap.getPixel(4, bitmap.height / 2))
+            val stage = bitmap.getPixel(27, 110)
+            org.junit.Assert.assertTrue("The violet command stage should own the top of Control",
+                android.graphics.Color.blue(stage) > android.graphics.Color.red(stage) + 35)
         }
+        val file = File("build/reports/testing-tools/product-ui/$name.png").apply { parentFile!!.mkdirs() }
+        file.outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+    } finally {
+        bitmap.recycle()
     }
 }

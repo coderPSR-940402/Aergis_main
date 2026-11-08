@@ -1,13 +1,20 @@
 package com.airgesture.control.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -53,31 +60,32 @@ internal fun AergisShell(
     val screenState = rememberSaveableStateHolder()
     BackHandler(enabled = navigation.canGoBack || !selected.root) { back() }
     Scaffold(
-        modifier = Modifier.fillMaxSize().safeDrawingPadding(),
+        modifier = Modifier.fillMaxSize().background(AergisColors.Background).safeDrawingPadding(),
         containerColor = AergisColors.Background,
         bottomBar = {
-            if (selected != AergisDestination.WELCOME) NavigationBar(containerColor = AergisColors.Background, tonalElevation = 0.dp,
-                windowInsets = WindowInsets(0, 0, 0, 0)) {
-                AergisDestination.entries.filter { it.root }.forEach { destination ->
-                    val isSelected = destination == selected || (navigation.routes.firstOrNull() == destination.name && !selected.root)
-                    NavigationBarItem(
-                        selected = isSelected,
-                        onClick = { navigate(destination) },
-                        icon = { AergisIcon(destination.glyph, Modifier.size(22.dp), if (isSelected) AergisColors.Purple else AergisColors.Muted) },
-                        label = { Text(stringResource(destination.label), style = MaterialTheme.typography.labelMedium) },
-                        colors = NavigationBarItemDefaults.colors(selectedTextColor = AergisColors.Purple,
-                            unselectedTextColor = AergisColors.Muted, indicatorColor = AergisColors.Raised.copy(alpha = .45f))
-                    )
+            if (selected != AergisDestination.WELCOME) {
+                val activeRoot = if (selected.root) selected.name else navigation.routes.firstOrNull()
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+                    NavigationDock(activeRoot, navigate)
                 }
             }
         }
     ) { insets ->
         Box(Modifier.fillMaxSize().padding(insets), contentAlignment = Alignment.TopCenter) {
             Column(Modifier.widthIn(max = 760.dp).fillMaxSize()) {
-                Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp).heightIn(min = 48.dp),
-                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    AergisMark(Modifier.size(28.dp))
-                    Text(stringResource(R.string.ui_brand), style = AergisType.Brand, modifier = Modifier.weight(1f))
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 7.dp).heightIn(min = 48.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Box(Modifier.size(37.dp).background(AergisColors.Stage, AergisShapes.Control),
+                        contentAlignment = Alignment.Center) {
+                        AergisMark(Modifier.size(23.dp), AergisColors.OnStage)
+                    }
+                    Column(Modifier.weight(1f)) {
+                        Text(stringResource(R.string.ui_brand), style = AergisType.Brand, color = AergisColors.Text)
+                        Text(stringResource(R.string.product_console_label), style = MaterialTheme.typography.labelSmall,
+                            color = AergisColors.Muted)
+                    }
                     if (!selected.root && selected != AergisDestination.WELCOME) {
                         TextButton(onClick = back, modifier = Modifier.heightIn(min = 48.dp)) {
                             Text(stringResource(R.string.product_back))
@@ -92,6 +100,33 @@ internal fun AergisShell(
                 screenState.SaveableStateProvider(selected.name) {
                     Box(Modifier.weight(1f)) { content(selected, navigate) }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun NavigationDock(activeRoot: String?, navigate: (AergisDestination) -> Unit) {
+    Row(
+        Modifier.widthIn(max = 520.dp).fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
+            .clip(AergisShapes.Card).background(AergisColors.Deep).selectableGroup()
+            .padding(5.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically
+    ) {
+        for (destination in AergisDestination.entries.filter { it.root }) {
+            val selected = activeRoot == destination.name
+            val ink = if (selected) AergisColors.Deep else AergisColors.StageHint
+            Column(
+                Modifier.weight(1f).heightIn(min = 56.dp).clip(AergisShapes.Control)
+                    .background(if (selected) AergisColors.Yellow else AergisColors.Deep)
+                    .testTag("nav-${destination.name}")
+                    .selectable(selected, role = Role.Tab, onClick = { navigate(destination) })
+                    .padding(horizontal = 4.dp, vertical = 6.dp),
+                horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center
+            ) {
+                AergisIcon(destination.glyph, Modifier.size(21.dp), ink)
+                Text(stringResource(destination.label), color = ink, style = MaterialTheme.typography.labelMedium,
+                    textAlign = TextAlign.Center)
             }
         }
     }
@@ -117,7 +152,7 @@ private fun ActiveSessionLabel(inputEnabled: Boolean, onControl: () -> Unit) {
     label?.let {
         TextButton(onControl, Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
             Text(stringResource(R.string.ui_session_summary, stringResource(R.string.ui_capture_on), stringResource(it)),
-                color = if (it == R.string.product_action_armed) AergisColors.Yellow else AergisColors.Purple,
+                color = if (it == R.string.product_action_armed) AergisColors.Success else AergisColors.Purple,
                 style = MaterialTheme.typography.labelMedium)
         }
     }

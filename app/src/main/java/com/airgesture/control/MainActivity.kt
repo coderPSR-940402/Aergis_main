@@ -12,9 +12,11 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import com.airgesture.control.ui.*
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -133,8 +135,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge(
-            statusBarStyle = androidx.activity.SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
-            navigationBarStyle = androidx.activity.SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
+            statusBarStyle = androidx.activity.SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = androidx.activity.SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT)
         )
         pendingPdf = savedInstanceState?.getString("testing_pending_pdf")?.let(::File)
         pendingZip = savedInstanceState?.getString("testing_pending_zip")?.let(::File)
@@ -531,22 +533,16 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     private fun SettingsScreen(navigate: (AergisDestination) -> Unit) {
-        ProductPage(R.string.product_settings) {
-            AergisPanel {
-                HandPreferencePanel()
-                HorizontalProductDivider()
-                ProductLink(AergisDestination.PRECISION, stringResource(R.string.product_precision_help), navigate)
-            }
-            AergisPanel {
-                AergisSection(stringResource(R.string.product_device_setup))
-                ProductLink(AergisDestination.PERMISSIONS, stringResource(R.string.product_setup_permissions_help), navigate)
-                ProductLink(AergisDestination.WELCOME, stringResource(R.string.product_setup_start), navigate)
-            }
-            AergisPanel {
-                AergisSection(stringResource(R.string.product_support))
-                ProductLink(AergisDestination.ADVANCED, stringResource(R.string.product_advanced_settings_help), navigate)
-                ProductLink(AergisDestination.ABOUT, stringResource(R.string.app_tagline), navigate)
-            }
+        ProductPage(R.string.product_settings, R.string.product_settings_kicker) {
+            AergisSection(stringResource(R.string.product_settings_input_group))
+            AergisPanel { HandPreferencePanel() }
+            ProductLink(AergisDestination.PRECISION, stringResource(R.string.product_precision_help), navigate)
+            AergisSection(stringResource(R.string.product_device_setup))
+            ProductLink(AergisDestination.PERMISSIONS, stringResource(R.string.product_setup_permissions_help), navigate)
+            ProductLink(AergisDestination.WELCOME, stringResource(R.string.product_setup_start), navigate)
+            AergisSection(stringResource(R.string.product_support))
+            ProductLink(AergisDestination.ADVANCED, stringResource(R.string.product_advanced_settings_help), navigate)
+            ProductLink(AergisDestination.ABOUT, stringResource(R.string.app_tagline), navigate)
         }
     }
 
@@ -571,9 +567,30 @@ class MainActivity : ComponentActivity() {
                 actionLabel(action).contains(term, ignoreCase = true)) &&
                 (filter == 0 || (filter == 1) == (action != AirAction.NONE))
         }
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(20.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            item { ProductHeading(R.string.product_gestures, R.string.product_gesture_kicker) }
+        LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            item {
+                Row(
+                    Modifier.fillMaxWidth().background(AergisColors.Raised, AergisShapes.Stage).padding(16.dp),
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                        ProductHeading(R.string.product_gestures, R.string.product_gesture_kicker)
+                        Text(stringResource(R.string.product_assigned_count, assigned, bindings.size),
+                            color = AergisColors.Purple, style = MaterialTheme.typography.bodyMedium)
+                    }
+                    if (androidx.compose.ui.platform.LocalDensity.current.fontScale <= 1.25f) {
+                        HandDiagram(RegisteredGesture.VICTORY, Modifier.size(92.dp))
+                    }
+                }
+            }
+            item {
+                androidx.compose.material3.OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth(),
+                    label = { Text(stringResource(R.string.product_search_gestures)) }, singleLine = true)
+            }
+            item { AergisSegmentedTabs(listOf(stringResource(R.string.product_filter_all),
+                stringResource(R.string.product_filter_assigned), stringResource(R.string.product_filter_unassigned)), filter, { filter = it }) }
             item {
                 AergisPanel {
                     AergisSettingRow(stringResource(R.string.product_mapped_actions),
@@ -581,14 +598,6 @@ class MainActivity : ComponentActivity() {
                 }
             }
             item { ProductLink(AergisDestination.LEARN, stringResource(R.string.product_learn_help), navigate) }
-            item {
-                AergisSection(stringResource(R.string.product_gesture_library),
-                    stringResource(R.string.product_assigned_count, assigned, bindings.size))
-                androidx.compose.material3.OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth().padding(top = 8.dp),
-                    label = { Text(stringResource(R.string.product_search_gestures)) }, singleLine = true)
-            }
-            item { AergisSegmentedTabs(listOf(stringResource(R.string.product_filter_all),
-                stringResource(R.string.product_filter_assigned), stringResource(R.string.product_filter_unassigned)), filter, { filter = it }) }
             if (rows.isEmpty()) item {
                 AergisPanel {
                     Text(stringResource(R.string.product_no_matches), color = AergisColors.Muted)

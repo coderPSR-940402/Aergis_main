@@ -25,10 +25,10 @@ internal fun CalibrationPreview(rawCoordinates: Boolean, profile: PointerCalibra
     val preview = AirRuntime.state.collectAsStateWithLifecycle()
     val description = stringResource(if (rawCoordinates) R.string.calibration_raw_preview else R.string.ui_pointer_preview)
     Canvas(Modifier.fillMaxWidth().height(160.dp).clip(AergisShapes.Control)
-        .background(AergisColors.Background).semantics { contentDescription = description }) {
+        .background(AergisColors.Deep).semantics { contentDescription = description }) {
         for (i in 1..3) {
-            drawLine(AergisColors.Outline.copy(alpha = .4f), Offset(size.width * i / 4, 0f), Offset(size.width * i / 4, size.height))
-            drawLine(AergisColors.Outline.copy(alpha = .4f), Offset(0f, size.height * i / 4), Offset(size.width, size.height * i / 4))
+            drawLine(AergisColors.StageHint.copy(alpha = .26f), Offset(size.width * i / 4, 0f), Offset(size.width * i / 4, size.height))
+            drawLine(AergisColors.StageHint.copy(alpha = .26f), Offset(0f, size.height * i / 4), Offset(size.width, size.height * i / 4))
         }
         // Read state in the draw phase: coordinate changes redraw only this preview.
         val state = preview.value
@@ -41,7 +41,7 @@ internal fun CalibrationPreview(rawCoordinates: Boolean, profile: PointerCalibra
                 else -> PointerCoordinateMapper.map(raw.x, raw.y)
             }
             val center = Offset(mapped.x * size.width, mapped.y * size.height)
-            val color = AergisColors.Cyan
+            val color = AergisColors.Yellow
             drawCircle(color.copy(alpha = .2f), 14.dp.toPx(), center)
             drawCircle(color, 9.dp.toPx(), center, style = Stroke(1.dp.toPx()))
             drawCircle(color, 4.dp.toPx(), center)

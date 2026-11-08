@@ -170,4 +170,9 @@ A gesture away.</string>
     <string name="product_hide_navigation_preset">Hide navigation preset</string>
     <string name="product_accessibility_recovery">If Android marks this service as restricted, open App settings and look for Allow restricted settings in the menu.</string>
     <string name="product_foreground_wait">Waiting for Android to confirm which screen is active.</string>
+    <string name="product_motion_tile">Move to scroll or swipe</string>
+    <string name="product_console_label">HAND CONTROL</string>
+    <string name="product_mapping_label">CHANGE MAPPING</string>
+    <string name="product_settings_kicker">DEVICE &amp; PREFERENCES</string>
+    <string name="product_settings_input_group">Input</string>
 </resources>

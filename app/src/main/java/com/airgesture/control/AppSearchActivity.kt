@@ -37,8 +37,8 @@ class AppSearchActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge(statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
-            navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT))
+        enableEdgeToEdge(statusBarStyle = SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT))
         @Suppress("DEPRECATION")
         val resolved = packageManager.queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER), 0)
         val collator = Collator.getInstance()
@@ -62,8 +62,9 @@ class AppSearchActivity : ComponentActivity() {
         }
         val heading = TextView(this).apply {
             setText(R.string.product_app_search_title)
-            setTextColor(AergisColors.SilverBright.toArgb())
-            textSize = 28f
+            setTextColor(AergisColors.Text.toArgb())
+            textSize = 34f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
             ViewCompat.setAccessibilityHeading(this, true)
         }
         layout.addView(heading)
