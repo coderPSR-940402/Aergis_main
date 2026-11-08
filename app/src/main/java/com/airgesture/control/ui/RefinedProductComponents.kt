@@ -11,7 +11,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -21,45 +20,33 @@ import com.airgesture.control.RegisteredGesture
 /** Eligibility is supplied by ProductSession; this component never changes runtime itself. */
 @Composable
 internal fun ControlCommandCenter(
-    running: Boolean, armed: Boolean, canToggleArm: Boolean, actions: ProductActionState,
-    onCapture: () -> Unit, onArm: () -> Unit
+    running: Boolean, actions: ProductActionState, statusLabel: Int, description: String,
+    primaryLabel: Int, enabled: Boolean, onPrimary: () -> Unit, onStop: () -> Unit
 ) {
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    val accent = when (actions) {
+        ProductActionState.ARMED -> AergisColors.Yellow
+        ProductActionState.PAUSED -> AergisColors.Caution
+        else -> AergisColors.Purple
+    }
+    AergisPanel(accent = accent.copy(alpha = .55f)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                ProductEyebrow(stringResource(R.string.refined_everyday))
-                Text(stringResource(R.string.refined_home_title), style = MaterialTheme.typography.headlineLarge,
-                    modifier = Modifier.semantics { heading() })
+            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                ProductEyebrow(stringResource(R.string.product_session_label))
+                Text(stringResource(statusLabel), style = MaterialTheme.typography.headlineMedium,
+                    color = accent, modifier = Modifier.semantics { heading() })
             }
-            val cameraLabel = stringResource(if (running) R.string.stop_capture else R.string.start_capture)
-            FilledTonalIconButton(onClick = onCapture,
-                modifier = Modifier.size(52.dp).semantics { contentDescription = cameraLabel },
-                shape = AergisShapes.Control,
-                colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = AergisColors.Raised)) {
-                AergisIcon(AergisGlyph.CAMERA, Modifier.size(22.dp), if (running) AergisColors.Silver else AergisColors.Muted)
+            if (LocalDensity.current.fontScale <= 1.3f) {
+                ControlInstrument(actions == ProductActionState.ARMED, !running, Modifier.size(90.dp))
             }
         }
-        HorizontalDivider(Modifier.padding(top = 8.dp), color = AergisColors.Outline.copy(alpha = .55f))
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween) {
-            AergisStatusChip(stringResource(actions.label()),
-                if (actions == ProductActionState.ARMED) AergisColors.Yellow else AergisColors.Purple)
-            Text(stringResource(R.string.refined_instrument_code), style = MaterialTheme.typography.labelSmall, color = AergisColors.Muted)
+        Text(description, color = AergisColors.Muted, style = MaterialTheme.typography.bodyMedium)
+        AergisButton(onPrimary, Modifier.fillMaxWidth(), enabled = enabled, primary = true) {
+            Text(stringResource(primaryLabel))
         }
-        ControlInstrument(actions == ProductActionState.ARMED, !running,
-            Modifier.align(Alignment.CenterHorizontally).size(216.dp))
-        Text(stringResource(if (running) R.string.refined_hand_caption else R.string.product_hero_stopped_help),
-            style = MaterialTheme.typography.bodySmall, color = AergisColors.Muted,
-            modifier = Modifier.align(Alignment.CenterHorizontally))
-        AergisButton(onClick = if (running || armed) onArm else onCapture,
-            enabled = armed || !running || canToggleArm, primary = true, modifier = Modifier.fillMaxWidth()) {
-            Text(stringResource(if (armed) R.string.disarm_control else if (!running) R.string.start_capture else R.string.arm_control),
-                modifier = Modifier.weight(1f))
-            AergisIcon(if (armed) AergisGlyph.POWER else AergisGlyph.ARROW, Modifier.size(20.dp), AergisColors.Background)
+        if (running && primaryLabel != R.string.stop_capture) {
+            AergisButton(onStop, Modifier.fillMaxWidth()) { Text(stringResource(R.string.stop_capture)) }
         }
-        Text(stringResource(if (armed) R.string.refined_disarm_caption else R.string.refined_safety_caption),
-            style = MaterialTheme.typography.bodySmall, color = AergisColors.Muted)
     }
 }
 
@@ -102,21 +89,6 @@ private fun InputTile(destination: AergisDestination, caption: String, modifier:
             Text(stringResource(destination.label), style = MaterialTheme.typography.titleSmall)
             Text(caption, color = AergisColors.Muted, style = MaterialTheme.typography.bodySmall)
         }
-    }
-}
-
-@Composable
-internal fun GestureLibraryIntro() {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(RegisteredGesture.entries.size.toString(), style = MaterialTheme.typography.displayMedium,
-                color = AergisColors.SilverBright)
-            Text(stringResource(R.string.refined_possibilities), style = MaterialTheme.typography.titleLarge,
-                color = AergisColors.Muted)
-            Text(stringResource(R.string.refined_language), style = MaterialTheme.typography.bodyMedium,
-                color = AergisColors.Muted)
-        }
-        SculptedHand(RegisteredGesture.VICTORY, Modifier.width(120.dp).height(166.dp))
     }
 }
 

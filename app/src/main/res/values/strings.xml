@@ -244,7 +244,7 @@
     <string name="ui_mapping_save">Save</string>
     <string name="ui_mapping_cancel">Cancel</string>
     <string name="calibration_raw_preview">Hand position within the camera view</string>
-    <string name="calibration_guided_intro">Choose a relaxed hand position. Capture the four corners of your comfortable movement area, then save. Starting calibration disarms actions; use the touchscreen for these controls.</string>
+    <string name="calibration_guided_intro">Choose a relaxed hand position. Capture the four corners of your comfortable movement area, then save. Use a thumb-to-middle pinch or the on-screen button to capture each corner.</string>
     <string name="calibration_begin_guided">Calibrate comfortable reach</string>
     <string name="calibration_actions_disarmed">Keep actions off while capturing all four corners. Hand tracking stays on; use the touchscreen to capture and save. Enable actions only after saving.</string>
     <string name="calibration_corner_top_left">1 of 4 · Move to your comfortable top-left corner.</string>
@@ -307,7 +307,7 @@
     <string name="mapping_four_little_folded">Four / Little Folded (experimental)</string>
     <string name="mapping_three_outer_fingers">Three Outer Fingers (experimental)</string>
     <string name="mapping_four_index_folded">Four / Index Folded (experimental)</string>
-    <string name="app_search_help">App search: scroll gestures select an app. Swipe right launches; swipe left closes. Assign Arm one motion command to use deliberate hand movement.</string>
+    <string name="app_search_help">Use a scroll gesture to move the selection. Swipe right to open the selected app or left to close search.</string>
     <string name="action_pointer_drag">Precision drag: start / release</string>
     <string name="action_focus_next">Focus next control</string>
     <string name="action_focus_previous">Focus previous control</string>

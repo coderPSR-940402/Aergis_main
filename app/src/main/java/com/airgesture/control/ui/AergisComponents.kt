@@ -7,6 +7,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -102,13 +104,15 @@ internal fun AergisSection(title: String, description: String? = null) {
 
 @Composable
 internal fun AergisSettingRow(title: String, description: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp)
+        .toggleable(value = checked, role = Role.Switch, onValueChange = onCheckedChange)
+        .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(title, style = MaterialTheme.typography.titleSmall)
             Text(description, color = AergisColors.Muted, style = MaterialTheme.typography.bodyMedium)
         }
-        val stateLabel = stringResource(if (checked) R.string.ui_switch_on else R.string.ui_switch_off, title)
-        Switch(checked, onCheckedChange, modifier = Modifier.semantics { stateDescription = stateLabel })
+        Switch(checked, onCheckedChange = null)
     }
 }
 
@@ -126,7 +130,7 @@ internal fun AergisSlider(label: String, value: Float, range: ClosedFloatingPoin
 @Composable
 internal fun AergisSegmentedTabs(labels: List<String>, selected: Int, onSelected: (Int) -> Unit, modifier: Modifier = Modifier) {
     Row(
-        modifier.fillMaxWidth().background(AergisColors.Surface, AergisShapes.Control).border(1.dp, AergisColors.Outline.copy(alpha = .65f), AergisShapes.Control).padding(4.dp),
+        modifier.fillMaxWidth().selectableGroup().background(AergisColors.Surface, AergisShapes.Control).border(1.dp, AergisColors.Outline.copy(alpha = .65f), AergisShapes.Control).padding(4.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         labels.forEachIndexed { index, label ->
@@ -138,7 +142,8 @@ internal fun AergisSegmentedTabs(labels: List<String>, selected: Int, onSelected
                     .selectable(selected = isSelected, onClick = { onSelected(index) }, role = Role.Tab),
                 contentAlignment = Alignment.Center
             ) {
-                Text(label, style = MaterialTheme.typography.labelLarge,
+                Text(label, style = MaterialTheme.typography.labelMedium,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.padding(4.dp),
                     color = if (isSelected) AergisColors.Text else AergisColors.Muted)
             }
         }

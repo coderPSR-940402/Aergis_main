@@ -1,6 +1,7 @@
 package com.airgesture.control.ui
 
 import androidx.compose.foundation.Canvas
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -67,16 +68,20 @@ internal fun WelcomeScreen(cameraAllowed: Boolean, accessibilityEnabled: Boolean
     onCamera: () -> Unit, onAccessibility: () -> Unit, onAppDetails: () -> Unit,
     handSelector: @Composable () -> Unit, onNavigate: (AergisDestination) -> Unit) {
     var step by rememberSaveable { mutableIntStateOf(0) }
+    BackHandler(enabled = step > 0) { step-- }
     ProductPage(R.string.product_welcome) {
+        ProductEyebrow(stringResource(R.string.product_setup_progress, step + 1, 3))
         LinearProgressIndicator(progress = { (step + 1) / 3f }, modifier = Modifier.fillMaxWidth(), color = AergisColors.Purple)
         when (step) {
             0 -> {
                 GestureIllustration(RegisteredGesture.OPEN_PALM)
                 Text(stringResource(R.string.product_welcome_title), style = MaterialTheme.typography.headlineLarge)
                 Text(stringResource(R.string.product_welcome_help), color = AergisColors.Muted)
-                PrivacyPanel()
+                Text(stringResource(R.string.product_local_setup_note), color = AergisColors.Purple)
                 AergisButton({ step = 1 }, Modifier.fillMaxWidth(), primary = true) { Text(stringResource(R.string.product_setup_start)) }
-                TextButton({ onNavigate(AergisDestination.CONTROL) }) { Text(stringResource(R.string.product_explore)) }
+                TextButton({ onNavigate(AergisDestination.CONTROL) }, Modifier.heightIn(min = 48.dp)) {
+                    Text(stringResource(R.string.product_explore))
+                }
             }
             1 -> {
                 AergisSection(stringResource(R.string.product_setup_permissions), stringResource(R.string.product_setup_permissions_help))
@@ -84,13 +89,14 @@ internal fun WelcomeScreen(cameraAllowed: Boolean, accessibilityEnabled: Boolean
                 AergisButton({ step = 2 }, Modifier.fillMaxWidth(), enabled = cameraAllowed && accessibilityEnabled, primary = true) {
                     Text(stringResource(R.string.product_continue))
                 }
-                TextButton({ step = 0 }) { Text(stringResource(R.string.product_back)) }
+                TextButton({ step-- }, Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.product_back)) }
             }
             else -> {
                 AergisSection(stringResource(R.string.product_setup_hand), stringResource(R.string.product_setup_hand_help))
                 AergisPanel { handSelector() }
                 AergisButton({ onNavigate(AergisDestination.CONTROL) }, Modifier.fillMaxWidth(), primary = true) { Text(stringResource(R.string.product_go_control)) }
                 ProductLink(AergisDestination.LEARN, stringResource(R.string.product_learn_help), onNavigate)
+                TextButton({ step-- }, Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.product_back)) }
             }
         }
     }
@@ -100,16 +106,21 @@ internal fun WelcomeScreen(cameraAllowed: Boolean, accessibilityEnabled: Boolean
 internal fun PermissionsPanel(cameraAllowed: Boolean, accessibilityEnabled: Boolean,
     onCamera: () -> Unit, onAccessibility: () -> Unit, onAppDetails: () -> Unit) {
     AergisPanel {
-        Text(stringResource(R.string.ui_camera), style = MaterialTheme.typography.titleSmall)
-        Text(stringResource(R.string.product_camera_permission_help), color = AergisColors.Muted)
-        AergisStatusChip(stringResource(if (cameraAllowed) R.string.status_enabled else R.string.status_not_enabled))
-        AergisButton(onCamera, Modifier.fillMaxWidth(), enabled = !cameraAllowed) { Text(stringResource(R.string.product_allow_camera)) }
-        HorizontalDivider(color = AergisColors.Outline)
-        Text(stringResource(R.string.ui_permissions_title), style = MaterialTheme.typography.titleSmall)
-        Text(stringResource(R.string.product_access_permission_help), color = AergisColors.Muted)
-        AergisStatusChip(stringResource(if (accessibilityEnabled) R.string.status_enabled else R.string.status_not_enabled))
-        AergisButton(onAccessibility, Modifier.fillMaxWidth()) { Text(stringResource(R.string.accessibility_settings)) }
-        AergisButton(onAppDetails, Modifier.fillMaxWidth()) { Text(stringResource(R.string.app_settings)) }
+        AergisSection(stringResource(R.string.ui_camera), stringResource(R.string.product_camera_permission_help))
+        AergisStatusChip(stringResource(if (cameraAllowed) R.string.status_enabled else R.string.status_not_enabled),
+            if (cameraAllowed) AergisColors.Success else AergisColors.Caution)
+        if (!cameraAllowed) {
+            AergisButton(onCamera, Modifier.fillMaxWidth(), primary = true) { Text(stringResource(R.string.product_allow_camera)) }
+            TextButton(onAppDetails, Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.app_settings)) }
+        }
+    }
+    AergisPanel {
+        AergisSection(stringResource(R.string.product_accessibility_title), stringResource(R.string.product_access_permission_help))
+        AergisStatusChip(stringResource(if (accessibilityEnabled) R.string.status_enabled else R.string.status_not_enabled),
+            if (accessibilityEnabled) AergisColors.Success else AergisColors.Caution)
+        AergisButton(onAccessibility, Modifier.fillMaxWidth(), primary = cameraAllowed && !accessibilityEnabled) {
+            Text(stringResource(R.string.accessibility_settings))
+        }
     }
 }
 
@@ -170,22 +181,38 @@ internal fun MotionWalkthrough(onNavigate: (AergisDestination) -> Unit) {
 
 @Composable
 internal fun LearnGesturesScreen(mapping: (RegisteredGesture) -> AirAction,
-    onEdit: (RegisteredGesture) -> Unit, onNavigate: (AergisDestination) -> Unit) {
+    onEdit: (RegisteredGesture) -> Unit, onNavigate: (AergisDestination) -> Unit,
+    readiness: @Composable () -> Unit
+) {
     var gestureName by rememberSaveable { mutableStateOf(RegisteredGesture.VICTORY.name) }
     val gesture = RegisteredGesture.entries.firstOrNull { it.name == gestureName } ?: RegisteredGesture.VICTORY
+    val signalFlow = remember {
+        AirRuntime.uiState.map { state ->
+            RegisteredGesture.fromSignal(state.lastGesture)
+                ?.takeIf { state.running && state.visionReady && state.handsDetected > 0 }
+        }.distinctUntilChanged()
+    }
+    val signal by signalFlow.collectAsStateWithLifecycle(initialValue = null)
     ProductPage(R.string.product_learn) {
         RehearsalStatus()
-        GestureIllustration(gesture)
+        readiness()
+        SculptedHand(gesture, Modifier.fillMaxWidth().height(140.dp))
         Text(stringResource(R.string.product_pose_index, gesture.ordinal + 1, RegisteredGesture.entries.size), color = AergisColors.Muted)
         AergisSection(stringResource(gestureLabelRes(gesture)), stringResource(gestureHelpRes(gesture)))
         AergisStatusChip(actionLabel(mapping(gesture)), AergisColors.Yellow)
-        Text(stringResource(R.string.product_guide_help), color = AergisColors.Muted)
-        // Stacked controls remain usable at large font scales and narrow widths.
-        AergisButton({ gestureName = RegisteredGesture.entries[(gesture.ordinal + RegisteredGesture.entries.size - 1) % RegisteredGesture.entries.size].name }, Modifier.fillMaxWidth()) {
-            Text(stringResource(R.string.product_previous))
+        AergisPanel {
+            Text(stringResource(R.string.product_live_signal,
+                signal?.let { stringResource(gestureLabelRes(it)) } ?: stringResource(R.string.product_live_signal_empty)),
+                color = if (signal == gesture) AergisColors.Success else AergisColors.Muted)
+            Text(stringResource(R.string.product_guide_help), color = AergisColors.Muted, style = MaterialTheme.typography.bodySmall)
         }
-        AergisButton({ gestureName = RegisteredGesture.entries[(gesture.ordinal + 1) % RegisteredGesture.entries.size].name }, Modifier.fillMaxWidth()) {
-            Text(stringResource(R.string.product_next))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            AergisButton({
+                gestureName = RegisteredGesture.entries[(gesture.ordinal + RegisteredGesture.entries.size - 1) % RegisteredGesture.entries.size].name
+            }, Modifier.weight(1f)) { Text(stringResource(R.string.product_previous)) }
+            AergisButton({
+                gestureName = RegisteredGesture.entries[(gesture.ordinal + 1) % RegisteredGesture.entries.size].name
+            }, Modifier.weight(1f)) { Text(stringResource(R.string.product_next)) }
         }
         AergisButton({ onEdit(gesture) }, Modifier.fillMaxWidth(), primary = true) { Text(stringResource(R.string.product_assign_pose)) }
         ProductLink(AergisDestination.LIVE, stringResource(R.string.product_live_help), onNavigate)

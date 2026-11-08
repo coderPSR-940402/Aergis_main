@@ -16,6 +16,7 @@ import androidx.compose.ui.unit.dp
 import com.airgesture.control.AirRuntime
 import com.airgesture.control.ControlMode
 import com.airgesture.control.RegisteredGesture
+import com.airgesture.control.R
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -38,8 +39,8 @@ class RefinedProductUiTest {
         AirRuntime.controlMode = ControlMode.READY
         compose.setContent {
             AergisTheme {
-                AergisShell(true) { _, navigate ->
-                    ControlScreen(true, false, false, true, 5, null, { captures++ }, { arms++ }, {}, navigate)
+                AergisShell { _, navigate ->
+                    ControlScreen(true, false, true, 5, null, { captures++ }, {}, { arms++ }, {}, navigate)
                 }
             }
         }
@@ -48,33 +49,52 @@ class RefinedProductUiTest {
         screenshot("stopped-command")
     }
 
+    @Test fun missingCameraRoutesToPermissionsWithoutStartingCapture() {
+        var captures = 0
+        var route: AergisDestination? = null
+        AirRuntime.running = false
+        AirRuntime.controlMode = ControlMode.READY
+        compose.setContent {
+            PreviewSurface {
+                ControlScreen(true, false, true, 5, null, { captures++ }, {}, {}, {}, { route = it },
+                    cameraAllowed = false)
+            }
+        }
+        compose.onNodeWithText("Complete setup").performClick()
+        compose.runOnIdle {
+            assertEquals(0, captures)
+            assertEquals(AergisDestination.PERMISSIONS, route)
+        }
+    }
+
     @Test fun unsafeArmedSessionRetainsDisarmAndSeparateStop() {
         var captures = 0
         var arms = 0
         compose.setContent {
             PreviewSurface {
-                ControlCommandCenter(true, true, true, ProductActionState.PAUSED,
-                    { captures++ }, { arms++ })
+                ControlCommandCenter(true, ProductActionState.PAUSED, R.string.product_action_paused,
+                    "Protected screen", R.string.disarm_control, true, { arms++ }, { captures++ })
             }
         }
         compose.onNodeWithText("Disarm control").performClick()
         compose.runOnIdle { assertEquals(1, arms); assertEquals(0, captures) }
-        compose.onNodeWithContentDescription("Stop capture").performClick()
+        compose.onNodeWithText("Stop capture").performClick()
         compose.runOnIdle { assertEquals(1, captures); assertEquals(1, arms) }
     }
 
     @Test fun stoppedCameraCannotHideDisarmForAnArmedMode() {
         var captures = 0
         var arms = 0
+        AirRuntime.running = false
+        AirRuntime.controlMode = ControlMode.ARMED
         compose.setContent {
             PreviewSurface {
-                ControlCommandCenter(false, true, true, ProductActionState.STOPPED,
-                    { captures++ }, { arms++ })
+                ControlScreen(true, false, true, 5, null, { captures++ }, {}, { arms++ }, {}, {})
             }
         }
         compose.onNodeWithText("Disarm control").assertIsEnabled().performClick()
         compose.runOnIdle { assertEquals(1, arms); assertEquals(0, captures) }
-        compose.onNodeWithContentDescription("Start capture").assertIsDisplayed()
+        compose.onNodeWithText("Start capture").assertDoesNotExist()
     }
 
     @Test fun largeTextNarrowLayoutKeepsPrimaryAndInputDestinationsReachable() {
@@ -83,7 +103,8 @@ class RefinedProductUiTest {
             CompositionLocalProvider(LocalDensity provides Density(1f, 1.6f)) {
                 PreviewSurface {
                     Column(Modifier.width(320.dp).fillMaxHeight().verticalScroll(rememberScrollState())) {
-                        ControlCommandCenter(true, false, false, ProductActionState.DISARMED, {}, {})
+                        ControlCommandCenter(true, ProductActionState.DISARMED, R.string.product_action_disarmed,
+                            "Starting the camera", R.string.arm_control, false, {}, {})
                         ProductInputTiles(5) { route = it }
                     }
                 }
@@ -99,7 +120,7 @@ class RefinedProductUiTest {
         compose.setContent {
             PreviewSurface {
                 Column(Modifier.width(411.dp)) {
-                    GestureLibraryIntro()
+                    ProductHeading(R.string.product_gestures, R.string.product_gesture_kicker)
                     GestureMappingRow(RegisteredGesture.VICTORY, "Victory", "Back", "Two fingers extended", null) {}
                     DirectionInstrument(Modifier.fillMaxWidth().height(220.dp))
                 }
