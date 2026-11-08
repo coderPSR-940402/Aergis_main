@@ -33,6 +33,7 @@ class AppSearchActivity : ComponentActivity() {
     private lateinit var searchField: EditText
     private lateinit var emptyState: TextView
     private var duplicateLabels = emptySet<String>()
+    private var duplicatePackageLabels = emptySet<Pair<String, String>>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -45,6 +46,7 @@ class AppSearchActivity : ComponentActivity() {
             .distinctBy { it.packageName to it.className }
             .sortedWith { first, second -> collator.compare(first.label, second.label) }
         duplicateLabels = apps.groupingBy { it.label }.eachCount().filterValues { it > 1 }.keys
+        duplicatePackageLabels = apps.groupingBy { it.label to it.packageName }.eachCount().filterValues { it > 1 }.keys
 
         val gutter = (20 * resources.displayMetrics.density).toInt()
         val minTarget = (48 * resources.displayMetrics.density).toInt()
@@ -136,7 +138,13 @@ class AppSearchActivity : ComponentActivity() {
         adapter.setNotifyOnChange(false)
         adapter.clear()
         adapter.addAll(shown.map {
-            if (it.label in duplicateLabels) getString(R.string.product_app_search_duplicate, it.label, it.packageName) else it.label
+            when {
+                (it.label to it.packageName) in duplicatePackageLabels ->
+                    getString(R.string.product_app_search_duplicate, it.label,
+                        android.content.ComponentName(it.packageName, it.className).flattenToShortString())
+                it.label in duplicateLabels -> getString(R.string.product_app_search_duplicate, it.label, it.packageName)
+                else -> it.label
+            }
         })
         adapter.notifyDataSetChanged()
         emptyState.visibility = if (shown.isEmpty()) View.VISIBLE else View.GONE

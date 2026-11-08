@@ -167,4 +167,7 @@ A gesture away.</string>
     <string name="product_app_search_empty">No apps match your search.</string>
     <string name="product_app_search_close">Close app search</string>
     <string name="product_app_search_duplicate">%1$s · %2$s</string>
+    <string name="product_hide_navigation_preset">Hide navigation preset</string>
+    <string name="product_accessibility_recovery">If Android marks this service as restricted, open App settings and look for Allow restricted settings in the menu.</string>
+    <string name="product_foreground_wait">Waiting for Android to confirm which screen is active.</string>
 </resources>

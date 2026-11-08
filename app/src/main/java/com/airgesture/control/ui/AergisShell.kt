@@ -10,10 +10,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.airgesture.control.AirRuntime
+import com.airgesture.control.ControlMode
+import com.airgesture.control.ForegroundSafety
 import com.airgesture.control.R
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 
 @Composable
 internal fun AergisShell(
+    inputEnabled: Boolean = true,
     initialDestination: AergisDestination = AergisDestination.CONTROL,
     onEntering: (AergisDestination) -> Unit = {},
     requestedDestination: AergisDestination? = null,
@@ -77,12 +84,41 @@ internal fun AergisShell(
                         }
                     }
                 }
+                if (selected != AergisDestination.CONTROL) {
+                    ActiveSessionLabel(inputEnabled, onControl = { navigate(AergisDestination.CONTROL) })
+                }
                 HorizontalDivider(color = AergisColors.Outline.copy(alpha = .7f))
                 // A route can keep its UI state without keeping camera or calibration effects alive.
                 screenState.SaveableStateProvider(selected.name) {
                     Box(Modifier.weight(1f)) { content(selected, navigate) }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun ActiveSessionLabel(inputEnabled: Boolean, onControl: () -> Unit) {
+    val flow = remember(inputEnabled) {
+        AirRuntime.uiState.map { runtime ->
+            when {
+                !runtime.running -> null
+                !inputEnabled -> R.string.product_action_disabled
+                runtime.controlMode == ControlMode.PAUSED ||
+                    (runtime.controlMode == ControlMode.ARMED &&
+                        (runtime.foregroundSafety != ForegroundSafety.SAFE || !runtime.cameraReady ||
+                            !runtime.visionReady || runtime.visionError != null)) -> R.string.product_action_paused
+                runtime.controlMode == ControlMode.ARMED -> R.string.product_action_armed
+                else -> R.string.product_action_disarmed
+            }
+        }.distinctUntilChanged()
+    }
+    val label by flow.collectAsStateWithLifecycle(initialValue = null)
+    label?.let {
+        TextButton(onControl, Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+            Text(stringResource(R.string.ui_session_summary, stringResource(R.string.ui_capture_on), stringResource(it)),
+                color = if (it == R.string.product_action_armed) AergisColors.Yellow else AergisColors.Purple,
+                style = MaterialTheme.typography.labelMedium)
         }
     }
 }

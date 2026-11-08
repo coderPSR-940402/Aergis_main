@@ -111,7 +111,9 @@ internal fun PermissionsPanel(cameraAllowed: Boolean, accessibilityEnabled: Bool
             if (cameraAllowed) AergisColors.Success else AergisColors.Caution)
         if (!cameraAllowed) {
             AergisButton(onCamera, Modifier.fillMaxWidth(), primary = true) { Text(stringResource(R.string.product_allow_camera)) }
-            TextButton(onAppDetails, Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.app_settings)) }
+            if (accessibilityEnabled) {
+                TextButton(onAppDetails, Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.app_settings)) }
+            }
         }
     }
     AergisPanel {
@@ -120,6 +122,11 @@ internal fun PermissionsPanel(cameraAllowed: Boolean, accessibilityEnabled: Bool
             if (accessibilityEnabled) AergisColors.Success else AergisColors.Caution)
         AergisButton(onAccessibility, Modifier.fillMaxWidth(), primary = cameraAllowed && !accessibilityEnabled) {
             Text(stringResource(R.string.accessibility_settings))
+        }
+        if (!accessibilityEnabled) {
+            Text(stringResource(R.string.product_accessibility_recovery), color = AergisColors.Muted,
+                style = MaterialTheme.typography.bodySmall)
+            TextButton(onAppDetails, Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.app_settings)) }
         }
     }
 }

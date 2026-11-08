@@ -67,6 +67,19 @@ class RefinedProductUiTest {
         }
     }
 
+    @Test fun cameraGrantedStillExposesAccessibilityRecovery() {
+        var opened = 0
+        compose.setContent {
+            PreviewSurface {
+                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                    PermissionsPanel(true, false, {}, {}, { opened++ })
+                }
+            }
+        }
+        compose.onNodeWithText("App settings").performScrollTo().performClick()
+        compose.runOnIdle { assertEquals(1, opened) }
+    }
+
     @Test fun unsafeArmedSessionRetainsDisarmAndSeparateStop() {
         var captures = 0
         var arms = 0
@@ -84,16 +97,18 @@ class RefinedProductUiTest {
 
     @Test fun stoppedCameraCannotHideDisarmForAnArmedMode() {
         var captures = 0
-        var arms = 0
+        val commands = mutableListOf<Boolean>()
         AirRuntime.running = false
         AirRuntime.controlMode = ControlMode.ARMED
         compose.setContent {
             PreviewSurface {
-                ControlScreen(true, false, true, 5, null, { captures++ }, {}, { arms++ }, {}, {})
+                ControlScreen(true, false, true, 5, null, { captures++ }, {}, { commands += it }, {}, {})
             }
         }
-        compose.onNodeWithText("Disarm control").assertIsEnabled().performClick()
-        compose.runOnIdle { assertEquals(1, arms); assertEquals(0, captures) }
+        val disarm = compose.onNodeWithText("Disarm control").assertIsEnabled()
+        disarm.performClick()
+        disarm.performClick()
+        compose.runOnIdle { assertEquals(listOf(false, false), commands); assertEquals(0, captures) }
         compose.onNodeWithText("Start capture").assertDoesNotExist()
     }
 

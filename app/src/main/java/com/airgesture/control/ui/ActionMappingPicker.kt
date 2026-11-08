@@ -51,29 +51,6 @@ internal fun ActionMappingPicker(
                 Text(stringResource(R.string.product_map_intro), color = AergisColors.Muted)
                 OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth(),
                     label = { Text(stringResource(R.string.product_search_actions)) }, singleLine = true)
-                Column(Modifier.fillMaxWidth().selectableGroup()) {
-                    rows.groupBy { actionGroupRes(it.first) }.forEach { (group, actions) ->
-                        Text(stringResource(group), color = AergisColors.Purple, style = MaterialTheme.typography.labelMedium,
-                            modifier = Modifier.padding(vertical = 12.dp))
-                        actions.forEach { (action, label) ->
-                            val supported = Build.VERSION.SDK_INT >= action.minimumSdk
-                            val restricted = action != AirAction.NONE && !GestureActionPolicy.isClassifierActionEnabled(true, action, pointerEnabled, source)
-                            Row(Modifier.fillMaxWidth().heightIn(min = 56.dp)
-                                .selectable(selected = action == draft, role = Role.RadioButton, enabled = supported,
-                                    onClick = { draftName = action.name }).padding(vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                RadioButton(selected = action == draft, onClick = null, enabled = supported)
-                                Column(Modifier.weight(1f)) {
-                                    Text(label, style = MaterialTheme.typography.bodyLarge)
-                                    if (!supported) Text(stringResource(R.string.action_unavailable), color = AergisColors.Caution)
-                                    if (restricted) Text(stringResource(R.string.ui_mapping_pointer_restriction), color = AergisColors.Caution,
-                                        style = MaterialTheme.typography.bodySmall)
-                                }
-                            }
-                        }
-                    }
-                    if (rows.isEmpty()) Text(stringResource(R.string.product_no_action_matches), modifier = Modifier.padding(16.dp))
-                }
                 val hasTuning = draft != AirAction.NONE && (!source.isLandmarkPose ||
                     draft in setOf(AirAction.VOLUME_UP, AirAction.VOLUME_DOWN, AirAction.SCROLL_UP, AirAction.SCROLL_DOWN, AirAction.LONG_PRESS))
                 if (hasTuning) {
@@ -102,6 +79,29 @@ internal fun ActionMappingPicker(
                     confidence = defaults.confidencePercent.toFloat(); volume = defaults.volumeSteps.toFloat()
                     scroll = defaults.scrollPercent.toFloat(); longPress = defaults.longPressMs.toFloat()
                 }, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.ui_mapping_restore_default)) }
+                Column(Modifier.fillMaxWidth().selectableGroup()) {
+                    rows.groupBy { actionGroupRes(it.first) }.forEach { (group, actions) ->
+                        Text(stringResource(group), color = AergisColors.Purple, style = MaterialTheme.typography.labelMedium,
+                            modifier = Modifier.padding(vertical = 12.dp))
+                        actions.forEach { (action, label) ->
+                            val supported = Build.VERSION.SDK_INT >= action.minimumSdk
+                            val restricted = action != AirAction.NONE && !GestureActionPolicy.isClassifierActionEnabled(true, action, pointerEnabled, source)
+                            Row(Modifier.fillMaxWidth().heightIn(min = 56.dp)
+                                .selectable(selected = action == draft, role = Role.RadioButton, enabled = supported,
+                                    onClick = { draftName = action.name }).padding(vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                RadioButton(selected = action == draft, onClick = null, enabled = supported)
+                                Column(Modifier.weight(1f)) {
+                                    Text(label, style = MaterialTheme.typography.bodyLarge)
+                                    if (!supported) Text(stringResource(R.string.action_unavailable), color = AergisColors.Caution)
+                                    if (restricted) Text(stringResource(R.string.ui_mapping_pointer_restriction), color = AergisColors.Caution,
+                                        style = MaterialTheme.typography.bodySmall)
+                                }
+                            }
+                        }
+                    }
+                    if (rows.isEmpty()) Text(stringResource(R.string.product_no_action_matches), modifier = Modifier.padding(16.dp))
+                }
             }
             HorizontalDivider(color = AergisColors.Outline)
             Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {

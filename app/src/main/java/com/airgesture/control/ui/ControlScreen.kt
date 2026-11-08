@@ -17,13 +17,14 @@ import kotlinx.coroutines.flow.map
 internal fun ControlScreen(
     accessibilityEnabled: Boolean, pointerClickingEnabled: Boolean,
     gesturesEnabled: Boolean, assignedCount: Int, startError: String?, onStart: () -> Unit, onStop: () -> Unit,
-    onArm: () -> Unit, onGestures: (Boolean) -> Unit, onNavigate: (AergisDestination) -> Unit,
+    onArm: (Boolean) -> Unit, onGestures: (Boolean) -> Unit, onNavigate: (AergisDestination) -> Unit,
     cameraAllowed: Boolean = true
 ) {
     // Project only visible state so per-frame telemetry cannot invalidate this screen.
     val flow = remember { AirRuntime.uiState.map { HomeUiState.from(it) }.distinctUntilChanged() }
     val home by flow.collectAsStateWithLifecycle(initialValue = HomeUiState.from(AirRuntime.uiStateSnapshot()))
-    val session = ProductSession.from(home.running, home.cameraReady, home.visionReady, home.visionError,
+    val visionError = home.visionError
+    val session = ProductSession.from(home.running, home.cameraReady, home.visionReady, visionError,
         home.controlMode, home.foregroundSafety, accessibilityEnabled, gesturesEnabled || pointerClickingEnabled)
     val armed = home.controlMode == ControlMode.ARMED
     val setupMissing = !cameraAllowed || !accessibilityEnabled
@@ -33,7 +34,7 @@ internal fun ControlScreen(
         armed -> R.string.disarm_control
         setupMissing -> R.string.product_complete_setup
         !home.running -> R.string.start_capture
-        home.visionError != null -> R.string.stop_capture
+        visionError != null -> R.string.stop_capture
         noActions -> R.string.product_enable_gestures
         !session.canToggleArm -> R.string.product_waiting_to_arm
         manualPause -> R.string.product_resume_controls
@@ -42,16 +43,17 @@ internal fun ControlScreen(
     val status = when {
         armed && session.actions == ProductActionState.PAUSED -> R.string.product_action_paused
         setupMissing -> R.string.product_setup_required
-        home.running && home.visionError != null -> R.string.product_tracking_problem
+        home.running && visionError != null -> R.string.product_tracking_problem
         home.running && (!home.cameraReady || !home.visionReady) -> R.string.product_tracking_starting
         else -> session.actions.label()
     }
     val detail = when {
         setupMissing -> stringResource(R.string.product_setup_required_help)
-        home.visionError != null -> home.visionError
+        visionError != null -> visionError
         !home.running -> startError ?: stringResource(R.string.product_hero_stopped_help)
         !home.cameraReady || !home.visionReady -> stringResource(R.string.product_camera_starting)
-        home.foregroundSafety != ForegroundSafety.SAFE -> stringResource(R.string.product_protected_help)
+        home.foregroundSafety == ForegroundSafety.PROTECTED -> stringResource(R.string.product_protected_help)
+        home.foregroundSafety == ForegroundSafety.UNKNOWN -> stringResource(R.string.product_foreground_wait)
         noActions -> stringResource(R.string.product_no_action_channels)
         manualPause -> stringResource(R.string.product_resume_help)
         armed -> stringResource(R.string.refined_disarm_caption)
@@ -70,7 +72,8 @@ internal fun ControlScreen(
                         R.string.start_capture -> onStart()
                         R.string.stop_capture -> onStop()
                         R.string.product_enable_gestures -> onGestures(true)
-                        else -> onArm()
+                        R.string.disarm_control -> onArm(false)
+                        else -> onArm(true)
                     }
                 }, onStop = onStop)
         }
@@ -79,7 +82,7 @@ internal fun ControlScreen(
                 AergisSection(stringResource(R.string.product_feedback_title))
                 val handStatus = when {
                     !home.running -> R.string.product_camera_off
-                    home.visionError != null -> R.string.product_tracking_problem
+                    visionError != null -> R.string.product_tracking_problem
                     !home.cameraReady || !home.visionReady -> R.string.product_camera_starting
                     home.handsDetected == 0 -> R.string.product_no_hand
                     else -> R.string.product_hand_visible

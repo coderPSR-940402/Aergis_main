@@ -327,7 +327,7 @@
     <string name="pose_gun_help">Extend thumb and index for Finger gun; extend thumb, index and middle for Double finger gun. Fold ring and little fingers. Direction follows the screen; avoid diagonals. Existing generic mappings remain unless a directional mapping is assigned.</string>
     <string name="action_toggle_pointer">Toggle precision pointer</string>
     <string name="touch_free_preset_apply">Add touch-free navigation mappings</string>
-    <string name="touch_free_preset_help">Fill unassigned poses with next item, previous item, select, scrolling, app search, system panels, motion control and pointer toggle. Existing assignments stay unchanged. Review the mappings below and practise the poses before use.</string>
+    <string name="touch_free_preset_help">Fill unassigned poses with next item, previous item, select, scrolling, app search, system panels, motion control and pointer toggle. Existing assignments stay unchanged. Review the mappings in the gesture library and practise the poses before use.</string>
     <string name="touch_free_preset_complete">All navigation setup actions have a gesture assigned. Existing mappings were kept.</string>
     <string name="touch_free_preset_missing">Still unassigned: %1$s. Assign these actions to gestures below. Existing mappings were kept.</string>
     <string name="calibration_touch_free">Touch-free: aim steadily at each corner, then pinch thumb to middle finger once. After four corners, hold an open palm for 1 second to save. Hold a closed fist for 1.2 seconds to cancel. Actions stay disarmed.</string>

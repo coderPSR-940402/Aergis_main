@@ -211,13 +211,12 @@ class MainActivity : ComponentActivity() {
         ContextCompat.startForegroundService(this, Intent(this, GestureCaptureService::class.java))
     }
 
-    private fun toggleArming() {
+    private fun setArmed(armed: Boolean) {
         val runtime = AirRuntime.uiStateSnapshot()
-        if (runtime.controlMode == ControlMode.ARMED) {
-            AirRuntime.controlMode = ControlMode.READY
-        } else if (cameraAllowed && ProductSession.from(runtime, AirAccessibilityService.enabled(),
-                gesturesEnabled, pointerEnabled, pointerClickingEnabled).canToggleArm) {
-            AirRuntime.controlMode = ControlMode.ARMED
+        if (armed == (runtime.controlMode == ControlMode.ARMED)) return
+        if (!armed || (cameraAllowed && ProductSession.from(runtime, AirAccessibilityService.enabled(),
+                gesturesEnabled, pointerEnabled, pointerClickingEnabled).canToggleArm)) {
+            AirRuntime.controlMode = if (armed) ControlMode.ARMED else ControlMode.READY
         }
     }
 
@@ -340,6 +339,7 @@ class MainActivity : ComponentActivity() {
         val edit: (RegisteredGesture) -> Unit = { editingName = it.name }
         AergisTheme {
             AergisShell(
+                inputEnabled = gesturesEnabled || pointerClickingEnabled,
                 initialDestination = if (accessibilityEnabled && cameraAllowed) AergisDestination.CONTROL else AergisDestination.WELCOME,
                 onEntering = { if (it.disarmsOnEntry) AirRuntime.controlMode = ControlMode.READY },
                 requestedDestination = requestedDestination,
@@ -350,7 +350,7 @@ class MainActivity : ComponentActivity() {
                         accessibilityEnabled, pointerClickingEnabled, gesturesEnabled,
                         RegisteredGesture.entries.count { mapping(it, mappingsVersion) != AirAction.NONE }, sessionStartError,
                         onStart = ::startSession, onStop = ::stopSession,
-                        onArm = ::toggleArming,
+                        onArm = ::setArmed,
                         onGestures = ::setGestureActions, onNavigate = navigate, cameraAllowed = cameraAllowed
                     )
                     AergisDestination.GESTURES -> GesturesScreen(edit, navigate)
@@ -555,6 +555,7 @@ class MainActivity : ComponentActivity() {
         var query by rememberSaveable { mutableStateOf("") }
         var filter by rememberSaveable { mutableIntStateOf(0) }
         var presetApplied by rememberSaveable { mutableStateOf(false) }
+        var presetExpanded by rememberSaveable { mutableStateOf(false) }
         val missingPresetActions = remember(mappingsVersion) {
             TouchFreeNavigationPreset.missingActions(ActionMappingStore(this@MainActivity))
         }
@@ -596,10 +597,12 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
-            rows.forEach { (gesture, action) -> item(key = gesture.name) { MappingRow(gesture, action, onEdit) } }
-            item {
-                AergisPanel {
-                    AergisSection(stringResource(R.string.product_navigation_preset), stringResource(R.string.touch_free_preset_help))
+            if (term.isEmpty()) item(key = "navigation-preset") {
+                AergisButton({ presetExpanded = !presetExpanded }, Modifier.fillMaxWidth()) {
+                    Text(stringResource(if (presetExpanded) R.string.product_hide_navigation_preset else R.string.product_navigation_preset))
+                }
+                if (presetExpanded) AergisPanel(Modifier.padding(top = 8.dp)) {
+                    Text(stringResource(R.string.touch_free_preset_help), color = AergisColors.Muted)
                     AergisButton(onClick = {
                         TouchFreeNavigationPreset.apply(ActionMappingStore(this@MainActivity))
                         presetApplied = true
@@ -616,6 +619,7 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
+            rows.forEach { (gesture, action) -> item(key = gesture.name) { MappingRow(gesture, action, onEdit) } }
         }
     }
 
