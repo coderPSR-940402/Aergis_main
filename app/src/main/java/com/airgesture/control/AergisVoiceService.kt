@@ -45,7 +45,7 @@ class AergisVoiceService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var conversation: ConversationSession? = null
     private var started = false
-    private var closing = false
+    @Volatile private var closing = false
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -95,7 +95,12 @@ class AergisVoiceService : Service() {
                         }
                     )
                 )
-                conversation = ConversationClient.startSession(config, this@AergisVoiceService)
+                val session = ConversationClient.startSession(config, this@AergisVoiceService)
+                if (closing) {
+                    withTimeoutOrNull(3000L) { session.endSession() }
+                } else {
+                    conversation = session
+                }
             } catch (failure: Exception) {
                 android.util.Log.w("AergisVoice", "Agent connection failed", failure)
                 reportError("Voice service could not connect")
@@ -188,10 +193,18 @@ class AergisVoiceService : Service() {
 
     override fun onDestroy() {
         closing = true
-        conversation?.endSession()
+        val ending = conversation
         conversation = null
-        scope.cancel()
         state.value = AergisVoiceState()
+        // ElevenLabs endSession() is suspend. Keep a bounded cleanup coroutine
+        // alive until the LiveKit microphone/audio tracks are released.
+        scope.launch(Dispatchers.IO) {
+            try {
+                if (ending != null) withTimeoutOrNull(3000L) { ending.endSession() }
+            } finally {
+                scope.cancel()
+            }
+        }
         super.onDestroy()
     }
 
