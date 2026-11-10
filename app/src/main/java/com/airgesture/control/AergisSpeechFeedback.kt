@@ -17,14 +17,14 @@ internal class AergisSpeechFeedback(private val context: Context, scope: Corouti
     private val tts = TextToSpeech(context) { status -> ready = status == TextToSpeech.SUCCESS }
     private val feedbackJob: Job = scope.launch {
         AirRuntime.state.map { it.actionFeedback }.distinctUntilChanged().collectLatest { feedback ->
-            if (feedback?.outcome == null) return@collectLatest
-            if (feedback.outcome == ActionDispatchOutcome.SUBMITTED) delay(700L)
+            val outcome = feedback?.outcome ?: return@collectLatest
+            if (outcome == ActionDispatchOutcome.SUBMITTED) delay(700L)
             val current = AirRuntime.state.value
             if (current.actionFeedback?.requestId != feedback.requestId ||
                 current.actionFeedback?.outcome != feedback.outcome ||
                 !current.running || current.foregroundContext.safety != ForegroundSafety.SAFE ||
                 !enabled(context) || AergisVoiceService.isConnected()) return@collectLatest
-            val spoken = when (feedback.outcome) {
+            val spoken = when (outcome) {
                 ActionDispatchOutcome.COMPLETED -> "${feedback.action.name.replace('_', ' ').lowercase(Locale.ENGLISH)} complete"
                 ActionDispatchOutcome.SUBMITTED -> "${feedback.action.name.replace('_', ' ').lowercase(Locale.ENGLISH)} submitted"
                 ActionDispatchOutcome.POLICY_DENIED -> "Action blocked"
