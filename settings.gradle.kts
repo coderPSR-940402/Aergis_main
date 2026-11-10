@@ -11,6 +11,8 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        // LiveKit audio-route dependency is published to JitPack, not Maven Central.
+        maven(url = "https://jitpack.io")
     }
 }
 
