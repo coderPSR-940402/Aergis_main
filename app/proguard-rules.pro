@@ -11,3 +11,9 @@
 # absent optional classes when producing the minified release APK.
 -dontwarn com.google.mediapipe.proto.CalculatorProfileProto$CalculatorProfile
 -dontwarn com.google.mediapipe.proto.GraphTemplateProto$CalculatorGraphTemplate
+
+# ElevenLabs Android conversation SDK and LiveKit reflection/serialization.
+-keep class io.elevenlabs.** { *; }
+-keep class io.livekit.** { *; }
+-keepattributes *Annotation*
+-keep,allowoptimization class com.airgesture.control.AergisVoiceService { public <init>(); }

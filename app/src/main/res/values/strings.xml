@@ -344,4 +344,11 @@
     <string name="feedback_failed">Action failed</string>
     <string name="capture_notification_pause">Pause controls</string>
     <string name="capture_notification_stop">Stop capture</string>
+    <string name="voice_title">Aergis voice interface</string>
+    <string name="voice_description">Speak naturally to Aergis. Voice commands use the same protected Android control rules as gestures.</string>
+    <string name="voice_connect">Start voice assistant</string>
+    <string name="voice_disconnect">Disconnect voice assistant</string>
+    <string name="voice_feedback_title">Spoken action feedback</string>
+    <string name="voice_feedback_description">Announce important gesture-action results with Android speech when the conversation is off.</string>
+    <string name="voice_privacy">Voice sessions use the microphone and send audio to ElevenLabs. Start explicitly; stop here or from the persistent notification. Voice does not start automatically.</string>
 </resources>

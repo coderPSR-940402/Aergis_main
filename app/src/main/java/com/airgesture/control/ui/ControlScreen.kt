@@ -18,11 +18,15 @@ internal fun ControlScreen(
     accessibilityEnabled: Boolean, pointerClickingEnabled: Boolean,
     gesturesEnabled: Boolean, assignedCount: Int, startError: String?, onStart: () -> Unit, onStop: () -> Unit,
     onArm: (Boolean) -> Unit, onGestures: (Boolean) -> Unit, onNavigate: (AergisDestination) -> Unit,
-    cameraAllowed: Boolean = true
+    cameraAllowed: Boolean = true,
+    onVoiceStart: () -> Unit = {}, onVoiceStop: () -> Unit = {}
 ) {
     // Project only visible state so per-frame telemetry cannot invalidate this screen.
     val flow = remember { AirRuntime.uiState.map { HomeUiState.from(it) }.distinctUntilChanged() }
     val home by flow.collectAsStateWithLifecycle(initialValue = HomeUiState.from(AirRuntime.uiStateSnapshot()))
+    val voice by AergisVoiceService.status.collectAsStateWithLifecycle()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var spokenFeedback by remember { mutableStateOf(AergisSpeechFeedback.enabled(context)) }
     val visionError = home.visionError
     val session = ProductSession.from(home.running, home.cameraReady, home.visionReady, visionError,
         home.controlMode, home.foregroundSafety, accessibilityEnabled, gesturesEnabled || pointerClickingEnabled)
@@ -86,6 +90,21 @@ internal fun ControlScreen(
         }
         item { AergisSection(stringResource(R.string.product_control_methods)) }
         item { ProductInputTiles(assignedCount, onNavigate) }
+        item {
+            AergisPanel {
+                AergisSection(stringResource(R.string.voice_title), stringResource(R.string.voice_description))
+                Text(voice.message, color = AergisColors.Muted)
+                AergisButton(if (voice.active) onVoiceStop else onVoiceStart, Modifier.fillMaxWidth()) {
+                    Text(stringResource(if (voice.active) R.string.voice_disconnect else R.string.voice_connect))
+                }
+                AergisSettingRow(stringResource(R.string.voice_feedback_title),
+                    stringResource(R.string.voice_feedback_description), spokenFeedback) { enabled ->
+                    spokenFeedback = enabled
+                    AergisSpeechFeedback.setEnabled(context, enabled)
+                }
+                Text(stringResource(R.string.voice_privacy), style = MaterialTheme.typography.bodySmall, color = AergisColors.Muted)
+            }
+        }
         item { AergisSection(stringResource(R.string.product_practice_tools)) }
         item { ProductLink(AergisDestination.LEARN, stringResource(R.string.product_learn_help), onNavigate) }
         item { ProductLink(AergisDestination.PRACTICE, stringResource(R.string.product_practice_help), onNavigate) }

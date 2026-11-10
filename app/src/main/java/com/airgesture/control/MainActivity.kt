@@ -132,6 +132,24 @@ class MainActivity : ComponentActivity() {
         refreshSettings()
     }
 
+    private val microphonePermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) startVoiceSession() else AergisVoiceService.reportError("Microphone permission required")
+    }
+
+    private fun startVoiceSession() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
+            return
+        }
+        runCatching {
+            ContextCompat.startForegroundService(this,
+                Intent(this, AergisVoiceService::class.java).setAction(AergisVoiceService.ACTION_START))
+        }.onFailure { AergisVoiceService.reportError("Could not start microphone service") }
+    }
+
+    private fun stopVoiceSession() = AergisVoiceService.stop(this)
+
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge(
@@ -350,7 +368,8 @@ class MainActivity : ComponentActivity() {
                         RegisteredGesture.entries.count { mapping(it, mappingsVersion) != AirAction.NONE }, sessionStartError,
                         onStart = ::startSession, onStop = ::stopSession,
                         onArm = ::setArmed,
-                        onGestures = ::setGestureActions, onNavigate = navigate, cameraAllowed = cameraAllowed
+                        onGestures = ::setGestureActions, onNavigate = navigate, cameraAllowed = cameraAllowed,
+                        onVoiceStart = ::startVoiceSession, onVoiceStop = ::stopVoiceSession
                     )
                     AergisDestination.GESTURES -> GesturesScreen(edit, navigate)
                     AergisDestination.SETTINGS -> SettingsScreen(navigate)

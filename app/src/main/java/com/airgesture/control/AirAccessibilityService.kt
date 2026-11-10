@@ -23,6 +23,7 @@ import java.util.concurrent.atomic.AtomicLong
 class AirAccessibilityService : AccessibilityService() {
     private val feedbackScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var feedbackOverlay: ActionFeedbackOverlay? = null
+    private var spokenFeedback: AergisSpeechFeedback? = null
     private var currentFeedbackId = 0L // Main-thread synchronous dispatch context only.
     private var dragFeedbackId = 0L
     private fun recordOutcome(outcome: ActionDispatchOutcome) = AirRuntime.recordActionFeedback(outcome, currentFeedbackId)
@@ -86,6 +87,7 @@ class AirAccessibilityService : AccessibilityService() {
         pointerOverlay = PointerOverlay(this)
         trackingMirror = TrackingMirrorOverlay(this)
         feedbackOverlay = ActionFeedbackOverlay(this)
+        spokenFeedback = AergisSpeechFeedback(this, feedbackScope)
         feedbackScope.launch {
             AirRuntime.state.map { Triple(it.actionFeedback, it.running, it.foregroundContext.safety) }
                 .distinctUntilChanged().collect { (feedback, running, safety) ->
@@ -188,6 +190,9 @@ class AirAccessibilityService : AccessibilityService() {
     internal fun dispatchPointerTap(expectedEpoch: Long = AirRuntime.actionEpoch, sourceDeadlineMs: Long? = null) =
         dispatch(AirAction.TAP, origin = ActionOrigin.POINTER, expectedEpoch = expectedEpoch,
             sourceDeadlineMs = sourceDeadlineMs)
+
+    internal fun dispatchVoice(action: AirAction) =
+        dispatch(action, GestureTuning(), ActionOrigin.VOICE, AirRuntime.actionEpoch, null)
 
     fun dispatch(action: AirAction, tuning: GestureTuning = GestureTuning(),
         expectedEpoch: Long = AirRuntime.actionEpoch, sourceDeadlineMs: Long? = null) =
@@ -353,7 +358,8 @@ class AirAccessibilityService : AccessibilityService() {
             controlMode = AirRuntime.controlMode,
             foregroundSafety = AirRuntime.state.value.foregroundContext.safety,
             origin = origin, pointerEnabled = AirRuntime.pointerEnabled,
-            pointerClickingEnabled = AirRuntime.pointerClickingEnabled
+            pointerClickingEnabled = AirRuntime.pointerClickingEnabled,
+            voiceEnabled = AergisVoiceService.isConnected()
         ).allowed
     }
 
@@ -530,6 +536,8 @@ class AirAccessibilityService : AccessibilityService() {
     }
 
     override fun onDestroy() {
+        spokenFeedback?.close()
+        spokenFeedback = null
         feedbackScope.cancel()
         feedbackOverlay?.close()
         feedbackOverlay = null

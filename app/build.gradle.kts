@@ -144,6 +144,7 @@ dependencies {
     implementation("androidx.camera:camera-lifecycle:$cameraX")
 
     implementation("com.google.mediapipe:tasks-vision:1.0.0")
+    implementation("io.elevenlabs:elevenlabs-android:0.13.0")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     // Native Compose navigation and mapping-draft regression tests (no runtime dependency).
