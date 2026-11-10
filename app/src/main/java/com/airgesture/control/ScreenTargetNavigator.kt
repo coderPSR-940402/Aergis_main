@@ -15,6 +15,11 @@ internal class ScreenTargetNavigator(private val highlight: ScreenTargetHighligh
     private var sequence = 0L
     private var selectedKey: String? = null
     private var selectedBounds: Rect? = null
+    internal class SelectionReceipt(val epoch: Long)
+    @Volatile private var selectedReceipt: SelectionReceipt? = null
+
+    /** Camera readers capture an immutable receipt without touching any Android View. */
+    fun drawnSelection(): SelectionReceipt? = selectedReceipt?.takeIf { highlight.hasDrawn }
     private data class Activation(val node: AccessibilityNodeInfo, val event: ScreenSelectionEvent,
         val epoch: Long, val windowId: Int, val deadline: Long)
     private var activation: Activation? = null
@@ -49,18 +54,21 @@ internal class ScreenTargetNavigator(private val highlight: ScreenTargetHighligh
         }
     }
     val hasSelection: Boolean get() = selectedKey != null
-    private fun selected(target: Target, requestId: Long?) {
+    private fun selected(target: Target, requestId: Long?, epoch: Long) {
         val changed = selectedKey != target.key
+        val moved = selectedBounds != target.bounds
         if (changed) sequence++
-        if (changed || selectedBounds != target.bounds || requestId != null) record(ScreenSelectionEvent(
-            when { changed -> "selected"; selectedBounds != target.bounds -> "moved"; else -> "unchanged" },
-            sequence, Rect(target.bounds), if (!changed && selectedBounds == target.bounds) "navigation_boundary" else "target_retained", requestId))
+        if (changed || moved || requestId != null) record(ScreenSelectionEvent(
+            when { changed -> "selected"; moved -> "moved"; else -> "unchanged" },
+            sequence, Rect(target.bounds), if (!changed && !moved) "navigation_boundary" else "target_retained", requestId))
         selectedKey = target.key
         selectedBounds = Rect(target.bounds)
+        if (changed || moved || selectedReceipt?.epoch != epoch) selectedReceipt = SelectionReceipt(epoch)
     }
     private data class Target(val key: String, val node: AccessibilityNodeInfo, val bounds: Rect,
         val containerPath: String, val path: String, val inCollection: Boolean)
     fun clear(reason: String = "selection_invalidated", requestId: Long? = null) {
+        selectedReceipt = null
         if (selectedKey != null) record(ScreenSelectionEvent("cleared", sequence, selectedBounds, reason, requestId))
         selectedKey = null; selectedBounds = null
         state.clear(); highlight.hide()
@@ -153,7 +161,7 @@ internal class ScreenTargetNavigator(private val highlight: ScreenTargetHighligh
                 // Unrelated animations/content updates are not loss of this exact target.
                 val key = state.retain(keys, context)
                 val target = targets.singleOrNull { it.key == key }
-                if (target != null && highlight.show(target.bounds)) { selected(target, requestId); true }
+                if (target != null && highlight.show(target.bounds)) { selected(target, requestId, epoch); true }
                 else { clear("target_missing_or_changed", requestId); false }
             } else if (action == AirAction.SELECT_ITEM) {
                 val visible = highlight.isVisible
@@ -161,13 +169,14 @@ internal class ScreenTargetNavigator(private val highlight: ScreenTargetHighligh
                 val target = targets.singleOrNull { it.key == key }
                 if (target != null && selectedBounds != target.bounds) {
                     // A new location must be drawn before it can be confirmed.
-                    if (highlight.show(target.bounds)) selected(target, null) else clear("highlight_unavailable", requestId)
+                    if (highlight.show(target.bounds)) selected(target, null, epoch) else clear("highlight_unavailable", requestId)
                     record(ScreenSelectionEvent("activation_rejected", selectedKey?.let { sequence }, target.bounds,
                         "target_moved_needs_confirmation", requestId))
                     return false
                 }
                 state.confirm(keys, context)
                 val authorized = canActivate()
+                selectedReceipt = null
                 val accepted = if (visible && target != null && authorized) {
                     endActivation("superseded_by_new_activation")
                     @Suppress("DEPRECATION")
@@ -189,7 +198,7 @@ internal class ScreenTargetNavigator(private val highlight: ScreenTargetHighligh
             } else {
                 val key = state.move(keys, context, action == AirAction.NEXT_ITEM)
                 val target = targets.firstOrNull { it.key == key }
-                if (target != null && highlight.show(target.bounds)) { selected(target, requestId); true }
+                if (target != null && highlight.show(target.bounds)) { selected(target, requestId, epoch); true }
                 else { clear("target_missing_or_changed", requestId); false }
             }
         } catch (_: RuntimeException) {

@@ -108,6 +108,8 @@ A gesture away.</string>
     <string name="product_action_disarmed">READY · DISARMED</string>
     <string name="product_action_armed">ACTIONS ARMED</string>
     <string name="product_action_paused">ACTIONS PAUSED</string>
+    <string name="product_resume_controls">Resume controls</string>
+    <string name="product_manually_paused_help">Controls are paused. The camera stays on until you stop capture.</string>
     <string name="product_setup_required_help">Complete camera and Accessibility setup before starting device control.</string>
     <string name="product_setup_required">Finish setting up</string>
     <string name="product_select_hand">Control hand</string>

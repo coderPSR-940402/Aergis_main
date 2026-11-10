@@ -211,9 +211,7 @@ class MainActivity : ComponentActivity() {
         ContextCompat.startForegroundService(this, Intent(this, GestureCaptureService::class.java))
     }
 
-    private fun stopSession() {
-        stopService(Intent(this, GestureCaptureService::class.java))
-    }
+    private fun stopSession() = GestureCaptureService.stopCapture(this)
 
     private fun openAccessibilitySettings() {
         startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))

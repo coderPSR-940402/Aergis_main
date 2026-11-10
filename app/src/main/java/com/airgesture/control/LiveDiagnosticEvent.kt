@@ -37,7 +37,12 @@ internal data class LiveDiagnosticSample(
     val completionState: String? = null,
     val cameraAgeMs: Long? = null,
     val analyzedFrameGapMs: Long? = null,
-    val inferenceMs: Long? = null
+    val inferenceMs: Long? = null,
+    val rawPointerX: Float? = null,
+    val rawPointerY: Float? = null,
+    val rawTracking: Boolean? = null,
+    val sensorDeliveryMs: Long? = null,
+    val workerQueueMs: Long? = null
 ) {
     init {
         require(uptimeMs >= 0L) { "uptimeMs must be non-negative" }

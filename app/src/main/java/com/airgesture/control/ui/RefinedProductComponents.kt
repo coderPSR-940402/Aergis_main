@@ -22,7 +22,7 @@ import com.airgesture.control.RegisteredGesture
 @Composable
 internal fun ControlCommandCenter(
     running: Boolean, armed: Boolean, canToggleArm: Boolean, actions: ProductActionState,
-    onCapture: () -> Unit, onArm: () -> Unit
+    onCapture: () -> Unit, onArm: () -> Unit, pausedManually: Boolean = false
 ) {
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
@@ -54,8 +54,12 @@ internal fun ControlCommandCenter(
             modifier = Modifier.align(Alignment.CenterHorizontally))
         AergisButton(onClick = if (running || armed) onArm else onCapture,
             enabled = armed || !running || canToggleArm, primary = true, modifier = Modifier.fillMaxWidth()) {
-            Text(stringResource(if (armed) R.string.disarm_control else if (!running) R.string.start_capture else R.string.arm_control),
-                modifier = Modifier.weight(1f))
+            Text(stringResource(when {
+                armed -> R.string.disarm_control
+                !running -> R.string.start_capture
+                pausedManually -> R.string.product_resume_controls
+                else -> R.string.arm_control
+            }), modifier = Modifier.weight(1f))
             AergisIcon(if (armed) AergisGlyph.POWER else AergisGlyph.ARROW, Modifier.size(20.dp), AergisColors.Background)
         }
         Text(stringResource(if (armed) R.string.refined_disarm_caption else R.string.refined_safety_caption),

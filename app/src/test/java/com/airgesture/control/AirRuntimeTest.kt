@@ -6,7 +6,13 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import org.robolectric.shadows.ShadowSystemClock
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class AirRuntimeTest {
     @Test fun returningToTheSameControlModeCannotReauthorizeOldCameraInput() {
         val previous = AirRuntime.controlMode
@@ -20,6 +26,16 @@ class AirRuntimeTest {
             AirRuntime.controlMode = ControlMode.ARMED
             assertEquals("No-op state writes do not discard current input",current,AirRuntime.state.value.inputEpoch)
         } finally { AirRuntime.controlMode = previous }
+    }
+
+    @Test fun exposureBoundaryAdvancesOnlyWhenCameraAuthorityChanges() {
+        val before = AirRuntime.state.value
+        ShadowSystemClock.advanceBy(java.time.Duration.ofMillis(20))
+        AirRuntime.invalidatePendingActions(clearSelection = false)
+        assertEquals(before.inputEpochStartedElapsedNs, AirRuntime.state.value.inputEpochStartedElapsedNs)
+        AirRuntime.invalidatePendingActions()
+        assertEquals(android.os.SystemClock.elapsedRealtimeNanos(), AirRuntime.state.value.inputEpochStartedElapsedNs)
+        assertTrue(AirRuntime.state.value.inputEpochStartedElapsedNs > before.inputEpochStartedElapsedNs)
     }
 
     @Test fun visionRevocationCannotStarveCurrentCameraFrames() {

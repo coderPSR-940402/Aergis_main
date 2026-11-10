@@ -10,6 +10,7 @@ package com.airgesture.control
 internal object AergisDevLoop {
     @Volatile private var worker: DevLoopWorker? = null
     private var finalizing: java.util.concurrent.Future<*>? = null
+    private val contactValidator = com.airgesture.control.filtering.KinematicValidator()
 
     /** Serializes the capture lifecycle boundary with read-only shell snapshot queries. */
     @Synchronized fun <T> readEvidence(block: (String) -> T): T = block(
@@ -34,6 +35,24 @@ internal object AergisDevLoop {
 
     fun sampleFrame(sample: LiveDiagnosticSample, rawX: Float?, rawY: Float?, tracking: Boolean) {
         runCatching { worker?.observe { sample(sample, rawX, rawY, tracking) } }
+    }
+
+    /** Copy geometry before recognition/action gates; never feed it back into control. */
+    fun recordContactGeometry(points: List<com.airgesture.control.filtering.Point3D>,
+        aspect: Float, depthScale: Float, frameId: Long, owner: String?, epoch: Long, input: Long,
+        gate: String) {
+        val current = worker ?: return
+        runCatching {
+            val distance = contactValidator.calculateNormalizedFingerDistance(points, aspect)
+            val depth = contactValidator.calculateNormalizedFingerDepthDistance(points, aspect, depthScale)
+            val now = android.os.SystemClock.uptimeMillis()
+            current.observe { contactGeometry(frameId, now, owner, epoch, input, distance, depth, gate) }
+        }
+    }
+
+    fun recordContactDecision(frameId: Long, gate: String) {
+        val now = android.os.SystemClock.uptimeMillis()
+        runCatching { worker?.observe { contactDecision(frameId, now, gate) } }
     }
 
     fun recordSelectionUnconfirmed(requestId: Long, reason: String) {

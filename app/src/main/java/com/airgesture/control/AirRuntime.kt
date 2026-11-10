@@ -1,6 +1,7 @@
 package com.airgesture.control
 
 import android.content.Context
+import android.os.SystemClock
 import com.airgesture.control.filtering.PoseGeometryEvidence
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -71,7 +72,8 @@ data class AirRuntimeState(
     /** A selected target survives vision gaps, but never a session/safety/settings change. */
     val selectionEpoch: Long = 0L,
     /** Camera input provenance; internal vision gaps never change its source context. */
-    val inputEpoch: Long = 0L
+    val inputEpoch: Long = 0L,
+    internal val inputEpochStartedElapsedNs: Long = 0L
 ) {
     val pointerTracking: Boolean
         get() = pointer.tracking
@@ -128,10 +130,19 @@ object AirRuntime {
 
     fun uiStateSnapshot(): AirRuntimeUiState = state.value.toUiState()
 
+    private fun AirRuntimeState.advanceAuthority(clearSelection: Boolean = true,
+        invalidateFrames: Boolean = true): AirRuntimeState = copy(
+        actionEpoch = actionEpoch + 1L,
+        selectionEpoch = selectionEpoch + if (clearSelection) 1L else 0L,
+        inputEpoch = inputEpoch + if (invalidateFrames) 1L else 0L,
+        inputEpochStartedElapsedNs = if (invalidateFrames) SystemClock.elapsedRealtimeNanos()
+            else inputEpochStartedElapsedNs
+    )
+
     var running: Boolean
         get() = state.value.running
         set(value) = _state.update {
-            if (it.running == value) it else it.copy(running = value, actionEpoch = it.actionEpoch + 1L, selectionEpoch = it.selectionEpoch + 1L, inputEpoch = it.inputEpoch + 1L)
+            if (it.running == value) it else it.copy(running = value).advanceAuthority()
         }
 
     var cameraReady: Boolean
@@ -142,34 +153,34 @@ object AirRuntime {
         get() = state.value.pointerEnabled
         set(value) = _state.update {
             if (it.pointerEnabled == value) it
-            else it.copy(pointerEnabled = value, actionEpoch = it.actionEpoch + 1L, selectionEpoch = it.selectionEpoch + 1L, inputEpoch = it.inputEpoch + 1L)
+            else it.copy(pointerEnabled = value).advanceAuthority()
         }
 
     var pointerClickingEnabled: Boolean
         get() = state.value.pointerClickingEnabled
         set(value) = _state.update {
             if (it.pointerClickingEnabled == value) it
-            else it.copy(pointerClickingEnabled = value, actionEpoch = it.actionEpoch + 1L, selectionEpoch = it.selectionEpoch + 1L, inputEpoch = it.inputEpoch + 1L)
+            else it.copy(pointerClickingEnabled = value).advanceAuthority()
         }
 
     var gesturesEnabled: Boolean
         get() = state.value.gesturesEnabled
         set(value) = _state.update {
             if (it.gesturesEnabled == value) it
-            else it.copy(gesturesEnabled = value, actionEpoch = it.actionEpoch + 1L, selectionEpoch = it.selectionEpoch + 1L, inputEpoch = it.inputEpoch + 1L)
+            else it.copy(gesturesEnabled = value).advanceAuthority()
         }
 
     var controlMode: ControlMode
         get() = state.value.controlMode
         set(value) = _state.update {
             if (it.controlMode == value) it
-            else it.copy(controlMode = value, actionEpoch = it.actionEpoch + 1L, selectionEpoch = it.selectionEpoch + 1L, inputEpoch = it.inputEpoch + 1L)
+            else it.copy(controlMode = value).advanceAuthority()
         }
 
     fun setForegroundContext(context: ForegroundContextState) {
         _state.update {
             if (it.foregroundContext == context) it
-            else it.copy(foregroundContext = context, actionEpoch = it.actionEpoch + 1L, selectionEpoch = it.selectionEpoch + 1L, inputEpoch = it.inputEpoch + 1L)
+            else it.copy(foregroundContext = context).advanceAuthority()
         }
     }
 
@@ -177,13 +188,11 @@ object AirRuntime {
         get() = state.value.handPreference
         set(value) = _state.update {
             if (it.handPreference == value) it
-            else it.copy(handPreference = value, actionEpoch = it.actionEpoch + 1L, selectionEpoch = it.selectionEpoch + 1L, inputEpoch = it.inputEpoch + 1L)
+            else it.copy(handPreference = value).advanceAuthority()
         }
 
     internal fun invalidatePendingActions(clearSelection: Boolean = true, invalidateFrames: Boolean = clearSelection) {
-        _state.update { it.copy(actionEpoch = it.actionEpoch + 1L,
-            selectionEpoch = it.selectionEpoch + if (clearSelection) 1L else 0L,
-            inputEpoch = it.inputEpoch + if (invalidateFrames) 1L else 0L) }
+        _state.update { it.advanceAuthority(clearSelection, invalidateFrames) }
     }
 
     var pointerFeedback: PointerFeedback

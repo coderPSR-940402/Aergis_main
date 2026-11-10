@@ -31,6 +31,7 @@ internal data class RgbaFrameData(
 
 internal class CapturedCameraFrame private constructor(
     val timestampNs: Long,
+    val rotationDegrees: Int,
     val receivedUptimeMs: Long,
     val receivedElapsedMs: Long,
     val inputEpoch: Long,
@@ -42,7 +43,7 @@ internal class CapturedCameraFrame private constructor(
 
     constructor(data: RgbaFrameData, receivedUptimeMs: Long, receivedElapsedMs: Long,
         lease: FrameBufferPool.Lease, inputEpoch: Long = AirRuntime.state.value.inputEpoch) :
-        this(data.timestampNs, receivedUptimeMs, receivedElapsedMs, inputEpoch,
+        this(data.timestampNs, data.rotationDegrees, receivedUptimeMs, receivedElapsedMs, inputEpoch,
         { data }, { lease.close() })
 
     // Only the single inference worker reads pixels; dropped pending frames never convert.
@@ -71,7 +72,7 @@ internal class CapturedCameraFrame private constructor(
             receivedUptimeMs: Long, receivedElapsedMs: Long, sourceLease: FrameBufferPool.Lease,
             rgbaBuffers: FrameBufferPool, inputEpoch: Long = AirRuntime.state.value.inputEpoch): CapturedCameraFrame {
             var rgbaLease: FrameBufferPool.Lease? = null
-            return CapturedCameraFrame(timestampNs, receivedUptimeMs, receivedElapsedMs, inputEpoch, {
+            return CapturedCameraFrame(timestampNs, rotation, receivedUptimeMs, receivedElapsedMs, inputEpoch, {
                 val size = Math.multiplyExact(Math.multiplyExact(pixels.width, pixels.height), 4)
                 val lease = checkNotNull(rgbaBuffers.acquire(size)) { "RGBA conversion buffer unavailable" }
                 rgbaLease = lease
