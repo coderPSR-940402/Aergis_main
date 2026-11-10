@@ -15,62 +15,81 @@ import kotlinx.coroutines.flow.map
 
 @Composable
 internal fun ControlScreen(
-    accessibilityEnabled: Boolean, pointerEnabled: Boolean, pointerClickingEnabled: Boolean,
-    gesturesEnabled: Boolean, assignedCount: Int, startError: String?, onCapture: () -> Unit,
-    onArm: () -> Unit, onGestures: (Boolean) -> Unit, onNavigate: (AergisDestination) -> Unit
+    accessibilityEnabled: Boolean, pointerClickingEnabled: Boolean,
+    gesturesEnabled: Boolean, assignedCount: Int, startError: String?, onStart: () -> Unit, onStop: () -> Unit,
+    onArm: (Boolean) -> Unit, onGestures: (Boolean) -> Unit, onNavigate: (AergisDestination) -> Unit,
+    cameraAllowed: Boolean = true
 ) {
-    // Avoid subscribing Home to per-frame pointer coordinates, evidence and counters.
+    // Project only visible state so per-frame telemetry cannot invalidate this screen.
     val flow = remember { AirRuntime.uiState.map { HomeUiState.from(it) }.distinctUntilChanged() }
     val home by flow.collectAsStateWithLifecycle(initialValue = HomeUiState.from(AirRuntime.uiStateSnapshot()))
-    val snapshot = AirRuntime.uiStateSnapshot().copy(running = home.running, cameraReady = home.cameraReady,
-        visionReady = home.visionReady, visionError = home.visionError, controlMode = home.controlMode,
-        foregroundSafety = home.foregroundSafety)
-    val shown = ProductSession.from(snapshot, accessibilityEnabled, gesturesEnabled, pointerEnabled, pointerClickingEnabled)
+    val visionError = home.visionError
+    val session = ProductSession.from(home.running, home.cameraReady, home.visionReady, visionError,
+        home.controlMode, home.foregroundSafety, accessibilityEnabled, gesturesEnabled || pointerClickingEnabled)
     val armed = home.controlMode == ControlMode.ARMED
-    val pausedManually = home.controlMode == ControlMode.PAUSED
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+    val setupMissing = !cameraAllowed || !accessibilityEnabled
+    val noActions = !gesturesEnabled && !pointerClickingEnabled
+    val manualPause = home.controlMode == ControlMode.PAUSED
+    val primaryLabel = when {
+        armed -> R.string.disarm_control
+        setupMissing -> R.string.product_complete_setup
+        !home.running -> R.string.start_capture
+        visionError != null -> R.string.stop_capture
+        noActions -> R.string.product_enable_gestures
+        !session.canToggleArm -> R.string.product_waiting_to_arm
+        manualPause -> R.string.product_resume_controls
+        else -> R.string.arm_control
+    }
+    val status = when {
+        armed && session.actions == ProductActionState.PAUSED -> R.string.product_action_paused
+        setupMissing -> R.string.product_setup_required
+        home.running && visionError != null -> R.string.product_tracking_problem
+        home.running && (!home.cameraReady || !home.visionReady) -> R.string.product_tracking_starting
+        else -> session.actions.label()
+    }
+    val detail = when {
+        setupMissing -> stringResource(R.string.product_setup_required_help)
+        visionError != null -> visionError
+        !home.running -> startError ?: stringResource(R.string.product_hero_stopped_help)
+        !home.cameraReady || !home.visionReady -> stringResource(R.string.product_camera_starting)
+        home.foregroundSafety == ForegroundSafety.PROTECTED -> stringResource(R.string.product_protected_help)
+        home.foregroundSafety == ForegroundSafety.UNKNOWN -> stringResource(R.string.product_foreground_wait)
+        noActions -> stringResource(R.string.product_no_action_channels)
+        manualPause -> stringResource(R.string.product_resume_help)
+        armed -> stringResource(R.string.refined_disarm_caption)
+        else -> stringResource(R.string.product_hero_ready_help)
+    }
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
-            ControlCommandCenter(home.running, armed, shown.canToggleArm, shown.actions, onCapture, onArm, pausedManually)
+            ControlCommandCenter(home.running, session.actions, status, detail, primaryLabel,
+                enabled = primaryLabel != R.string.product_waiting_to_arm,
+                onPrimary = {
+                    when (primaryLabel) {
+                        R.string.product_complete_setup -> onNavigate(AergisDestination.PERMISSIONS)
+                        R.string.start_capture -> onStart()
+                        R.string.stop_capture -> onStop()
+                        R.string.product_enable_gestures -> onGestures(true)
+                        R.string.disarm_control -> onArm(false)
+                        else -> onArm(true)
+                    }
+                }, onStop = onStop)
         }
-        if (!accessibilityEnabled) item {
-            AergisPanel(accent = AergisColors.Caution) {
-                Text(stringResource(R.string.product_setup_required), style = MaterialTheme.typography.titleMedium)
-                Text(stringResource(R.string.product_setup_required_help), color = AergisColors.Muted)
-                AergisButton({ onNavigate(AergisDestination.WELCOME) }, Modifier.fillMaxWidth()) { Text(stringResource(R.string.product_continue)) }
+        item {
+            val handStatus = when {
+                !home.running -> R.string.product_camera_off
+                visionError != null -> R.string.product_tracking_problem
+                !home.cameraReady || !home.visionReady -> R.string.product_camera_starting
+                home.handsDetected == 0 -> R.string.product_no_hand
+                else -> R.string.product_hand_visible
             }
+            ProductLink(AergisDestination.LIVE, stringResource(handStatus, home.handedness), onNavigate)
         }
-        if (shown.actions == ProductActionState.PAUSED) item {
-            val reason = when {
-                home.foregroundSafety != ForegroundSafety.SAFE -> home.safetyReason
-                pausedManually -> stringResource(R.string.product_manually_paused_help)
-                !accessibilityEnabled -> stringResource(R.string.product_setup_required_help)
-                home.visionError != null -> home.visionError.orEmpty()
-                else -> stringResource(R.string.product_camera_starting)
-            }
-            Text(reason, color = AergisColors.Caution)
-        }
-        startError?.let { error -> item { Text(error, color = AergisColors.Error) } }
-        home.visionError?.let { error -> item { Text(error, color = AergisColors.Error) } }
+        item { AergisSection(stringResource(R.string.product_control_methods)) }
         item { ProductInputTiles(assignedCount, onNavigate) }
-        item {
-            AergisPanel {
-                AergisSettingRow(stringResource(R.string.product_gestures), stringResource(R.string.product_gesture_switch_help), gesturesEnabled, onGestures)
-                ProductLink(AergisDestination.LEARN, stringResource(R.string.product_learn_help), onNavigate)
-            }
-        }
-        item {
-            AergisPanel {
-                Text(stringResource(R.string.product_feedback_title), style = MaterialTheme.typography.titleSmall)
-                Text(stringResource(when {
-                    !home.running -> R.string.product_camera_off
-                    !home.cameraReady || !home.visionReady -> R.string.product_camera_starting
-                    home.handsDetected == 0 -> R.string.product_no_hand
-                    else -> R.string.product_hand_visible
-                }, home.handedness), color = AergisColors.Muted)
-                Text(stringResource(if (pointerEnabled) R.string.product_pointer_on_help else R.string.product_pointer_off_help), style = MaterialTheme.typography.bodySmall)
-                ProductLink(AergisDestination.LIVE, stringResource(R.string.product_live_help), onNavigate)
-            }
-        }
+        item { AergisSection(stringResource(R.string.product_practice_tools)) }
+        item { ProductLink(AergisDestination.LEARN, stringResource(R.string.product_learn_help), onNavigate) }
+        item { ProductLink(AergisDestination.PRACTICE, stringResource(R.string.product_practice_help), onNavigate) }
+        item { ProductLink(AergisDestination.CALIBRATION, stringResource(R.string.product_calibration_optional), onNavigate) }
         item { ProductLink(AergisDestination.PRECISION, stringResource(R.string.product_precision_help), onNavigate) }
     }
 }

@@ -1,23 +1,33 @@
 package com.airgesture.control.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.airgesture.control.*
+import com.airgesture.control.AirRuntime
+import com.airgesture.control.ControlMode
+import com.airgesture.control.ForegroundSafety
 import com.airgesture.control.R
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 
 @Composable
 internal fun AergisShell(
-    gesturesEnabled: Boolean,
+    inputEnabled: Boolean = true,
     initialDestination: AergisDestination = AergisDestination.CONTROL,
     onEntering: (AergisDestination) -> Unit = {},
     requestedDestination: AergisDestination? = null,
@@ -42,69 +52,108 @@ internal fun AergisShell(
             onDestinationHandled()
         }
     }
-    val back: () -> Unit = { routeNames = navigation.back().routes.joinToString("|") }
+    val back: () -> Unit = {
+        val previous = navigation.back()
+        onEntering(previous.current)
+        routeNames = previous.routes.joinToString("|")
+    }
+    val screenState = rememberSaveableStateHolder()
     BackHandler(enabled = navigation.canGoBack || !selected.root) { back() }
     Scaffold(
-        modifier = Modifier.fillMaxSize().safeDrawingPadding(),
+        modifier = Modifier.fillMaxSize().background(AergisColors.Background).safeDrawingPadding(),
         containerColor = AergisColors.Background,
         bottomBar = {
-            NavigationBar(containerColor = AergisColors.Background, tonalElevation = 0.dp,
-                windowInsets = WindowInsets(0, 0, 0, 0)) {
-                AergisDestination.entries.filter { it.root }.forEach { destination ->
-                    val isSelected = destination == selected || (navigation.routes.firstOrNull() == destination.name && !selected.root)
-                    NavigationBarItem(
-                        selected = isSelected,
-                        onClick = { navigate(destination) },
-                        icon = { AergisIcon(destination.glyph, Modifier.size(22.dp), if (isSelected) AergisColors.Purple else AergisColors.Muted) },
-                        label = { Text(stringResource(destination.label), style = MaterialTheme.typography.labelMedium) },
-                        colors = NavigationBarItemDefaults.colors(selectedTextColor = AergisColors.Purple,
-                            unselectedTextColor = AergisColors.Muted, indicatorColor = AergisColors.Raised.copy(alpha = .45f))
-                    )
+            if (selected != AergisDestination.WELCOME) {
+                val activeRoot = if (selected.root) selected.name else navigation.routes.firstOrNull()
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+                    NavigationDock(activeRoot, navigate)
                 }
             }
         }
     ) { insets ->
-        Column(Modifier.fillMaxSize().padding(insets)) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 16.dp),
-                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                AergisMark(Modifier.size(32.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(stringResource(R.string.ui_brand), style = AergisType.Brand)
-                    Text(stringResource(R.string.product_touchless), color = AergisColors.Muted,
-                        style = MaterialTheme.typography.labelSmall)
+        Box(Modifier.fillMaxSize().padding(insets), contentAlignment = Alignment.TopCenter) {
+            Column(Modifier.widthIn(max = 760.dp).fillMaxSize()) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 7.dp).heightIn(min = 48.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Box(Modifier.size(37.dp).background(AergisColors.Stage, AergisShapes.Control),
+                        contentAlignment = Alignment.Center) {
+                        AergisMark(Modifier.size(23.dp), AergisColors.OnStage)
+                    }
+                    Column(Modifier.weight(1f)) {
+                        Text(stringResource(R.string.ui_brand), style = AergisType.Brand, color = AergisColors.Text)
+                        Text(stringResource(R.string.product_console_label), style = MaterialTheme.typography.labelSmall,
+                            color = AergisColors.Muted)
+                    }
+                    if (!selected.root && selected != AergisDestination.WELCOME) {
+                        TextButton(onClick = back, modifier = Modifier.heightIn(min = 48.dp)) {
+                            Text(stringResource(R.string.product_back))
+                        }
+                    }
+                }
+                if (selected != AergisDestination.CONTROL) {
+                    ActiveSessionLabel(inputEnabled, onControl = { navigate(AergisDestination.CONTROL) })
+                }
+                HorizontalDivider(color = AergisColors.Outline.copy(alpha = .7f))
+                // A route can keep its UI state without keeping camera or calibration effects alive.
+                screenState.SaveableStateProvider(selected.name) {
+                    Box(Modifier.weight(1f)) { content(selected, navigate) }
                 }
             }
-            SessionLabel(gesturesEnabled)
-            // ActionFeedbackOverlay owns transient outcomes outside this activity's
-            // scanned tree: changing content here invalidates selection identities.
-            if (!selected.root && selected != AergisDestination.WELCOME) {
-                TextButton(onClick = back, modifier = Modifier.padding(horizontal = 8.dp).heightIn(min = 48.dp)) {
-                    Text(stringResource(R.string.product_back))
-                }
-            }
-            // No outgoing screen is kept alive during navigation (important for calibration cleanup).
-            key(selected) { Box(Modifier.weight(1f)) { content(selected, navigate) } }
         }
     }
 }
 
 @Composable
-private fun SessionLabel(inputEnabled: Boolean) {
-    val flow = remember { AirRuntime.uiState.map {
-        Triple(it.running, it.controlMode, it.controlMode == ControlMode.ARMED && it.foregroundSafety != ForegroundSafety.SAFE)
-    }.distinctUntilChanged() }
-    val initial = AirRuntime.uiStateSnapshot()
-    val state by flow.collectAsStateWithLifecycle(initialValue = Triple(initial.running, initial.controlMode,
-        initial.controlMode == ControlMode.ARMED && initial.foregroundSafety != ForegroundSafety.SAFE))
-    val capture = stringResource(if (state.first) R.string.ui_capture_on else R.string.ui_capture_off)
-    val actions = stringResource(when {
-        !inputEnabled -> R.string.ui_actions_disabled
-        state.third || state.second == ControlMode.PAUSED -> R.string.ui_actions_paused
-        state.second == ControlMode.ARMED -> R.string.ui_actions_armed
-        else -> R.string.ui_actions_disarmed
-    })
-    Surface(color = AergisColors.Background) {
-        Text(stringResource(R.string.ui_session_summary, capture, actions), color = AergisColors.Muted,
-            style = MaterialTheme.typography.labelSmall, modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp))
+private fun NavigationDock(activeRoot: String?, navigate: (AergisDestination) -> Unit) {
+    Row(
+        Modifier.widthIn(max = 520.dp).fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
+            .clip(AergisShapes.Card).background(AergisColors.Deep).selectableGroup()
+            .padding(5.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically
+    ) {
+        for (destination in AergisDestination.entries.filter { it.root }) {
+            val selected = activeRoot == destination.name
+            val ink = if (selected) AergisColors.Deep else AergisColors.StageHint
+            Column(
+                Modifier.weight(1f).heightIn(min = 56.dp).clip(AergisShapes.Control)
+                    .background(if (selected) AergisColors.Yellow else AergisColors.Deep)
+                    .testTag("nav-${destination.name}")
+                    .selectable(selected, role = Role.Tab, onClick = { navigate(destination) })
+                    .padding(horizontal = 4.dp, vertical = 6.dp),
+                horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center
+            ) {
+                AergisIcon(destination.glyph, Modifier.size(21.dp), ink)
+                Text(stringResource(destination.label), color = ink, style = MaterialTheme.typography.labelMedium,
+                    textAlign = TextAlign.Center)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ActiveSessionLabel(inputEnabled: Boolean, onControl: () -> Unit) {
+    val flow = remember(inputEnabled) {
+        AirRuntime.uiState.map { runtime ->
+            when {
+                !runtime.running -> null
+                !inputEnabled -> R.string.product_action_disabled
+                runtime.controlMode == ControlMode.PAUSED ||
+                    (runtime.controlMode == ControlMode.ARMED &&
+                        (runtime.foregroundSafety != ForegroundSafety.SAFE || !runtime.cameraReady ||
+                            !runtime.visionReady || runtime.visionError != null)) -> R.string.product_action_paused
+                runtime.controlMode == ControlMode.ARMED -> R.string.product_action_armed
+                else -> R.string.product_action_disarmed
+            }
+        }.distinctUntilChanged()
+    }
+    val label by flow.collectAsStateWithLifecycle(initialValue = null)
+    label?.let {
+        TextButton(onControl, Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+            Text(stringResource(R.string.ui_session_summary, stringResource(R.string.ui_capture_on), stringResource(it)),
+                color = if (it == R.string.product_action_armed) AergisColors.Success else AergisColors.Purple,
+                style = MaterialTheme.typography.labelMedium)
+        }
     }
 }

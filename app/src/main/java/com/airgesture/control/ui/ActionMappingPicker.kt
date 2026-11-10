@@ -1,6 +1,7 @@
 package com.airgesture.control.ui
 
 import android.os.Build
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
@@ -30,27 +31,57 @@ internal fun ActionMappingPicker(
     var volume by rememberSaveable(source.name) { mutableFloatStateOf(tuning.volumeSteps.toFloat()) }
     var scroll by rememberSaveable(source.name) { mutableFloatStateOf(tuning.scrollPercent.toFloat()) }
     var longPress by rememberSaveable(source.name) { mutableFloatStateOf(tuning.longPressMs.toFloat()) }
+    var tuningExpanded by rememberSaveable(source.name) { mutableStateOf(false) }
     val draft = AirAction.valueOf(draftName)
     val rows = AirAction.entries.filter { it.isUserMappable }.map { it to actionLabel(it) }
-        .filter { (_, label) -> label.contains(query, ignoreCase = true) }
+        .filter { (_, label) -> label.contains(query.trim(), ignoreCase = true) }
     ModalBottomSheet(onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = AergisColors.Surface) {
         Column(Modifier.fillMaxWidth().fillMaxHeight(.92f).imePadding()) {
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                Row(Modifier.fillMaxWidth().background(AergisColors.Raised, AergisShapes.Stage).padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    SculptedHand(source, Modifier.size(72.dp))
+                    HandDiagram(source, Modifier.size(76.dp))
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        ProductEyebrow(stringResource(R.string.product_assign_pose))
-                        Text(gestureName, style = MaterialTheme.typography.headlineSmall)
+                        ProductEyebrow(stringResource(R.string.product_mapping_label))
+                        Text(gestureName, style = MaterialTheme.typography.headlineMedium)
                     }
                 }
                 Text(stringResource(R.string.product_map_intro), color = AergisColors.Muted)
                 OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth(),
                     label = { Text(stringResource(R.string.product_search_actions)) }, singleLine = true)
-                Column(Modifier.fillMaxWidth().heightIn(max = 320.dp).verticalScroll(rememberScrollState()).selectableGroup()) {
+                val hasTuning = draft != AirAction.NONE && (!source.isLandmarkPose ||
+                    draft in setOf(AirAction.VOLUME_UP, AirAction.VOLUME_DOWN, AirAction.SCROLL_UP, AirAction.SCROLL_DOWN, AirAction.LONG_PRESS))
+                if (hasTuning) {
+                    TextButton({ tuningExpanded = !tuningExpanded }, Modifier.heightIn(min = 48.dp)) {
+                        Text(stringResource(if (tuningExpanded) R.string.product_hide_tuning else R.string.product_show_tuning))
+                    }
+                }
+                if (hasTuning && tuningExpanded) {
+                    if (!source.isLandmarkPose) TuningSlider(stringResource(R.string.tuning_confidence, confidence.toInt()), confidence, 65f..95f, 5) { confidence = it }
+                    if (draft == AirAction.VOLUME_UP || draft == AirAction.VOLUME_DOWN)
+                        TuningSlider(stringResource(R.string.tuning_volume, volume.toInt()), volume, 1f..5f, 3) { volume = it }
+                    if (draft == AirAction.SCROLL_UP || draft == AirAction.SCROLL_DOWN)
+                        TuningSlider(stringResource(R.string.tuning_scroll, scroll.toInt()), scroll, 15f..85f, 13) { scroll = it }
+                    if (draft == AirAction.LONG_PRESS)
+                        TuningSlider(stringResource(R.string.tuning_long_press, longPress.toInt()), longPress, 500f..2000f, 14) { longPress = it }
+                }
+                if (draft != AirAction.NONE) {
+                    if (draft in setOf(AirAction.MEDIA_PLAY_PAUSE, AirAction.MEDIA_NEXT, AirAction.MEDIA_PREVIOUS))
+                        Text(stringResource(R.string.action_media_help), color = AergisColors.Muted)
+                    if (!GestureActionPolicy.isClassifierActionEnabled(true, draft, pointerEnabled, source))
+                        Text(stringResource(R.string.product_saved_restricted), color = AergisColors.Caution)
+                }
+                TextButton(onClick = {
+                    val defaults = GestureTuning()
+                    draftName = source.defaultAction.name
+                    confidence = defaults.confidencePercent.toFloat(); volume = defaults.volumeSteps.toFloat()
+                    scroll = defaults.scrollPercent.toFloat(); longPress = defaults.longPressMs.toFloat()
+                }, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.ui_mapping_restore_default)) }
+                Column(Modifier.fillMaxWidth().selectableGroup()) {
                     rows.groupBy { actionGroupRes(it.first) }.forEach { (group, actions) ->
                         Text(stringResource(group), color = AergisColors.Purple, style = MaterialTheme.typography.labelMedium,
                             modifier = Modifier.padding(vertical = 12.dp))
@@ -71,30 +102,13 @@ internal fun ActionMappingPicker(
                             }
                         }
                     }
-                    if (rows.isEmpty()) Text(stringResource(R.string.product_no_matches), modifier = Modifier.padding(16.dp))
+                    if (rows.isEmpty()) Text(stringResource(R.string.product_no_action_matches), modifier = Modifier.padding(16.dp))
                 }
-                if (draft != AirAction.NONE) {
-                    if (!source.isLandmarkPose) TuningSlider(stringResource(R.string.tuning_confidence, confidence.toInt()), confidence, 65f..95f, 5) { confidence = it }
-                    if (draft == AirAction.VOLUME_UP || draft == AirAction.VOLUME_DOWN)
-                        TuningSlider(stringResource(R.string.tuning_volume, volume.toInt()), volume, 1f..5f, 3) { volume = it }
-                    if (draft == AirAction.SCROLL_UP || draft == AirAction.SCROLL_DOWN)
-                        TuningSlider(stringResource(R.string.tuning_scroll, scroll.toInt()), scroll, 15f..85f, 13) { scroll = it }
-                    if (draft == AirAction.LONG_PRESS)
-                        TuningSlider(stringResource(R.string.tuning_long_press, longPress.toInt()), longPress, 500f..2000f, 14) { longPress = it }
-                    if (draft in setOf(AirAction.MEDIA_PLAY_PAUSE, AirAction.MEDIA_NEXT, AirAction.MEDIA_PREVIOUS))
-                        Text(stringResource(R.string.action_media_help), color = AergisColors.Muted)
-                    if (!GestureActionPolicy.isClassifierActionEnabled(true, draft, pointerEnabled, source))
-                        Text(stringResource(R.string.product_saved_restricted), color = AergisColors.Caution)
-                }
-                TextButton(onClick = {
-                    val defaults = GestureTuning()
-                    draftName = source.defaultAction.name
-                    confidence = defaults.confidencePercent.toFloat(); volume = defaults.volumeSteps.toFloat()
-                    scroll = defaults.scrollPercent.toFloat(); longPress = defaults.longPressMs.toFloat()
-                }, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.ui_mapping_restore_default)) }
             }
             HorizontalDivider(color = AergisColors.Outline)
             Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
+                Text(stringResource(R.string.product_selected_action, actionLabel(draft)), color = AergisColors.Muted,
+                    style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(bottom = 8.dp))
                 AergisButton(onClick = { onSave(draft, tuning.copy(confidencePercent = confidence.toInt(), volumeSteps = volume.toInt(),
                     scrollPercent = scroll.toInt(), longPressMs = longPress.toLong()).bounded()) },
                     enabled = Build.VERSION.SDK_INT >= draft.minimumSdk, primary = true, modifier = Modifier.fillMaxWidth()) {

@@ -1,25 +1,22 @@
 package com.airgesture.control.ui
 
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -36,25 +33,16 @@ internal fun AergisPanel(
     accent: Color = AergisColors.Outline,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    val border by animateColorAsState(accent, tween(AergisMotion.StateMs, easing = AergisMotion.Easing), label = "panel state")
     Surface(
         modifier = modifier.fillMaxWidth(), shape = AergisShapes.Card,
-        color = AergisColors.Surface, border = BorderStroke(1.dp, border), tonalElevation = 0.dp, shadowElevation = 0.dp
+        color = AergisColors.Surface, border = BorderStroke(1.dp, accent)
     ) {
-        Column(
-            Modifier.background(
-                Brush.verticalGradient(listOf(
-                    AergisColors.Raised.copy(alpha = .45f),
-                    AergisColors.Surface,
-                    AergisColors.Surface
-                )), AergisShapes.Card
-            ).padding(AergisSpace.Content),
-            verticalArrangement = Arrangement.spacedBy(AergisSpace.Medium), content = content
-        )
+        Column(Modifier.padding(AergisSpace.Content),
+            verticalArrangement = Arrangement.spacedBy(AergisSpace.Medium), content = content)
     }
 }
 
-/** Native Button keeps click/ripple, focus, disabled and TalkBack behavior. */
+/** Native Button preserves focus, disabled and TalkBack behavior. */
 @Composable
 internal fun AergisButton(
     onClick: () -> Unit,
@@ -63,28 +51,24 @@ internal fun AergisButton(
     primary: Boolean = false,
     content: @Composable RowScope.() -> Unit
 ) {
-    val brush = if (primary && enabled) Brush.verticalGradient(listOf(AergisColors.Yellow, AergisColors.YellowDeep))
-        else Brush.verticalGradient(listOf(AergisColors.Raised, AergisColors.Surface))
     Button(
         onClick = onClick, enabled = enabled,
-        modifier = modifier.heightIn(min = if (primary) 52.dp else 48.dp)
-            .shadow(if (primary && enabled) 3.dp else 0.dp, AergisShapes.Control)
-            .background(brush, AergisShapes.Control),
-        shape = AergisShapes.Control,
+        modifier = modifier.heightIn(min = if (primary) 54.dp else 48.dp),
+        shape = AergisShapes.Chip,
         colors = ButtonDefaults.buttonColors(
-            containerColor = Color.Transparent,
-            contentColor = if (primary) AergisColors.Background else AergisColors.Text,
-            disabledContainerColor = Color.Transparent, disabledContentColor = AergisColors.Muted.copy(alpha = .55f)
+            containerColor = if (primary) AergisColors.Yellow else AergisColors.Raised,
+            contentColor = if (primary) AergisColors.Deep else AergisColors.Text,
+            disabledContainerColor = AergisColors.Outline,
+            disabledContentColor = AergisColors.Muted
         ),
-        border = if (primary && enabled) null else BorderStroke(1.dp, AergisColors.Outline),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp), content = content
     )
 }
 
 @Composable
 internal fun AergisStatusChip(text: String, color: Color = AergisColors.Muted) {
-    Surface(color = Color.Transparent, shape = AergisShapes.Chip) {
-        Row(Modifier.padding(horizontal = 0.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically,
+    Surface(color = color.copy(alpha = .09f), shape = AergisShapes.Chip) {
+        Row(Modifier.padding(horizontal = 10.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Surface(Modifier.size(6.dp), shape = AergisShapes.Chip, color = color) {}
             Text(text, color = color, style = MaterialTheme.typography.labelMedium)
@@ -102,13 +86,15 @@ internal fun AergisSection(title: String, description: String? = null) {
 
 @Composable
 internal fun AergisSettingRow(title: String, description: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp)
+        .toggleable(value = checked, role = Role.Switch, onValueChange = onCheckedChange)
+        .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(title, style = MaterialTheme.typography.titleSmall)
             Text(description, color = AergisColors.Muted, style = MaterialTheme.typography.bodyMedium)
         }
-        val stateLabel = stringResource(if (checked) R.string.ui_switch_on else R.string.ui_switch_off, title)
-        Switch(checked, onCheckedChange, modifier = Modifier.semantics { stateDescription = stateLabel })
+        Switch(checked, onCheckedChange = null)
     }
 }
 
@@ -126,20 +112,21 @@ internal fun AergisSlider(label: String, value: Float, range: ClosedFloatingPoin
 @Composable
 internal fun AergisSegmentedTabs(labels: List<String>, selected: Int, onSelected: (Int) -> Unit, modifier: Modifier = Modifier) {
     Row(
-        modifier.fillMaxWidth().background(AergisColors.Surface, AergisShapes.Control).border(1.dp, AergisColors.Outline.copy(alpha = .65f), AergisShapes.Control).padding(4.dp),
+        modifier.fillMaxWidth().selectableGroup().background(AergisColors.Surface, AergisShapes.Control).border(1.dp, AergisColors.Outline.copy(alpha = .65f), AergisShapes.Control).padding(4.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         labels.forEachIndexed { index, label ->
             val isSelected = index == selected
             Box(
                 Modifier.weight(1f).heightIn(min = 48.dp)
-                    .background(if (isSelected) Brush.verticalGradient(listOf(AergisColors.Raised, AergisColors.Raised)) else Brush.verticalGradient(listOf(Color.Transparent, Color.Transparent)), AergisShapes.Segment)
+                    .background(if (isSelected) AergisColors.Deep else Color.Transparent, AergisShapes.Segment)
                     .border(1.dp, if (isSelected) AergisColors.Outline else Color.Transparent, AergisShapes.Segment)
                     .selectable(selected = isSelected, onClick = { onSelected(index) }, role = Role.Tab),
                 contentAlignment = Alignment.Center
             ) {
-                Text(label, style = MaterialTheme.typography.labelLarge,
-                    color = if (isSelected) AergisColors.Text else AergisColors.Muted)
+                Text(label, style = MaterialTheme.typography.labelMedium,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.padding(4.dp),
+                    color = if (isSelected) AergisColors.OnStage else AergisColors.Muted)
             }
         }
     }

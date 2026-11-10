@@ -12,14 +12,19 @@ internal data class ProductSession(val actions: ProductActionState, val canToggl
         @Suppress("UNUSED_PARAMETER")
         fun from(runtime: AirRuntimeUiState, accessibility: Boolean, gestures: Boolean,
             pointer: Boolean, pointerClicking: Boolean): ProductSession {
-            val channelEnabled = gestures || pointerClicking
-            val armed = runtime.controlMode == ControlMode.ARMED
-            val healthy = runtime.running && runtime.cameraReady && runtime.visionReady && runtime.visionError == null
-            val safe = runtime.foregroundSafety == ForegroundSafety.SAFE
+            return from(runtime.running, runtime.cameraReady, runtime.visionReady, runtime.visionError,
+                runtime.controlMode, runtime.foregroundSafety, accessibility, gestures || pointerClicking)
+        }
+
+        fun from(running: Boolean, cameraReady: Boolean, visionReady: Boolean, visionError: String?,
+            mode: ControlMode, safety: ForegroundSafety, accessibility: Boolean, channelEnabled: Boolean): ProductSession {
+            val armed = mode == ControlMode.ARMED
+            val healthy = running && cameraReady && visionReady && visionError == null
+            val safe = safety == ForegroundSafety.SAFE
             return ProductSession(when {
-                !runtime.running -> ProductActionState.STOPPED
+                !running -> ProductActionState.STOPPED
                 !channelEnabled -> ProductActionState.DISABLED
-                runtime.controlMode == ControlMode.PAUSED || (armed && (!safe || !healthy || !accessibility)) -> ProductActionState.PAUSED
+                mode == ControlMode.PAUSED || (armed && (!safe || !healthy || !accessibility)) -> ProductActionState.PAUSED
                 armed -> ProductActionState.ARMED
                 else -> ProductActionState.DISARMED
             }, armed || (healthy && accessibility && safe && channelEnabled))

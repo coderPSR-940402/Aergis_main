@@ -12,9 +12,11 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import com.airgesture.control.ui.*
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -211,6 +213,15 @@ class MainActivity : ComponentActivity() {
         ContextCompat.startForegroundService(this, Intent(this, GestureCaptureService::class.java))
     }
 
+    private fun setArmed(armed: Boolean) {
+        val runtime = AirRuntime.uiStateSnapshot()
+        if (armed == (runtime.controlMode == ControlMode.ARMED)) return
+        if (!armed || (cameraAllowed && ProductSession.from(runtime, AirAccessibilityService.enabled(),
+                gesturesEnabled, pointerEnabled, pointerClickingEnabled).canToggleArm)) {
+            AirRuntime.controlMode = if (armed) ControlMode.ARMED else ControlMode.READY
+        }
+    }
+
     private fun stopSession() = GestureCaptureService.stopCapture(this)
 
     private fun openAccessibilitySettings() {
@@ -327,7 +338,7 @@ class MainActivity : ComponentActivity() {
         val edit: (RegisteredGesture) -> Unit = { editingName = it.name }
         AergisTheme {
             AergisShell(
-                gesturesEnabled || pointerClickingEnabled,
+                inputEnabled = gesturesEnabled || pointerClickingEnabled,
                 initialDestination = if (accessibilityEnabled && cameraAllowed) AergisDestination.CONTROL else AergisDestination.WELCOME,
                 onEntering = { if (it.disarmsOnEntry) AirRuntime.controlMode = ControlMode.READY },
                 requestedDestination = requestedDestination,
@@ -335,11 +346,11 @@ class MainActivity : ComponentActivity() {
             ) { destination, navigate ->
                 when (destination) {
                     AergisDestination.CONTROL -> ControlScreen(
-                        accessibilityEnabled, pointerEnabled, pointerClickingEnabled, gesturesEnabled,
+                        accessibilityEnabled, pointerClickingEnabled, gesturesEnabled,
                         RegisteredGesture.entries.count { mapping(it, mappingsVersion) != AirAction.NONE }, sessionStartError,
-                        onCapture = { if (AirRuntime.running) stopSession() else startSession() },
-                        onArm = { AirRuntime.controlMode = if (AirRuntime.controlMode == ControlMode.ARMED) ControlMode.READY else ControlMode.ARMED },
-                        onGestures = ::setGestureActions, onNavigate = navigate
+                        onStart = ::startSession, onStop = ::stopSession,
+                        onArm = ::setArmed,
+                        onGestures = ::setGestureActions, onNavigate = navigate, cameraAllowed = cameraAllowed
                     )
                     AergisDestination.GESTURES -> GesturesScreen(edit, navigate)
                     AergisDestination.SETTINGS -> SettingsScreen(navigate)
@@ -349,30 +360,38 @@ class MainActivity : ComponentActivity() {
                     AergisDestination.PERMISSIONS -> ProductPage(R.string.product_permissions) {
                         PermissionsPanel(cameraAllowed, accessibilityEnabled,
                             { setupCameraPermission.launch(Manifest.permission.CAMERA) }, ::openAccessibilitySettings, ::openAppDetails)
+                        if (cameraAllowed && accessibilityEnabled) {
+                            AergisButton({ navigate(AergisDestination.CONTROL) }, Modifier.fillMaxWidth(), primary = true) {
+                                Text(stringResource(R.string.product_go_control))
+                            }
+                        }
                         PrivacyPanel()
                     }
                     AergisDestination.PRECISION -> PrecisionScreen(navigate)
-                    AergisDestination.CALIBRATION -> CalibrationScreen()
+                    AergisDestination.CALIBRATION -> CalibrationScreen(navigate)
                     AergisDestination.PRACTICE -> ProductPage(R.string.product_practice) {
                         RehearsalStatus()
-                        Text(stringResource(R.string.product_practice_help), color = AergisColors.Muted)
-                        if (!pointerEnabled) Text(stringResource(R.string.product_practice_enable_pointer), color = AergisColors.Caution)
-                        CalibrationPreview()
-                        ProductLink(AergisDestination.CALIBRATION, stringResource(R.string.product_precision_help), navigate)
+                        TrackingReadiness(navigate)
+                        AergisPanel {
+                            AergisSection(stringResource(R.string.product_reach_preview), stringResource(R.string.product_practice_help))
+                            CalibrationPreview(rawCoordinates = false, profile = calibrationDraft.takeIf { calibrationEnabled })
+                        }
+                        ProductLink(AergisDestination.LEARN, stringResource(R.string.product_learn_help), navigate)
+                        ProductLink(AergisDestination.CALIBRATION, stringResource(R.string.product_calibration_optional), navigate)
                     }
                     AergisDestination.LIVE -> TrackingScreen(navigate)
                     AergisDestination.MOTION -> MotionScreen(
                         RegisteredGesture.entries.filter { mapping(it, mappingsVersion) == AirAction.ARM_MOTION },
                         onChoose = { navigate(AergisDestination.GESTURES) }, onNavigate = navigate)
                     AergisDestination.MOTION_PRACTICE -> MotionWalkthrough(navigate)
-                    AergisDestination.LEARN -> LearnGesturesScreen({ mapping(it, mappingsVersion) }, edit, navigate)
+                    AergisDestination.LEARN -> LearnGesturesScreen({ mapping(it, mappingsVersion) }, edit, navigate,
+                        readiness = { TrackingReadiness(navigate) })
                     AergisDestination.DIAGNOSTICS -> ProductPage(R.string.product_diagnostics) {
                         Text(stringResource(R.string.product_diagnostics_help), color = AergisColors.Muted)
                         TestingToolsCard(::saveReport, ::shareReport)
-                        ProductLink(AergisDestination.ADVANCED, stringResource(R.string.product_advanced_help), navigate)
                         PrivacyPanel()
                     }
-                    AergisDestination.ADVANCED -> AdvancedScreen()
+                    AergisDestination.ADVANCED -> AdvancedScreen(navigate)
                     AergisDestination.ABOUT -> ProductPage(R.string.product_about) {
                         Text(stringResource(R.string.product_about_help), color = AergisColors.Muted)
                         PrivacyPanel()
@@ -394,6 +413,38 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    @Composable
+    private fun TrackingReadiness(navigate: (AergisDestination) -> Unit) {
+        val flow = remember { AirRuntime.uiState.map { HomeUiState.from(it) }.distinctUntilChanged() }
+        val home by flow.collectAsStateWithLifecycle(initialValue = HomeUiState.from(AirRuntime.uiStateSnapshot()))
+        val status = when {
+            !cameraAllowed || !accessibilityEnabled -> R.string.product_setup_required
+            !home.running -> R.string.product_camera_off
+            home.visionError != null -> R.string.product_tracking_problem
+            !home.cameraReady || !home.visionReady -> R.string.product_camera_starting
+            home.handsDetected == 0 -> R.string.product_no_hand
+            else -> R.string.product_hand_visible
+        }
+        AergisPanel {
+            AergisStatusChip(stringResource(status, home.handedness),
+                if (status == R.string.product_hand_visible) AergisColors.Success else AergisColors.Purple)
+            when {
+                !cameraAllowed || !accessibilityEnabled -> ProductLink(AergisDestination.PERMISSIONS,
+                    stringResource(R.string.product_setup_required_help), navigate)
+                !home.running -> {
+                    sessionStartError?.let { Text(it, color = AergisColors.Error) }
+                    AergisButton(::startSession, Modifier.fillMaxWidth(), primary = true) {
+                        Text(stringResource(R.string.start_capture))
+                    }
+                }
+                home.visionError != null -> {
+                    Text(home.visionError.orEmpty(), color = AergisColors.Error)
+                    AergisButton(::stopSession, Modifier.fillMaxWidth()) { Text(stringResource(R.string.stop_capture)) }
+                }
+            }
+        }
+    }
+
     @OptIn(kotlinx.coroutines.FlowPreview::class)
     @Composable
     private fun TrackingScreen(navigate: (AergisDestination) -> Unit) {
@@ -401,31 +452,37 @@ class MainActivity : ComponentActivity() {
         val runtime by flow.collectAsStateWithLifecycle(initialValue = AirRuntime.uiStateSnapshot())
         val testing by TestingTools.state.collectAsStateWithLifecycle()
         ProductPage(R.string.product_live) {
+            TrackingReadiness(navigate)
+            if (runtime.running && runtime.cameraReady) AergisPanel {
+                AergisSection(stringResource(R.string.product_camera_view))
+                CalibrationPreview(rawCoordinates = true)
+                AergisButton({ TestingTools.setMirror(!testing.mirror) }, Modifier.fillMaxWidth(),
+                    enabled = testing.mirror || accessibilityEnabled) {
+                    Text(stringResource(if (testing.mirror) R.string.testing_mirror_hide else R.string.testing_mirror_show))
+                }
+            }
             AergisPanel {
-                Text(stringResource(R.string.camera_status, stringResource(if (runtime.cameraReady) R.string.status_ready else R.string.status_not_active)))
-                Text(stringResource(R.string.vision_status, stringResource(if (runtime.visionReady) R.string.status_ready else R.string.status_not_ready)))
-                Text(stringResource(R.string.hands_detected, runtime.handsDetected))
-                Text(stringResource(R.string.tracking_hand, runtime.handedness))
-                Text(stringResource(R.string.gesture, runtime.lastGesture))
+                AergisSection(stringResource(R.string.product_session_details))
+                val signal = RegisteredGesture.fromSignal(runtime.lastGesture)
+                    ?.takeIf { runtime.running && runtime.visionReady && runtime.handsDetected > 0 }
+                Text(stringResource(R.string.product_live_signal,
+                    signal?.let { stringResource(gestureLabelRes(it)) } ?: stringResource(R.string.product_live_signal_empty)))
                 Text(stringResource(runtime.pointerFeedback.label()), color = AergisColors.Muted)
                 Text(stringResource(R.string.foreground_status, stringResource(when (runtime.foregroundSafety) {
                     ForegroundSafety.SAFE -> R.string.foreground_safe
                     ForegroundSafety.PROTECTED -> R.string.foreground_protected
                     ForegroundSafety.UNKNOWN -> R.string.foreground_unknown
                 })))
-                runtime.visionError?.let { Text(it, color = AergisColors.Error) }
             }
-            AergisButton({ TestingTools.setMirror(!testing.mirror) }, Modifier.fillMaxWidth(),
-                enabled = testing.mirror || (runtime.running && runtime.cameraReady && accessibilityEnabled)) {
-                Text(stringResource(if (testing.mirror) R.string.testing_mirror_hide else R.string.testing_mirror_show))
+            if (runtime.running && runtime.visionError == null) {
+                AergisButton(::stopSession, Modifier.fillMaxWidth()) { Text(stringResource(R.string.stop_capture)) }
             }
-            ProductLink(AergisDestination.DIAGNOSTICS, stringResource(R.string.product_diagnostics_help), navigate)
         }
     }
 
     @OptIn(kotlinx.coroutines.FlowPreview::class)
     @Composable
-    private fun CalibrationScreen() {
+    private fun CalibrationScreen(navigate: (AergisDestination) -> Unit) {
         DisposableEffect(Unit) {
             onDispose { if (calibrationState != PointerCalibrationSession.State.IDLE) cancelCalibration() }
         }
@@ -444,6 +501,7 @@ class MainActivity : ComponentActivity() {
         val rawTracking by rawTrackingFlow.collectAsStateWithLifecycle(initialValue = AirRuntime.rawPointerSnapshot().tracking)
         ProductPage(R.string.product_calibration) {
             Text(stringResource(R.string.product_calibration_optional), color = AergisColors.Muted)
+            TrackingReadiness(navigate)
             CalibrationCard(rawTracking, runtime.controlMode, runtime.running && runtime.cameraReady)
         }
     }
@@ -472,20 +530,16 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     private fun SettingsScreen(navigate: (AergisDestination) -> Unit) {
-        ProductPage(R.string.product_settings) {
+        ProductPage(R.string.product_settings, R.string.product_settings_kicker) {
+            AergisSection(stringResource(R.string.product_settings_input_group))
             AergisPanel { HandPreferencePanel() }
             ProductLink(AergisDestination.PRECISION, stringResource(R.string.product_precision_help), navigate)
+            AergisSection(stringResource(R.string.product_device_setup))
             ProductLink(AergisDestination.PERMISSIONS, stringResource(R.string.product_setup_permissions_help), navigate)
-            ProductLink(AergisDestination.DIAGNOSTICS, stringResource(R.string.product_diagnostics_help), navigate)
             ProductLink(AergisDestination.WELCOME, stringResource(R.string.product_setup_start), navigate)
+            AergisSection(stringResource(R.string.product_support))
+            ProductLink(AergisDestination.ADVANCED, stringResource(R.string.product_advanced_settings_help), navigate)
             ProductLink(AergisDestination.ABOUT, stringResource(R.string.app_tagline), navigate)
-            // Preserve PR #68's experimental activity; no gaze runtime is embedded in this UI.
-            AergisPanel {
-                Text(stringResource(R.string.product_gaze_help), color = AergisColors.Muted)
-                AergisButton({ startActivity(Intent(this@MainActivity, com.airgesture.control.gaze.GazeLabActivity::class.java)) }, Modifier.fillMaxWidth()) {
-                    Text(stringResource(R.string.gaze_lab))
-                }
-            }
         }
     }
 
@@ -494,23 +548,66 @@ class MainActivity : ComponentActivity() {
         var query by rememberSaveable { mutableStateOf("") }
         var filter by rememberSaveable { mutableIntStateOf(0) }
         var presetApplied by rememberSaveable { mutableStateOf(false) }
+        var presetExpanded by rememberSaveable { mutableStateOf(false) }
         val missingPresetActions = remember(mappingsVersion) {
             TouchFreeNavigationPreset.missingActions(ActionMappingStore(this@MainActivity))
         }
         val missingPresetLabels = missingPresetActions.map { actionLabel(it) }.joinToString(", ")
-        val rows = RegisteredGesture.entries.map { gesture ->
-            Triple(gesture, stringResource(gestureLabelRes(gesture)), actionLabel(mapping(gesture, mappingsVersion)))
-        }.filter { (gesture, name, action) ->
-            (name.contains(query, ignoreCase = true) || action.contains(query, ignoreCase = true)) &&
-                (filter == 0 || (filter == 1) == (mapping(gesture, mappingsVersion) != AirAction.NONE))
+        val bindings = remember(mappingsVersion) {
+            val store = ActionMappingStore(this@MainActivity)
+            RegisteredGesture.entries.associateWith(store::mapping)
         }
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(20.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            item { ProductHeading(R.string.product_gestures) }
-            item { GestureLibraryIntro() }
-            item { Text(stringResource(R.string.navigation_gesture_help), color = AergisColors.Muted) }
+        val assigned = bindings.values.count { it != AirAction.NONE }
+        val term = query.trim()
+        val rows = bindings.entries.sortedBy { it.value == AirAction.NONE }.filter { (gesture, action) ->
+            (stringResource(gestureLabelRes(gesture)).contains(term, ignoreCase = true) ||
+                actionLabel(action).contains(term, ignoreCase = true)) &&
+                (filter == 0 || (filter == 1) == (action != AirAction.NONE))
+        }
+        LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            item {
+                Row(
+                    Modifier.fillMaxWidth().background(AergisColors.Raised, AergisShapes.Stage).padding(16.dp),
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                        ProductHeading(R.string.product_gestures, R.string.product_gesture_kicker)
+                        Text(stringResource(R.string.product_assigned_count, assigned, bindings.size),
+                            color = AergisColors.Purple, style = MaterialTheme.typography.bodyMedium)
+                    }
+                    if (androidx.compose.ui.platform.LocalDensity.current.fontScale <= 1.25f) {
+                        HandDiagram(RegisteredGesture.VICTORY, Modifier.size(92.dp))
+                    }
+                }
+            }
+            item {
+                androidx.compose.material3.OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth(),
+                    label = { Text(stringResource(R.string.product_search_gestures)) }, singleLine = true)
+            }
+            item { AergisSegmentedTabs(listOf(stringResource(R.string.product_filter_all),
+                stringResource(R.string.product_filter_assigned), stringResource(R.string.product_filter_unassigned)), filter, { filter = it }) }
             item {
                 AergisPanel {
+                    AergisSettingRow(stringResource(R.string.product_mapped_actions),
+                        stringResource(R.string.product_gesture_switch_help), gesturesEnabled, ::setGestureActions)
+                }
+            }
+            item { ProductLink(AergisDestination.LEARN, stringResource(R.string.product_learn_help), navigate) }
+            if (rows.isEmpty()) item {
+                AergisPanel {
+                    Text(stringResource(R.string.product_no_matches), color = AergisColors.Muted)
+                    AergisButton({ query = ""; filter = 0 }, Modifier.fillMaxWidth()) {
+                        Text(stringResource(R.string.product_clear_filters))
+                    }
+                }
+            }
+            if (term.isEmpty()) item(key = "navigation-preset") {
+                AergisButton({ presetExpanded = !presetExpanded }, Modifier.fillMaxWidth()) {
+                    Text(stringResource(if (presetExpanded) R.string.product_hide_navigation_preset else R.string.product_navigation_preset))
+                }
+                if (presetExpanded) AergisPanel(Modifier.padding(top = 8.dp)) {
                     Text(stringResource(R.string.touch_free_preset_help), color = AergisColors.Muted)
                     AergisButton(onClick = {
                         TouchFreeNavigationPreset.apply(ActionMappingStore(this@MainActivity))
@@ -528,13 +625,7 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
-            item { ProductLink(AergisDestination.LEARN, stringResource(R.string.product_learn_help), navigate) }
-            item { androidx.compose.material3.OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth(),
-                label = { Text(stringResource(R.string.product_search_gestures)) }, singleLine = true) }
-            item { AergisSegmentedTabs(listOf(stringResource(R.string.product_filter_all),
-                stringResource(R.string.product_filter_assigned), stringResource(R.string.product_filter_unassigned)), filter, { filter = it }) }
-            if (rows.isEmpty()) item { Text(stringResource(R.string.product_no_matches), color = AergisColors.Muted) }
-            rows.forEach { (gesture, _, _) -> item(key = gesture.name) { MappingRow(gesture, onEdit) } }
+            rows.forEach { (gesture, action) -> item(key = gesture.name) { MappingRow(gesture, action, onEdit) } }
         }
     }
 
@@ -591,10 +682,18 @@ class MainActivity : ComponentActivity() {
 
     @OptIn(kotlinx.coroutines.FlowPreview::class)
     @Composable
-    private fun AdvancedScreen() {
+    private fun AdvancedScreen(navigate: (AergisDestination) -> Unit) {
         val flow = remember { AirRuntime.uiState.sample(250L) }
         val runtime by flow.collectAsStateWithLifecycle(initialValue = AirRuntime.uiStateSnapshot())
         ProductPage(R.string.product_advanced) {
+            ProductLink(AergisDestination.DIAGNOSTICS, stringResource(R.string.product_diagnostics_help), navigate)
+            AergisPanel {
+                AergisSection(stringResource(R.string.product_experiments))
+                Text(stringResource(R.string.product_gaze_help), color = AergisColors.Muted)
+                AergisButton({ startActivity(Intent(this@MainActivity, com.airgesture.control.gaze.GazeLabActivity::class.java)) }, Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.gaze_lab))
+                }
+            }
             DiagnosticsCard(runtime)
             DiagnosticFilterPanel()
         }
@@ -605,7 +704,7 @@ class MainActivity : ComponentActivity() {
         var advanced by rememberSaveable { mutableStateOf(false) }
         val capturing = calibrationState != PointerCalibrationSession.State.IDLE
         AergisPanel {
-            Text(stringResource(R.string.calibration_title), style = MaterialTheme.typography.titleMedium)
+            AergisSection(stringResource(if (capturing) R.string.product_calibration_session else R.string.product_calibration_profile))
             Text(stringResource(R.string.calibration_context,
                 stringResource(when (handPreference) {
                     ControlHandPreference.LEFT -> R.string.hand_left
@@ -615,14 +714,7 @@ class MainActivity : ComponentActivity() {
             Text(stringResource(R.string.calibration_status,
                 stringResource(if (calibrationEnabled) R.string.calibration_status_enabled else R.string.calibration_status_disabled),
                 calibrationSampleCount))
-            Text(stringResource(R.string.calibration_raw_preview), color = AergisColors.Muted,
-                style = MaterialTheme.typography.labelMedium)
-            CalibrationStepPreview(calibrationSampleCount, capturing)
-            if (capturing) Text(stringResource(R.string.calibration_touch_free), color = AergisColors.Muted)
-            calibrationMessage?.let { Text(it) }
             if (capturing) {
-                Text(stringResource(if (controlMode == ControlMode.READY) R.string.calibration_actions_disarmed
-                    else R.string.calibration_restart_disarmed), color = AergisColors.Caution)
                 Text(stringResource(if (calibrationState == PointerCalibrationSession.State.INVALID) R.string.calibration_invalid
                     else when (calibrationSampleCount) {
                     0 -> R.string.calibration_corner_top_left
@@ -631,17 +723,26 @@ class MainActivity : ComponentActivity() {
                     3 -> R.string.calibration_corner_bottom_left
                     else -> R.string.calibration_review_corners
                 }), style = MaterialTheme.typography.titleMedium)
-                if (!sampleAvailable) Text(stringResource(R.string.calibration_wait_for_tracking), color = AergisColors.Caution)
+                if (controlMode != ControlMode.READY) {
+                    Text(stringResource(R.string.calibration_restart_disarmed), color = AergisColors.Caution)
+                }
+                calibrationMessage?.let { Text(it, color = AergisColors.Muted) }
                 if (calibrationState != PointerCalibrationSession.State.INVALID) {
+                    CalibrationStepPreview(calibrationSampleCount, capturing)
+                    if (!sampleAvailable && calibrationSampleCount < 4) {
+                        Text(stringResource(R.string.calibration_wait_for_tracking), color = AergisColors.Caution)
+                    }
+                    if (calibrationState == PointerCalibrationSession.State.READY) {
+                        AergisButton(onClick = ::completeCalibration, enabled = controlMode == ControlMode.READY,
+                            primary = true, modifier = Modifier.fillMaxWidth()) {
+                            Text(stringResource(R.string.calibration_save))
+                        }
+                    }
                     AergisButton(onClick = ::captureCalibrationSample, enabled = sampleAvailable && controlMode == ControlMode.READY,
                         primary = calibrationSampleCount < 4, modifier = Modifier.fillMaxWidth()) {
                         Text(stringResource(if (calibrationSampleCount < 4) R.string.calibration_capture_corner else R.string.calibration_add_sample))
                     }
-                    AergisButton(onClick = ::completeCalibration,
-                        enabled = calibrationState == PointerCalibrationSession.State.READY && controlMode == ControlMode.READY,
-                        primary = calibrationSampleCount >= 4, modifier = Modifier.fillMaxWidth()) {
-                        Text(stringResource(R.string.calibration_save))
-                    }
+                    Text(stringResource(R.string.calibration_touch_free), color = AergisColors.Muted)
                 }
                 AergisButton(onClick = ::startCalibration, modifier = Modifier.fillMaxWidth()) {
                     Text(stringResource(R.string.calibration_restart))
@@ -650,8 +751,8 @@ class MainActivity : ComponentActivity() {
                     Text(stringResource(R.string.calibration_cancel))
                 }
             } else {
+                calibrationMessage?.let { Text(it, color = AergisColors.Purple) }
                 Text(stringResource(R.string.calibration_guided_intro))
-                if (!sampleAvailable) Text(stringResource(R.string.calibration_wait_for_tracking), color = AergisColors.Caution)
                 AergisButton(onClick = { advanced = false; startCalibration() }, enabled = cameraAvailable,
                     primary = true, modifier = Modifier.fillMaxWidth()) {
                     Text(stringResource(R.string.calibration_begin_guided))
@@ -696,27 +797,6 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun CalibrationSlider(label: Int, value: Float, range: ClosedFloatingPointRange<Float>, onChanged: (Float) -> Unit) {
         AergisSlider(stringResource(label, value), value, range, onChanged)
-    }
-
-    @Composable
-    private fun PracticeCard(controlMode: ControlMode) {
-        AergisPanel {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text(stringResource(R.string.practice_title), style = MaterialTheme.typography.titleMedium)
-                Text(stringResource(R.string.practice_description))
-                Text(stringResource(R.string.practice_safety_note))
-                AergisButton(
-                    enabled = controlMode == ControlMode.ARMED,
-                    onClick = { AirRuntime.controlMode = ControlMode.READY },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(stringResource(R.string.practice_disarm))
-                }
-            }
-        }
     }
 
     @Composable
@@ -772,11 +852,13 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
-    private fun MappingRow(source: RegisteredGesture, onEdit: (RegisteredGesture) -> Unit) {
-        val current = mapping(source, mappingsVersion)
-        val restriction = if (current != AirAction.NONE &&
-            !GestureActionPolicy.isClassifierActionEnabled(true, current, pointerEnabled, source))
-            stringResource(R.string.ui_mapping_pointer_restriction) else null
+    private fun MappingRow(source: RegisteredGesture, current: AirAction, onEdit: (RegisteredGesture) -> Unit) {
+        val restriction = when {
+            android.os.Build.VERSION.SDK_INT < current.minimumSdk -> stringResource(R.string.action_unavailable)
+            !GestureActionPolicy.isClassifierActionEnabled(true, current, pointerEnabled, source) &&
+                current != AirAction.NONE -> stringResource(R.string.ui_mapping_pointer_restriction)
+            else -> null
+        }
         GestureMappingRow(source, stringResource(gestureLabelRes(source)), actionLabel(current),
             stringResource(gestureHelpRes(source)), restriction) { onEdit(source) }
     }
