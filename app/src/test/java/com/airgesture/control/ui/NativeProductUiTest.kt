@@ -25,7 +25,7 @@ class NativeProductUiTest {
         var clicks = 0
         compose.setContent {
             AergisTheme {
-                AergisShell(true) { _, _ ->
+                AergisShell { _, _ ->
                     Button({ clicks++ }) { Text("Selected control") }
                 }
             }
@@ -59,7 +59,7 @@ class NativeProductUiTest {
         var handled = 0
         compose.setContent {
             AergisTheme {
-                AergisShell(true, initialDestination = AergisDestination.SETTINGS,
+                AergisShell(initialDestination = AergisDestination.SETTINGS,
                     onEntering = { if (it.disarmsOnEntry) AirRuntime.controlMode = ControlMode.READY },
                     requestedDestination = request.value,
                     onDestinationHandled = { handled++; request.value = null }) { destination, _ ->
@@ -82,7 +82,7 @@ class NativeProductUiTest {
         val restoration = StateRestorationTester(compose)
         restoration.setContent {
             AergisTheme {
-                AergisShell(true, onEntering = { if (it.disarmsOnEntry) AirRuntime.controlMode = ControlMode.READY }) { destination, navigate ->
+                AergisShell(onEntering = { if (it.disarmsOnEntry) AirRuntime.controlMode = ControlMode.READY }) { destination, navigate ->
                     when (destination) {
                         AergisDestination.CONTROL -> Button({ navigate(AergisDestination.PRECISION) }) { Text("Open precision") }
                         AergisDestination.PRECISION -> Button({ navigate(AergisDestination.CALIBRATION) }) { Text("Open calibration") }
@@ -102,6 +102,29 @@ class NativeProductUiTest {
         compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
         compose.onNodeWithText("Open calibration").assertIsDisplayed()
         assertEquals(ControlMode.READY, AirRuntime.controlMode)
+    }
+
+    @Test fun backIntoRehearsalDisarmsAgain() {
+        compose.setContent {
+            AergisTheme {
+                AergisShell(onEntering = { if (it.disarmsOnEntry) AirRuntime.controlMode = ControlMode.READY }) {
+                        destination, navigate ->
+                    when (destination) {
+                        AergisDestination.CONTROL -> Button({ navigate(AergisDestination.PRACTICE) }) { Text("Open rehearsal") }
+                        AergisDestination.PRACTICE -> Button({ navigate(AergisDestination.LIVE) }) { Text("Open tracking") }
+                        else -> Text("Live")
+                    }
+                }
+            }
+        }
+        compose.onNodeWithText("Open rehearsal").performClick()
+        compose.onNodeWithText("Open tracking").performClick()
+        compose.runOnIdle {
+            AirRuntime.controlMode = ControlMode.ARMED
+            compose.activity.onBackPressedDispatcher.onBackPressed()
+            assertEquals(ControlMode.READY, AirRuntime.controlMode)
+        }
+        compose.onNodeWithText("Open tracking").assertIsDisplayed()
     }
 
     @Test fun mappingCancelDoesNotInvokeSaveAndRetainsOriginalTuning() {
