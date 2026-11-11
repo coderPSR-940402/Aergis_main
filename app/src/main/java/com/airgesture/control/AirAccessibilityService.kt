@@ -189,6 +189,20 @@ class AirAccessibilityService : AccessibilityService() {
         dispatch(AirAction.TAP, origin = ActionOrigin.POINTER, expectedEpoch = expectedEpoch,
             sourceDeadlineMs = sourceDeadlineMs)
 
+    /** Check the applied, epoch-matching hotspot rather than an asynchronously queued position. */
+    internal fun isVisibleTapTargetReady(expectedEpoch: Long, normalizedX: Float, normalizedY: Float): Boolean {
+        val applied = visibleHotspot ?: return false
+        val pending = pendingPointer
+        if (applied.epoch != expectedEpoch || pending.epoch != expectedEpoch || !pending.visible ||
+            AirRuntime.actionEpoch != expectedEpoch || !AirRuntime.pointerEnabled ||
+            AirRuntime.controlMode != ControlMode.ARMED ||
+            !normalizedX.isFinite() || !normalizedY.isFinite()) return false
+        val intended = screenSize().map(normalizedX, normalizedY)
+        // Small tolerance for subpixel layout and cursor jitter, not a new target.
+        val maxDistancePx = 8f * resources.displayMetrics.density
+        return kotlin.math.hypot(applied.point.x - intended.x, applied.point.y - intended.y) <= maxDistancePx
+    }
+
     fun dispatch(action: AirAction, tuning: GestureTuning = GestureTuning(),
         expectedEpoch: Long = AirRuntime.actionEpoch, sourceDeadlineMs: Long? = null) =
         dispatch(action, tuning, ActionOrigin.GESTURE, expectedEpoch, sourceDeadlineMs)

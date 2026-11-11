@@ -620,9 +620,9 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 !touchAllowed -> "touch_gate_blocked"
                 !processed.poseEvidence.accepted -> "geometry_rejected"
                 !targetTrusted -> "pointer_untrusted"
-                !processed.isClickEngaged -> "awaiting_contact_confirmation_or_release"
+                !processed.isClickEngaged && !interpreter.hasPendingTap -> "awaiting_contact_confirmation_or_release"
                 AirAccessibilityService.instance == null -> "accessibility_unavailable"
-                else -> "recognized_for_dispatch"
+                else -> "confirmed_or_pending_hotspot_check"
             })
             if (AirRuntime.actionEpoch != pointerEpoch) { resetTrackingState(); return }
             if (!tipUsable && !anchorProtected) {
@@ -699,8 +699,13 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             AirRuntime.setPointerState(stabilized.x, stabilized.y, targetTrusted)
             // Recognition initiates one bounded tap. Release only rearms. The same
             // frame's pinch evidence excludes the classifier before its dispatch gate.
-            if (touchAllowed && targetTrusted && processed.isClickEngaged) {
-                AirAccessibilityService.instance?.dispatchPointerTap(pointerEpoch, pointerTapDeadlineMs)
+            val tapService = AirAccessibilityService.instance
+            val appliedTargetReady = touchAllowed && targetTrusted &&
+                tapService?.isVisibleTapTargetReady(pointerEpoch, stabilized.x, stabilized.y) == true
+            if (touchAllowed && interpreter.takePendingTap(timestamp, appliedTargetReady)) {
+                // The visible hotspot, not just the raw camera estimate, is the
+                // coordinate source snapshotted by the accessibility dispatcher.
+                tapService?.dispatchPointerTap(pointerEpoch, pointerTapDeadlineMs)
             }
 
             // Pointer travel and held contact never dispatch scrolling or drag.
