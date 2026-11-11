@@ -24,16 +24,22 @@ import com.airgesture.control.R
 
 @Composable
 internal fun ProductHeading(title: Int, eyebrow: Int? = null) {
-    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-        eyebrow?.let { ProductEyebrow(stringResource(it)) }
-        Text(stringResource(title), style = MaterialTheme.typography.displaySmall, color = AergisColors.Text,
-            modifier = Modifier.semantics { heading() })
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Box(Modifier.width(28.dp).height(3.dp).background(AergisColors.Yellow))
+            eyebrow?.let { ProductEyebrow(stringResource(it), AergisColors.Silver) }
+        }
+        Text(stringResource(title), style = MaterialTheme.typography.displaySmall,
+            color = AergisColors.Text, modifier = Modifier.semantics { heading() })
+        HorizontalDivider(color = AergisColors.Outline.copy(alpha = .7f))
     }
 }
 
 @Composable
 internal fun ProductPage(title: Int, eyebrow: Int? = null, content: @Composable ColumnScope.() -> Unit) {
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 14.dp),
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+        .padding(horizontal = 16.dp, vertical = 18.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)) {
         ProductHeading(title, eyebrow)
         content()
@@ -44,20 +50,25 @@ internal fun ProductPage(title: Int, eyebrow: Int? = null, content: @Composable 
 internal fun ProductLink(destination: AergisDestination, description: String,
     onNavigate: (AergisDestination) -> Unit) {
     Surface(
-        onClick = { onNavigate(destination) }, color = AergisColors.Surface,
+        onClick = { onNavigate(destination) }, color = AergisColors.Deep,
         shape = AergisShapes.Card, modifier = Modifier.fillMaxWidth(),
         border = BorderStroke(1.dp, AergisColors.Outline)
     ) {
-        Row(Modifier.fillMaxWidth().heightIn(min = 70.dp).padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Box(Modifier.size(42.dp).background(AergisColors.Raised, AergisShapes.Control), contentAlignment = Alignment.Center) {
-                AergisIcon(destination.glyph, Modifier.size(22.dp), AergisColors.Purple)
+        Row(Modifier.fillMaxWidth().heightIn(min = 78.dp).padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            Box(Modifier.size(48.dp).background(AergisColors.StageShadow, AergisShapes.Control),
+                contentAlignment = Alignment.Center) {
+                AergisIcon(destination.glyph, Modifier.size(25.dp), AergisColors.Yellow)
             }
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(stringResource(destination.label), style = MaterialTheme.typography.titleSmall)
                 Text(description, style = MaterialTheme.typography.bodySmall, color = AergisColors.Muted)
             }
-            AergisIcon(AergisGlyph.ARROW, Modifier.size(18.dp), AergisColors.Purple)
+            Box(Modifier.size(30.dp).background(AergisColors.Raised, AergisShapes.Chip),
+                contentAlignment = Alignment.Center) {
+                AergisIcon(AergisGlyph.ARROW, Modifier.size(17.dp), AergisColors.Silver)
+            }
         }
     }
 }

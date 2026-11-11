@@ -1,10 +1,13 @@
 package com.airgesture.control.ui
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -20,7 +23,7 @@ internal fun ControlScreen(
     onArm: (Boolean) -> Unit, onGestures: (Boolean) -> Unit, onNavigate: (AergisDestination) -> Unit,
     cameraAllowed: Boolean = true
 ) {
-    // Project only visible state so per-frame telemetry cannot invalidate this screen.
+    // Do not recompose the dashboard for every camera frame.
     val flow = remember { AirRuntime.uiState.map { HomeUiState.from(it) }.distinctUntilChanged() }
     val home by flow.collectAsStateWithLifecycle(initialValue = HomeUiState.from(AirRuntime.uiStateSnapshot()))
     val visionError = home.visionError
@@ -59,8 +62,13 @@ internal fun ControlScreen(
         armed -> stringResource(R.string.refined_disarm_caption)
         else -> stringResource(R.string.product_hero_ready_help)
     }
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        item {
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().testTag("control-dashboard"),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        item(key = "command-cockpit") {
             ControlCommandCenter(home.running, session.actions, status, detail, primaryLabel,
                 enabled = primaryLabel != R.string.product_waiting_to_arm,
                 onPrimary = {
@@ -74,7 +82,10 @@ internal fun ControlScreen(
                     }
                 }, onStop = onStop)
         }
-        item {
+        item(key = "readiness") {
+            ControlReadinessStrip(home)
+        }
+        item(key = "tracking-shortcut") {
             val handStatus = when {
                 !home.running -> R.string.product_camera_off
                 visionError != null -> R.string.product_tracking_problem
@@ -84,13 +95,53 @@ internal fun ControlScreen(
             }
             ProductLink(AergisDestination.LIVE, stringResource(handStatus, home.handedness), onNavigate)
         }
-        item { AergisSection(stringResource(R.string.product_control_methods)) }
-        item { ProductInputTiles(assignedCount, onNavigate) }
-        item { AergisSection(stringResource(R.string.product_practice_tools)) }
-        item { ProductLink(AergisDestination.LEARN, stringResource(R.string.product_learn_help), onNavigate) }
-        item { ProductLink(AergisDestination.PRACTICE, stringResource(R.string.product_practice_help), onNavigate) }
-        item { ProductLink(AergisDestination.CALIBRATION, stringResource(R.string.product_calibration_optional), onNavigate) }
-        item { ProductLink(AergisDestination.PRECISION, stringResource(R.string.product_precision_help), onNavigate) }
+        item(key = "input-heading") {
+            AergisSection(stringResource(R.string.product_control_methods),
+                stringResource(R.string.ui_gestures_screen_description))
+        }
+        item(key = "input-tiles") { ProductInputTiles(assignedCount, onNavigate) }
+        item(key = "practice-heading") { AergisSection(stringResource(R.string.product_practice_tools)) }
+        item(key = "practice") { ProductLink(AergisDestination.PRACTICE, stringResource(R.string.product_practice_help), onNavigate) }
+        item(key = "learn") { ProductLink(AergisDestination.LEARN, stringResource(R.string.product_learn_help), onNavigate) }
+        item(key = "calibrate") { ProductLink(AergisDestination.CALIBRATION, stringResource(R.string.product_calibration_optional), onNavigate) }
+        item(key = "precision") { ProductLink(AergisDestination.PRECISION, stringResource(R.string.product_precision_help), onNavigate) }
+    }
+}
+
+/** Read-only state. Pointer availability is intentionally not used as a gesture-action gate. */
+@Composable
+private fun ControlReadinessStrip(home: HomeUiState) {
+    val cameraGood = home.running && home.cameraReady
+    val modelGood = cameraGood && home.visionReady && home.visionError == null
+    val handGood = modelGood && home.handsDetected > 0
+    Surface(
+        modifier = Modifier.fillMaxWidth().testTag("control-signal-strip"),
+        shape = AergisShapes.Card, color = AergisColors.Surface,
+        border = BorderStroke(1.dp, AergisColors.Outline)
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            ProductEyebrow(stringResource(R.string.ui_system_overview), AergisColors.Silver)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                ReadinessSignal(stringResource(R.string.ui_camera),
+                    stringResource(if (cameraGood) R.string.ui_capture_on else R.string.ui_capture_off), cameraGood)
+                ReadinessSignal(stringResource(R.string.ui_vision),
+                    stringResource(if (modelGood) R.string.status_ready else R.string.status_not_ready), modelGood)
+                ReadinessSignal(stringResource(R.string.ui_hand),
+                    stringResource(if (handGood) R.string.status_ready else R.string.ui_no_hand), handGood)
+            }
+        }
+    }
+}
+
+@Composable
+private fun RowScope.ReadinessSignal(label: String, value: String, ready: Boolean) {
+    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+        Surface(shape = AergisShapes.Chip,
+            color = if (ready) AergisColors.Success else AergisColors.Caution) {
+            Spacer(Modifier.size(7.dp))
+        }
+        Text(label, style = MaterialTheme.typography.labelSmall, color = AergisColors.Muted)
+        Text(value, style = MaterialTheme.typography.bodyMedium, color = AergisColors.Text)
     }
 }
 

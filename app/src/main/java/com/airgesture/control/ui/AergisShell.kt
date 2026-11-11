@@ -2,6 +2,8 @@ package com.airgesture.control.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
@@ -74,12 +76,13 @@ internal fun AergisShell(
         Box(Modifier.fillMaxSize().padding(insets), contentAlignment = Alignment.TopCenter) {
             Column(Modifier.widthIn(max = 760.dp).fillMaxSize()) {
                 Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 7.dp).heightIn(min = 48.dp),
+                    Modifier.fillMaxWidth().background(Brush.horizontalGradient(listOf(AergisColors.Deep, AergisColors.StageShadow, AergisColors.Deep)))
+                        .padding(horizontal = 18.dp, vertical = 12.dp).heightIn(min = 60.dp),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Box(Modifier.size(37.dp).background(AergisColors.Stage, AergisShapes.Control),
+                    Box(Modifier.size(42.dp).background(AergisColors.Yellow, AergisShapes.Control),
                         contentAlignment = Alignment.Center) {
-                        AergisMark(Modifier.size(23.dp), AergisColors.OnStage)
+                        AergisMark(Modifier.size(25.dp), AergisColors.Deep)
                     }
                     Column(Modifier.weight(1f)) {
                         Text(stringResource(R.string.ui_brand), style = AergisType.Brand, color = AergisColors.Text)
@@ -108,25 +111,30 @@ internal fun AergisShell(
 @Composable
 private fun NavigationDock(activeRoot: String?, navigate: (AergisDestination) -> Unit) {
     Row(
-        Modifier.widthIn(max = 520.dp).fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
-            .clip(AergisShapes.Card).background(AergisColors.Deep).selectableGroup()
-            .padding(5.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically
+        Modifier.widthIn(max = 520.dp).fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 10.dp)
+            .clip(AergisShapes.Card).background(AergisColors.Surface)
+            .border(1.dp, AergisColors.Outline, AergisShapes.Card)
+            .selectableGroup().padding(5.dp),
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
         for (destination in AergisDestination.entries.filter { it.root }) {
             val selected = activeRoot == destination.name
-            val ink = if (selected) AergisColors.Deep else AergisColors.StageHint
+            val ink = if (selected) AergisColors.Deep else AergisColors.Silver
             Column(
-                Modifier.weight(1f).heightIn(min = 56.dp).clip(AergisShapes.Control)
-                    .background(if (selected) AergisColors.Yellow else AergisColors.Deep)
-                    .testTag("nav-${destination.name}")
+                Modifier.weight(1f).heightIn(min = 62.dp).clip(AergisShapes.Control)
+                    .background(if (selected) AergisColors.Yellow else AergisColors.Surface)
+                    .testTag("nav-" + destination.name)
                     .selectable(selected, role = Role.Tab, onClick = { navigate(destination) })
-                    .padding(horizontal = 4.dp, vertical = 6.dp),
-                horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center
+                    .padding(horizontal = 4.dp, vertical = 7.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
             ) {
-                AergisIcon(destination.glyph, Modifier.size(21.dp), ink)
-                Text(stringResource(destination.label), color = ink, style = MaterialTheme.typography.labelMedium,
-                    textAlign = TextAlign.Center)
+                AergisIcon(destination.glyph, Modifier.size(22.dp), ink)
+                Spacer(Modifier.height(5.dp))
+                Text(stringResource(destination.label), color = ink,
+                    style = MaterialTheme.typography.labelMedium, textAlign = TextAlign.Center)
             }
         }
     }
