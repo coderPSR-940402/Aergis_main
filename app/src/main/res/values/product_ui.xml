@@ -176,4 +176,6 @@ A gesture away.</string>
     <string name="product_mapping_label">CHANGE MAPPING</string>
     <string name="product_settings_kicker">DEVICE &amp; PREFERENCES</string>
     <string name="product_settings_input_group">Input</string>
+    <string name="product_build_short">BUILD %1$d</string>
+    <string name="product_build_full">Version %1$s • build %2$d</string>
 </resources>
