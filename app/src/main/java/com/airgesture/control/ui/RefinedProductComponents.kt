@@ -2,6 +2,8 @@ package com.airgesture.control.ui
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -12,62 +14,84 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.airgesture.control.R
 import com.airgesture.control.RegisteredGesture
 
-/** Session commands use the existing eligibility and authority callbacks. */
+/** The command cockpit makes capture, action authority and the physical stop distinct. */
 @Composable
 internal fun ControlCommandCenter(
     running: Boolean, actions: ProductActionState, statusLabel: Int, description: String,
     primaryLabel: Int, enabled: Boolean, onPrimary: () -> Unit, onStop: () -> Unit
 ) {
+    val active = actions == ProductActionState.ARMED
     val signal = when (actions) {
-        ProductActionState.ARMED, ProductActionState.PAUSED -> AergisColors.Yellow
-        else -> AergisColors.StageHint
+        ProductActionState.ARMED -> AergisColors.Success
+        ProductActionState.PAUSED -> AergisColors.Caution
+        else -> AergisColors.Yellow
     }
     Column(
-        Modifier.fillMaxWidth().clip(AergisShapes.Stage)
-            .background(Brush.linearGradient(listOf(AergisColors.Stage, AergisColors.StageShadow)))
+        Modifier.fillMaxWidth().testTag("control-cockpit").clip(AergisShapes.Stage)
+            .background(Brush.verticalGradient(listOf(
+                AergisColors.Stage, Color(0xFF291945), AergisColors.Deep)))
+            .border(1.dp, AergisColors.Purple.copy(alpha = .42f), AergisShapes.Stage)
             .padding(18.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        BoxWithConstraints(Modifier.fillMaxWidth()) {
-            val showArt = maxWidth >= 290.dp && LocalDensity.current.fontScale <= 1.25f
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween) {
+            ProductEyebrow(stringResource(R.string.ui_brand_subtitle), AergisColors.Yellow)
+            AergisStatusChip(stringResource(if (running) R.string.ui_capture_on else R.string.ui_capture_off), signal)
+        }
+        BoxWithConstraints(Modifier.fillMaxWidth().heightIn(min = 164.dp)) {
+            val showArt = maxWidth >= 300.dp && LocalDensity.current.fontScale <= 1.3f
+            CommandField(Modifier.matchParentSize())
             if (showArt) {
-                CommandField(Modifier.matchParentSize())
-                HandDiagram(RegisteredGesture.OPEN_PALM, Modifier.align(Alignment.CenterEnd).size(135.dp),
-                    AergisColors.StageHint, signal)
+                Box(
+                    Modifier.align(Alignment.CenterEnd).size(156.dp)
+                        .border(1.dp, AergisColors.Yellow.copy(alpha = .58f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(Modifier.size(127.dp).background(AergisColors.StageHint.copy(alpha = .08f), CircleShape))
+                    HandDiagram(RegisteredGesture.OPEN_PALM, Modifier.size(119.dp),
+                        AergisColors.StageHint, signal)
+                }
             }
             Column(
-                Modifier.fillMaxWidth(if (showArt) .57f else 1f).heightIn(min = if (showArt) 146.dp else 0.dp),
-                verticalArrangement = Arrangement.Center
+                Modifier.align(Alignment.CenterStart).fillMaxWidth(if (showArt) .59f else 1f)
+                    .padding(vertical = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(9.dp)
             ) {
-                ProductEyebrow(stringResource(R.string.product_session_label), signal)
-                Spacer(Modifier.height(8.dp))
+                Text(stringResource(R.string.product_session_label),
+                    style = MaterialTheme.typography.labelMedium, color = AergisColors.StageHint)
                 Text(stringResource(statusLabel),
-                    style = if (showArt) MaterialTheme.typography.displaySmall else MaterialTheme.typography.headlineLarge,
+                    style = if (showArt) MaterialTheme.typography.headlineLarge else MaterialTheme.typography.headlineMedium,
                     color = AergisColors.OnStage, modifier = Modifier.semantics { heading() })
             }
         }
         Text(description, color = AergisColors.StageHint, style = MaterialTheme.typography.bodyMedium)
         Button(
-            onClick = onPrimary, modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp), enabled = enabled,
-            shape = AergisShapes.Chip,
+            onClick = onPrimary, enabled = enabled,
+            modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp), shape = AergisShapes.Control,
             colors = ButtonDefaults.buttonColors(
                 containerColor = AergisColors.Yellow, contentColor = AergisColors.Deep,
                 disabledContainerColor = AergisColors.StageShadow, disabledContentColor = AergisColors.StageHint
             )
         ) {
+            AergisIcon(if (active) AergisGlyph.POWER else AergisGlyph.CONTROL,
+                Modifier.size(19.dp), if (enabled) AergisColors.Deep else AergisColors.StageHint)
+            Spacer(Modifier.width(10.dp))
             Text(stringResource(primaryLabel), style = MaterialTheme.typography.labelLarge)
         }
         if (running && primaryLabel != R.string.stop_capture) {
             OutlinedButton(
-                onClick = onStop, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), shape = AergisShapes.Chip,
+                onClick = onStop, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                shape = AergisShapes.Control,
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = AergisColors.OnStage),
-                border = BorderStroke(1.dp, AergisColors.StageHint)
+                border = BorderStroke(1.dp, AergisColors.StageHint.copy(alpha = .65f))
             ) {
                 Text(stringResource(R.string.stop_capture))
             }

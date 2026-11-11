@@ -45,6 +45,8 @@ class RefinedProductUiTest {
                 }
             }
         }
+        compose.onNodeWithTag("control-cockpit").assertExists()
+        compose.onNodeWithTag("control-signal-strip").assertExists()
         compose.onNodeWithText("Start capture").performClick()
         compose.runOnIdle { assertEquals(1, captures); assertEquals(0, arms) }
         screenshot("stopped-command", verifyNewSurfaces = true)
