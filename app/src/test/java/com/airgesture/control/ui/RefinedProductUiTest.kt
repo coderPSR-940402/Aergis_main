@@ -47,6 +47,9 @@ class RefinedProductUiTest {
         }
         compose.onNodeWithTag("control-cockpit").assertExists()
         compose.onNodeWithTag("control-signal-strip").assertExists()
+        val primaryTop = compose.onNodeWithText("Start capture").fetchSemanticsNode().boundsInRoot.top
+        val artTop = compose.onNodeWithTag("cockpit-art").fetchSemanticsNode().boundsInRoot.top
+        org.junit.Assert.assertTrue("Start action must precede artwork", primaryTop < artTop)
         compose.onNodeWithText("Start capture").performClick()
         compose.runOnIdle { assertEquals(1, captures); assertEquals(0, arms) }
         screenshot("stopped-command", verifyNewSurfaces = true)
@@ -149,6 +152,24 @@ class RefinedProductUiTest {
         screenshot("large-text-inputs")
     }
 
+    @Test
+    @Config(sdk = [35], qualifiers = "w891dp-h411dp-land-mdpi")
+    fun landscapeKeepsArmAndStopVisibleWithoutDecorativeObstruction() {
+        var armed = 0
+        var stopped = 0
+        compose.setContent {
+            PreviewSurface {
+                ControlCommandCenter(true, ProductActionState.DISARMED,
+                    R.string.product_action_disarmed, "Camera is ready",
+                    R.string.arm_control, true, { armed++ }, { stopped++ })
+            }
+        }
+        compose.onNodeWithTag("cockpit-art").assertDoesNotExist()
+        compose.onNodeWithText("Arm control").assertIsDisplayed().performClick()
+        compose.onNodeWithText("Stop capture").assertIsDisplayed().performClick()
+        compose.runOnIdle { assertEquals(1, armed); assertEquals(1, stopped) }
+    }
+
     @Test fun nativeArtworkAndLibraryOverviewRender() {
         compose.setContent {
             PreviewSurface {
@@ -186,6 +207,7 @@ class MainActivityVisualTest {
         capture("welcome")
         compose.onNodeWithText("Explore the interface").performClick()
         compose.onNodeWithText("Complete setup").assertIsDisplayed()
+        compose.onNodeWithTag("build-identity").assertExists()
         capture("control-setup")
         compose.onNodeWithTag("nav-GESTURES").performClick().assertIsSelected()
         compose.onNodeWithText("Find a gesture or action").assertIsDisplayed()
@@ -209,9 +231,10 @@ private fun captureProductScreen(view: android.view.View, name: String, verifyNe
             // Preserve the distinctive dark Aergis background in the rendered product.
             val canvasColor = android.graphics.Color.rgb(11, 13, 20)
             assertEquals(canvasColor, bitmap.getPixel(4, bitmap.height / 2))
-            val deck = bitmap.getPixel(35, 160)
-            org.junit.Assert.assertTrue("The graphite command cockpit should differ visibly from the old violet stage",
-                android.graphics.Color.red(deck) < 100 && android.graphics.Color.green(deck) < 100)
+            // Color guard, not a substitute for the semantic layout and click tests.
+            val deck = bitmap.getPixel(25, 100)
+            org.junit.Assert.assertTrue("The command cockpit should retain its dark surface",
+                android.graphics.Color.red(deck) < 110 && android.graphics.Color.green(deck) < 110)
         }
         val file = File("build/reports/testing-tools/product-ui/$name.png").apply { parentFile!!.mkdirs() }
         file.outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }

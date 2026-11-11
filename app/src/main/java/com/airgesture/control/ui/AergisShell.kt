@@ -21,6 +21,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.airgesture.control.AirRuntime
+import com.airgesture.control.BuildConfig
 import com.airgesture.control.ControlMode
 import com.airgesture.control.ForegroundSafety
 import com.airgesture.control.R
@@ -88,6 +89,11 @@ internal fun AergisShell(
                         Text(stringResource(R.string.ui_brand), style = AergisType.Brand, color = AergisColors.Text)
                         Text(stringResource(R.string.product_console_label), style = MaterialTheme.typography.labelSmall,
                             color = AergisColors.Muted)
+                    }
+                    if (selected.root && selected != AergisDestination.WELCOME) {
+                        Text(stringResource(R.string.product_build_short, BuildConfig.VERSION_CODE),
+                            modifier = Modifier.testTag("build-identity"),
+                            style = MaterialTheme.typography.labelSmall, color = AergisColors.Silver)
                     }
                     if (!selected.root && selected != AergisDestination.WELCOME) {
                         TextButton(onClick = back, modifier = Modifier.heightIn(min = 48.dp)) {

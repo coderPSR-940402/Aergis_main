@@ -1,5 +1,6 @@
 package com.airgesture.control.ui
 
+import android.content.res.Configuration
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -12,6 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.testTag
@@ -21,12 +23,17 @@ import androidx.compose.ui.unit.dp
 import com.airgesture.control.R
 import com.airgesture.control.RegisteredGesture
 
-/** A graphite instrument panel, deliberately separate from action authority. */
+/** Operational controls always precede visual art; portrait and landscape remain usable. */
 @Composable
 internal fun ControlCommandCenter(
     running: Boolean, actions: ProductActionState, statusLabel: Int, description: String,
     primaryLabel: Int, enabled: Boolean, onPrimary: () -> Unit, onStop: () -> Unit
 ) {
+    val configuration = LocalConfiguration.current
+    val landscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val compact = landscape || configuration.screenHeightDp < 650 ||
+        LocalDensity.current.fontScale >= 1.4f
+    val showStop = running && primaryLabel != R.string.stop_capture
     val signal = when (actions) {
         ProductActionState.ARMED -> AergisColors.Success
         ProductActionState.PAUSED -> AergisColors.Caution
@@ -37,58 +44,79 @@ internal fun ControlCommandCenter(
             .background(Brush.verticalGradient(listOf(
                 Color(0xFF14171F), AergisColors.Deep, Color(0xFF1A1C2C))))
             .border(1.dp, AergisColors.Silver.copy(alpha = .34f), AergisShapes.Stage)
-            .padding(18.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+            .padding(if (compact) 12.dp else 18.dp),
+        verticalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 12.dp)
     ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween) {
             ProductEyebrow(stringResource(R.string.ui_brand_subtitle), AergisColors.Silver)
             AergisStatusChip(stringResource(if (running) R.string.ui_capture_on else R.string.ui_capture_off), signal)
         }
-        Box(Modifier.fillMaxWidth().height(208.dp), contentAlignment = Alignment.Center) {
-            CommandField(Modifier.matchParentSize())
-            Box(
-                Modifier.size(196.dp).clip(CircleShape)
-                    .background(Brush.radialGradient(listOf(
-                        AergisColors.Stage.copy(alpha = .80f), AergisColors.StageShadow, AergisColors.Deep)))
-                    .border(1.dp, AergisColors.Purple.copy(alpha = .75f), CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Box(Modifier.size(170.dp).border(1.dp, AergisColors.Yellow.copy(alpha = .52f), CircleShape))
-                Box(Modifier.size(141.dp).border(1.dp, AergisColors.StageHint.copy(alpha = .24f), CircleShape))
-                HandDiagram(RegisteredGesture.OPEN_PALM, Modifier.size(132.dp), AergisColors.Silver, signal)
-            }
-        }
-        HorizontalDivider(color = AergisColors.Silver.copy(alpha = .20f))
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             ProductEyebrow(stringResource(R.string.product_session_label), signal)
-            Text(stringResource(statusLabel), style = MaterialTheme.typography.headlineLarge,
+            Text(stringResource(statusLabel),
+                style = if (compact) MaterialTheme.typography.headlineMedium else MaterialTheme.typography.headlineLarge,
                 color = AergisColors.Text, modifier = Modifier.semantics { heading() })
             Text(description, color = AergisColors.StageHint, style = MaterialTheme.typography.bodyMedium)
         }
-        Button(
-            onClick = onPrimary, enabled = enabled,
-            modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp), shape = AergisShapes.Control,
-            colors = ButtonDefaults.buttonColors(
-                containerColor = AergisColors.Yellow, contentColor = AergisColors.Deep,
-                disabledContainerColor = AergisColors.StageShadow, disabledContentColor = AergisColors.StageHint
-            )
-        ) {
-            AergisIcon(AergisGlyph.CONTROL, Modifier.size(19.dp),
-                if (enabled) AergisColors.Deep else AergisColors.StageHint)
-            Spacer(Modifier.width(10.dp))
-            Text(stringResource(primaryLabel), style = MaterialTheme.typography.labelLarge)
+
+        // Keep Stop physically available alongside the primary control in landscape.
+        if (landscape && showStop) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                CockpitPrimary(primaryLabel, enabled, onPrimary, Modifier.weight(1f))
+                CockpitStop(onStop, Modifier.weight(1f))
+            }
+        } else {
+            CockpitPrimary(primaryLabel, enabled, onPrimary, Modifier.fillMaxWidth())
+            if (showStop) CockpitStop(onStop, Modifier.fillMaxWidth())
         }
-        if (running && primaryLabel != R.string.stop_capture) {
-            OutlinedButton(
-                onClick = onStop, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                shape = AergisShapes.Control,
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = AergisColors.Silver),
-                border = BorderStroke(1.dp, AergisColors.Silver.copy(alpha = .54f))
-            ) {
-                Text(stringResource(R.string.stop_capture))
+
+        // The instrument is ornamental: never push important controls below it.
+        if (!compact) {
+            Box(Modifier.fillMaxWidth().height(130.dp).testTag("cockpit-art"), contentAlignment = Alignment.Center) {
+                CommandField(Modifier.matchParentSize())
+                Box(
+                    Modifier.size(128.dp).clip(CircleShape)
+                        .background(Brush.radialGradient(listOf(
+                            AergisColors.Stage.copy(alpha = .80f), AergisColors.StageShadow, AergisColors.Deep)))
+                        .border(1.dp, AergisColors.Purple.copy(alpha = .75f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(Modifier.size(111.dp).border(1.dp, AergisColors.Yellow.copy(alpha = .52f), CircleShape))
+                    Box(Modifier.size(90.dp).border(1.dp, AergisColors.StageHint.copy(alpha = .24f), CircleShape))
+                    HandDiagram(RegisteredGesture.OPEN_PALM, Modifier.size(98.dp), AergisColors.Silver, signal)
+                }
             }
         }
+    }
+}
+
+@Composable
+private fun CockpitPrimary(label: Int, enabled: Boolean, onClick: () -> Unit, modifier: Modifier) {
+    Button(
+        onClick = onClick, enabled = enabled, modifier = modifier.heightIn(min = 56.dp),
+        shape = AergisShapes.Control,
+        colors = ButtonDefaults.buttonColors(
+            containerColor = AergisColors.Yellow, contentColor = AergisColors.Deep,
+            disabledContainerColor = AergisColors.StageShadow, disabledContentColor = AergisColors.StageHint
+        )
+    ) {
+        AergisIcon(AergisGlyph.CONTROL, Modifier.size(19.dp),
+            if (enabled) AergisColors.Deep else AergisColors.StageHint)
+        Spacer(Modifier.width(8.dp))
+        Text(stringResource(label), style = MaterialTheme.typography.labelLarge)
+    }
+}
+
+@Composable
+private fun CockpitStop(onStop: () -> Unit, modifier: Modifier) {
+    OutlinedButton(
+        onClick = onStop, modifier = modifier.heightIn(min = 48.dp),
+        shape = AergisShapes.Control,
+        colors = ButtonDefaults.outlinedButtonColors(contentColor = AergisColors.Silver),
+        border = BorderStroke(1.dp, AergisColors.Silver.copy(alpha = .54f))
+    ) {
+        Text(stringResource(R.string.stop_capture))
     }
 }
 

@@ -35,6 +35,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -395,7 +396,9 @@ class MainActivity : ComponentActivity() {
                     AergisDestination.ABOUT -> ProductPage(R.string.product_about) {
                         Text(stringResource(R.string.product_about_help), color = AergisColors.Muted)
                         PrivacyPanel()
-                        Text(BuildConfig.VERSION_NAME, style = MaterialTheme.typography.labelMedium)
+                        Text(stringResource(R.string.product_build_full, BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE),
+                            modifier = Modifier.testTag("about-build-identity"),
+                            style = MaterialTheme.typography.labelMedium)
                     }
                 }
             }
