@@ -31,6 +31,24 @@ class GestureInterpreter(
     private val poseEvidenceEvaluator: PoseGeometryEvidenceEvaluator = PoseGeometryEvidenceEvaluator()
 ) {
     private var lastStablePointer: Point3D? = null
+    // A confirmation is a one-shot event. Keep it briefly if the actual visible
+    // pointer hotspot was not dispatchable in the confirmation frame.
+    private var pendingTapAt: Long? = null
+
+    val hasPendingTap: Boolean get() = pendingTapAt != null
+
+    /** Consume a confirmed contact once, only while contact remains held and in budget. */
+    fun takePendingTap(timestampMs: Long, targetDispatchable: Boolean): Boolean {
+        val confirmedAt = pendingTapAt ?: return false
+        if (clickStateMachine.getCurrentState() != ClickHysteresisStateMachine.State.CLICKED ||
+            timestampMs < confirmedAt || timestampMs - confirmedAt > PENDING_TAP_MAX_MS) {
+            pendingTapAt = null
+            return false
+        }
+        if (!targetDispatchable) return false
+        pendingTapAt = null
+        return true
+    }
 
     fun interpret(signal: GestureSignal): GestureDecision {
         val gesture = RegisteredGesture.fromSignal(signal.name)
@@ -63,6 +81,7 @@ class GestureInterpreter(
         if (!poseEvidence.accepted || !actionsAllowed) {
             // Rejected geometry or blocked actions must not carry dwell/swipe history forward.
             clickStateMachine.reset()
+            pendingTapAt = null
             swipeEngine.reset()
             return ProcessedGestureResult(
                 stabilized.x,
@@ -75,6 +94,13 @@ class GestureInterpreter(
         }
         val depthSeparation = validator.calculateNormalizedFingerDepthDistance(landmarks, aspectRatio, depthScale)
         val clickState = clickStateMachine.processFrame(dNorm, timestampMs, depthSeparation)
+        if (clickState) pendingTapAt = timestampMs
+        else if (clickStateMachine.getCurrentState() != ClickHysteresisStateMachine.State.CLICKED ||
+            pendingTapAt?.let { timestampMs < it || timestampMs - it > PENDING_TAP_MAX_MS } == true) {
+            // Release, invalid evidence, a stale frame, and timeout invalidate the
+            // pending click immediately, even if dispatch is never polled.
+            pendingTapAt = null
+        }
         val approaching = clickStateMachine.isPointerLocked
         val pressed = clickStateMachine.getCurrentState() == ClickHysteresisStateMachine.State.CLICKED
         val swipeState = if (approaching) {
@@ -94,7 +120,12 @@ class GestureInterpreter(
 
     fun resetActions() {
         clickStateMachine.reset()
+        pendingTapAt = null
         swipeEngine.reset()
+    }
+
+    private companion object {
+        const val PENDING_TAP_MAX_MS = 250L
     }
 }
 
