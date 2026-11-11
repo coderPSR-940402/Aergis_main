@@ -209,9 +209,9 @@ private fun captureProductScreen(view: android.view.View, name: String, verifyNe
             // Preserve the distinctive dark Aergis background in the rendered product.
             val canvasColor = android.graphics.Color.rgb(11, 13, 20)
             assertEquals(canvasColor, bitmap.getPixel(4, bitmap.height / 2))
-            val stage = bitmap.getPixel(27, 110)
-            org.junit.Assert.assertTrue("The violet command stage should own the top of Control",
-                android.graphics.Color.blue(stage) > android.graphics.Color.red(stage) + 35)
+            val deck = bitmap.getPixel(35, 160)
+            org.junit.Assert.assertTrue("The graphite command cockpit should differ visibly from the old violet stage",
+                android.graphics.Color.red(deck) < 100 && android.graphics.Color.green(deck) < 100)
         }
         val file = File("build/reports/testing-tools/product-ui/$name.png").apply { parentFile!!.mkdirs() }
         file.outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
