@@ -9,6 +9,7 @@ class KinematicValidator {
         const val THUMB_TIP = 4
         const val INDEX_MCP = 5
         const val INDEX_TIP = 8
+        const val MIDDLE_MCP = 9
         const val MIDDLE_TIP = 12
         const val PINKY_MCP = 17
 
@@ -20,20 +21,35 @@ class KinematicValidator {
         if (!aspectRatio.isFinite() || aspectRatio <= 0f) return Float.NaN
         if (landmarks.size <= PINKY_MCP) return 1.0f
 
-        val indexMcp = landmarks[INDEX_MCP]
-        val pinkyMcp = landmarks[PINKY_MCP]
         val thumbTip = landmarks[THUMB_TIP]
         val middleTip = landmarks[MIDDLE_TIP]
 
-        // Compare both segments in the upright image plane, with the same aspect
-        // correction. Estimated z can disagree at the tips: tip-depth disagreement
-        // can veto visible contact, while a palm-depth refit can invent contact.
-        // Do not mix projected fingertips with a depth-expanded palm denominator.
-        val palmWidth = indexMcp.distance2DTo(pinkyMcp, aspectRatio)
+        // A turned hand can collapse the projected index-to-pinky width although
+        // the wrist-to-middle-base axis remains visible. Use the larger of two
+        // independent palm axes so a real thumb-middle contact does not require
+        // physically pushing the fingertips beyond each other. The fingertip
+        // positions never contribute to their own normalization.
+        //
+        // Keep the separate depth-distance veto based on transverse palm width:
+        // estimated z must not turn projected overlap into an unintended click.
+        val palmScale = projectedPalmScale(landmarks, aspectRatio)
             .coerceAtLeast(MIN_PALM_WIDTH_PX)
-        val fingertipDistance = thumbTip.distance2DTo(middleTip, aspectRatio)
+        return thumbTip.distance2DTo(middleTip, aspectRatio) / palmScale
+    }
 
-        return fingertipDistance / palmWidth
+    /** Palm scale derived only from stable anchors, independent of finger closure.
+     * Unreliable, out-of-frame longitudinal anchors cannot enlarge the click range.
+     */
+    fun projectedPalmScale(landmarks: List<Point3D>, aspectRatio: Float = 1f): Float {
+        if (landmarks.size <= PINKY_MCP || !aspectRatio.isFinite() || aspectRatio <= 0f) return Float.NaN
+        val transverse = landmarks[INDEX_MCP].distance2DTo(landmarks[PINKY_MCP], aspectRatio)
+        val wrist = landmarks[WRIST]
+        val middleBase = landmarks[MIDDLE_MCP]
+        fun usable(p: Point3D): Boolean = p.x.isFinite() && p.y.isFinite() && p.z.isFinite() &&
+            p.x in -.25f..1.25f && p.y in -.25f..1.25f
+        val longitudinal = if (usable(wrist) && usable(middleBase))
+            wrist.distance2DTo(middleBase, aspectRatio) * .7f else 0f
+        return maxOf(transverse, longitudinal)
     }
 
     /** Depth can veto clearly separated fingertips; it never expands the palm scale.
