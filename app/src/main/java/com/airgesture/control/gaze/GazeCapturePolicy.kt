@@ -14,6 +14,14 @@ internal object GazeCapturePolicy {
     fun stableMedian(observations: List<GazeLab.Observation>, nowMs: Long,
         targetShownAtMs: Long): DoubleArray? {
         if (nowMs < targetShownAtMs) return null
+        // A missing or corrupted current-target frame breaks stable fixation.
+        // Never manufacture five clean samples by silently ignoring bad ones.
+        if (observations.any { sample ->
+            sample.uptimeMs in targetShownAtMs..nowMs &&
+                nowMs - sample.uptimeMs <= FRESH_MS &&
+                (sample.features == null || sample.features.size != 4 ||
+                    sample.features.any { !it.isFinite() })
+        }) return null
         val fresh = observations.filter { sample ->
             sample.features?.let { values -> values.size == 4 && values.all(Double::isFinite) } == true &&
                 sample.uptimeMs in targetShownAtMs..nowMs && nowMs - sample.uptimeMs <= FRESH_MS
