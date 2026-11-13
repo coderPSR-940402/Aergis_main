@@ -39,7 +39,7 @@ class GazeLabActivity : ComponentActivity() {
     private val fit = GazeCalibration()
     private val samples = ArrayList<GazeCalibration.Sample>()
     private val recent = ArrayList<GazeLab.Observation>()
-    private val errors = ArrayList<GazeValidation.Error>()
+    private val errors = ArrayList<GazeValidation.Error?>()
     private val targets = listOf(.15f, .5f, .85f).flatMap { y ->
         listOf(.15f, .5f, .85f).map { x -> x to y }
     }
@@ -178,9 +178,10 @@ class GazeLabActivity : ComponentActivity() {
     private fun copyResults() {
         if (!complete || errors.size != validationTargets.size) return
         val details = errors.mapIndexed { index, error ->
-            String.format(Locale.US, "%s: %.1f%% (dx=%+.0fpx, dy=%+.0fpx)",
-                validationTargets[index].label, error.diagonalPercent,
-                error.horizontalPx, error.verticalPx)
+            val label = validationTargets[index].label
+            if (error == null) "$label: unavailable"
+            else String.format(Locale.US, "%s: %.1f%% (dx=%+.0fpx, dy=%+.0fpx)",
+                label, error.diagonalPercent, error.horizontalPx, error.verticalPx)
         }.joinToString("; ")
         val report = "Aergis Gaze Lab | build " + BuildConfig.VERSION_CODE +
             " | source " + BuildConfig.SOURCE_COMMIT +
@@ -246,28 +247,35 @@ class GazeLabActivity : ComponentActivity() {
         val y = ((location[1] + target.second * canvasView.height) / display.second).coerceIn(0f, 1f)
         if (calibrated) {
             val predicted = fit.estimate(values)
-            if (predicted == null) {
-                statusText = "Eye estimate outside calibration range. Retry or restart."
+            // A rejected estimate is a measured failure, not an invitation to retry until
+            // this target happens to succeed. Keep the original target index in the report.
+            val error = predicted?.let {
+                GazeValidation.measure(it.first, it.second, x, y, display.first, display.second)
+            }
+            if (predicted != null && error == null) {
+                statusText = "Invalid display geometry; validation not captured."
                 return
             }
-            val error = GazeValidation.measure(predicted.first, predicted.second, x, y,
-                display.first, display.second)
-            if (error == null) {
-                statusText = "Invalid display geometry or gaze estimate; validation not captured."
-                return
-            }
+            val targetLabel = validationTargets[validationIndex].label
             errors.add(error)
             validationIndex++
             if (validationIndex == validationTargets.size) {
-                val summary = GazeValidation.summarize(errors) ?: return
+                val summary = GazeValidation.summarizeAvailable(errors)
                 complete = true
-                resultText = String.format(Locale.getDefault(),
-                    "Held-out median %.1f%% of full-screen pixel diagonal; worst %.1f%% at %s. " +
-                        "Nine canvas positions; not a device-control accuracy certification.",
-                    summary.medianPercent, summary.worstPercent,
-                    validationTargets[summary.worstIndex].label)
+                resultText = if (summary.measurableCount == 0) {
+                    "Held-out 0/${errors.size} measurable; all estimates unavailable. " +
+                        "No accuracy median can be reported. Not a device-control certification."
+                } else String.format(Locale.getDefault(),
+                    "Held-out %d/%d measurable, %d unavailable. Median of measured %.1f%% " +
+                        "of screen pixel diagonal; worst %.1f%% at %s. " +
+                        "Canvas validation only; not a device-control accuracy certification.",
+                    summary.measurableCount, errors.size, summary.unavailableCount,
+                    summary.medianPercent!!, summary.worstPercent!!,
+                    validationTargets[summary.worstIndex!!].label)
                 statusText = "Validation finished. Gaze does not yet control Android."
-            } else statusText = "Validated. Next: " + validationTargets[validationIndex].label + "."
+            } else statusText = (if (error == null) "No estimate at $targetLabel; recorded as unavailable. "
+                else "Validated $targetLabel. ") + "Next: " +
+                validationTargets[validationIndex].label + "."
         } else {
             samples.add(GazeCalibration.Sample(values, x.toDouble(), y.toDouble()))
             calibrationCount = samples.size

@@ -58,4 +58,23 @@ class GazeValidationTest {
         assertTrue(targets.any { it.label == "Top-left" })
         assertTrue(targets.any { it.label == "Bottom-right" })
     }
+    @Test fun rejectedPredictionsRemainVisibleAndDoNotBiasMedianOrWorstIndex() {
+        fun e(n: Double) = GazeValidation.Error(n, 0.0, 0.0, 0.0)
+        val summary = GazeValidation.summarizeAvailable(listOf(null, e(2.0), null, e(8.0), e(4.0)))
+        assertEquals(3, summary.measurableCount)
+        assertEquals(2, summary.unavailableCount)
+        assertEquals(4.0, summary.medianPercent!!, .0001)
+        assertEquals(8.0, summary.worstPercent!!, .0001)
+        assertEquals(3, summary.worstIndex)
+    }
+
+    @Test fun allFailedPredictionsDoNotManufactureAccuracyStatistic() {
+        val summary = GazeValidation.summarizeAvailable(List(9) { null })
+        assertEquals(0, summary.measurableCount)
+        assertEquals(9, summary.unavailableCount)
+        assertNull(summary.medianPercent)
+        assertNull(summary.worstPercent)
+        assertNull(summary.worstIndex)
+    }
+
 }
