@@ -267,8 +267,10 @@ class AirAccessibilityService : AccessibilityService() {
                     // Global navigation is the escape route from an active native drag.
                     // Cancel the held stroke before requesting Back/Home/Recents/panels;
                     // do not let ordinary taps or scrolls compete with the drag.
+                    // Keep the UI's native-drag state until Android acknowledges
+                    // cancellation. If cancellation is rejected, ownership stays
+                    // fail-closed rather than authorizing another injected touch.
                     precisionDrag.cancel()
-                    precisionDragActive = false
                 }
                 DragActionArbitration.Decision.REJECT -> {
                     recordOutcome(ActionDispatchOutcome.PLATFORM_REJECTED)
