@@ -14,6 +14,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -116,7 +117,8 @@ class GazeLabActivity : ComponentActivity() {
 
     @Composable
     private fun LabScreen() {
-        Column(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 16.dp),
+        Column(Modifier.fillMaxSize().background(AergisColors.Background).safeDrawingPadding()
+            .padding(horizontal = 16.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Column {
