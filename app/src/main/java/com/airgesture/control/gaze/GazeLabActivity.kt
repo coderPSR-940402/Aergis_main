@@ -30,7 +30,6 @@ import com.airgesture.control.ControlMode
 import com.airgesture.control.GestureCaptureService
 import com.airgesture.control.ui.*
 import java.util.Locale
-import kotlin.math.hypot
 
 /**
  * Optional, on-device gaze calibration and held-out validation.
@@ -40,13 +39,11 @@ class GazeLabActivity : ComponentActivity() {
     private val fit = GazeCalibration()
     private val samples = ArrayList<GazeCalibration.Sample>()
     private val recent = ArrayList<GazeLab.Observation>()
-    private val errors = ArrayList<Float>()
+    private val errors = ArrayList<GazeValidation.Error>()
     private val targets = listOf(.15f, .5f, .85f).flatMap { y ->
         listOf(.15f, .5f, .85f).map { x -> x to y }
     }
-    private val validationTargets = listOf(
-        .32f to .32f, .68f to .32f, .68f to .68f, .32f to .68f
-    )
+    private val validationTargets = GazeValidation.targets
     private var calibrationCount by mutableIntStateOf(0)
     private var validationIndex by mutableIntStateOf(0)
     private var calibrated by mutableStateOf(false)
@@ -96,7 +93,7 @@ class GazeLabActivity : ComponentActivity() {
                 paint.strokeWidth = 1.2f * resources.displayMetrics.density
                 canvas.drawLine(cx, 0f, cx, height.toFloat(), paint)
                 canvas.drawLine(0f, cy, width.toFloat(), cy, paint)
-                val target = if (calibrated) validationTargets.getOrNull(validationIndex)
+                val target = if (calibrated) validationTargets.getOrNull(validationIndex)?.let { it.x to it.y }
                     else targets.getOrNull(calibrationCount)
                 target?.let {
                     paint.color = Color.rgb(246, 223, 112)
@@ -133,7 +130,7 @@ class GazeLabActivity : ComponentActivity() {
             }
             AergisStatusChip(when {
                 complete -> "Validation complete"
-                calibrated -> "Validation " + (validationIndex + 1) + "/4"
+                calibrated -> "Validation " + (validationIndex + 1) + "/" + validationTargets.size
                 else -> "Calibration " + (calibrationCount + 1) + "/9"
             }, if (complete) AergisColors.Success else AergisColors.Purple)
             Text(statusText, style = MaterialTheme.typography.bodyMedium, color = AergisColors.Text)
@@ -180,11 +177,15 @@ class GazeLabActivity : ComponentActivity() {
 
     private fun copyResults() {
         if (!complete || errors.size != validationTargets.size) return
+        val details = errors.mapIndexed { index, error ->
+            String.format(Locale.US, "%s: %.1f%% (dx=%+.0fpx, dy=%+.0fpx)",
+                validationTargets[index].label, error.diagonalPercent,
+                error.horizontalPx, error.verticalPx)
+        }.joinToString("; ")
         val report = "Aergis Gaze Lab | build " + BuildConfig.VERSION_CODE +
-            " | source " + BuildConfig.SOURCE_COMMIT + " | " + (resultText ?: "") +
-            " | held-out points " + errors.joinToString(", ") {
-                String.format(Locale.US, "%.1f%%", it)
-            }
+            " | source " + BuildConfig.SOURCE_COMMIT +
+            " | metric v2: pixel-weighted full-screen diagonal | " + (resultText ?: "") +
+            " | held-out " + details + " | positive dx=right, positive dy=down"
         val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
         clipboard.setPrimaryClip(ClipData.newPlainText("Aergis gaze validation", report))
         statusText = "Accuracy report copied. No face images or landmarks included."
@@ -239,7 +240,8 @@ class GazeLabActivity : ComponentActivity() {
         val location = IntArray(2)
         canvasView.getLocationOnScreen(location)
         val display = realDisplaySize()
-        val target = if (calibrated) validationTargets[validationIndex] else targets[calibrationCount]
+        val target = if (calibrated) validationTargets[validationIndex].let { it.x to it.y }
+            else targets[calibrationCount]
         val x = ((location[0] + target.first * canvasView.width) / display.first).coerceIn(0f, 1f)
         val y = ((location[1] + target.second * canvasView.height) / display.second).coerceIn(0f, 1f)
         if (calibrated) {
@@ -248,25 +250,31 @@ class GazeLabActivity : ComponentActivity() {
                 statusText = "Eye estimate outside calibration range. Retry or restart."
                 return
             }
-            errors.add(hypot(predicted.first - x, predicted.second - y) /
-                hypot(1f, 1f) * 100f)
+            val error = GazeValidation.measure(predicted.first, predicted.second, x, y,
+                display.first, display.second)
+            if (error == null) {
+                statusText = "Invalid display geometry or gaze estimate; validation not captured."
+                return
+            }
+            errors.add(error)
             validationIndex++
             if (validationIndex == validationTargets.size) {
+                val summary = GazeValidation.summarize(errors) ?: return
                 complete = true
-                val sorted = errors.sorted()
-                val median = (sorted[1] + sorted[2]) / 2f
                 resultText = String.format(Locale.getDefault(),
-                    "Held-out median error %.1f%% of screen diagonal; worst %.1f%%. " +
-                        "This is not a device-control accuracy certification.", median, sorted.last())
+                    "Held-out median %.1f%% of full-screen pixel diagonal; worst %.1f%% at %s. " +
+                        "Nine canvas positions; not a device-control accuracy certification.",
+                    summary.medianPercent, summary.worstPercent,
+                    validationTargets[summary.worstIndex].label)
                 statusText = "Validation finished. Gaze does not yet control Android."
-            } else statusText = "Validated. Look at the next yellow point."
+            } else statusText = "Validated. Next: " + validationTargets[validationIndex].label + "."
         } else {
             samples.add(GazeCalibration.Sample(values, x.toDouble(), y.toDouble()))
             calibrationCount = samples.size
             if (samples.size == targets.size) {
                 calibrated = fit.fit(samples)
                 statusText = if (calibrated)
-                    "Fit ready. Now validate on four new yellow points; cyan shows the gaze estimate."
+                    "Fit ready. Validate nine new canvas positions, including edges and center."
                 else "Fit was unreliable. Restart with steady eyes and better lighting."
                 if (!calibrated) {
                     samples.clear()
@@ -319,7 +327,8 @@ class GazeLabActivity : ComponentActivity() {
                         recent, SystemClock.uptimeMillis(), targetShownAt) != null) {
                     capture(manual = false)
                 } else if (!complete) statusText = if (calibrated)
-                    "Look at the yellow validation point. " + observedCount + " recent samples."
+                    "Look at " + validationTargets[validationIndex].label +
+                        " validation target. " + observedCount + " recent samples."
                 else "Look steadily at target " + (calibrationCount + 1) + "/9."
             }
             canvasView.invalidate()

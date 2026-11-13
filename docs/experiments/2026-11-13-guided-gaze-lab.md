@@ -17,20 +17,20 @@ The app already owns one CameraX camera stream and passes occasional copied, dow
 - Replaced the old utilitarian calibration layout with Aergis-branded Compose surface, high-contrast targets, eye-estimate preview, explicit status and large controls.
 - Exposed Gaze Lab from Control → Precision (in addition to Settings → Advanced).
 - Supports starting shared camera capture from the lab with runtime permission request when needed.
-- Keeps nine personalized calibration targets and four held-out validation targets.
+- Keeps nine personalized calibration targets; now validates nine distinct held-out canvas positions: corners, edge midpoints and near-center. These are **canvas** positions, not a full-screen corner reach test.
 - Automatic capture after at least 1,800 ms on the target, only with five distinct fresh eye observations; per-target stability includes iris direction and head coordinates. Manual capture remains available.
 - Rejects missing/non-finite, old, duplicate, moving or prior-target observations. Changing target clears the previous sample window.
-- After four validation points, presents the measured median and worst-case errors as percentages of full-screen diagonal; no training-only score is mislabeled accuracy.
+- Corrects the v1 square-coordinate error metric: calculate Euclidean error in display pixels (dx times screen width, dy times screen height), divided by the actual full-screen pixel diagonal. Report signed horizontal/vertical pixel misses and the worst labeled target; copied reports identify metric v2 and APK provenance. Training-only scores remain excluded.\n- **Prior build 1425 numbers (6.2% median / 13.2% worst) cannot be numerically corrected without the underlying horizontal and vertical residuals. They are not directly comparable with v2.**
 - Gaze estimation visibly disappears after lost/stale samples. Leaving the screen releases its worker and cannot authorize gestures.
 
 ## Verification and acceptance
 
-**Host/CI:** GazeCapturePolicyTest covers freshness, target transition, stable automatic capture, unstable/non-finite frames and timestamp replay. Existing GazeLabActivityTest checks disarm and no rearm. Run the full existing Aergis CI test, lint, debug and release tasks and CodeQL for the PR SHA.
+**Host/CI:** GazeCapturePolicyTest covers freshness, target transition, stable automatic capture, unstable/non-finite frames and timestamp replay. GazeValidationTest covers pixel-weighted portrait/landscape error, signed residuals, median/worst, invalid input and nontraining targets. Existing GazeLabActivityTest checks disarm and no rearm. Run the full existing Aergis CI test, lint, debug and release tasks and CodeQL for the PR SHA.
 
 **Device-only gate (Galaxy A54, exact candidate APK):**
 1. Start camera directly from the lab, grant permission if needed, and confirm face detection without a visible hand.
 2. Complete all nine targets automatically using ordinary head posture. Repeat manual-capture mode, deliberate instability, and eyes-out-of-frame interruptions.
-3. Validate all four unseen targets and retain measured per-target and median/worst error. Measure with portrait/landscape re-entry separately.
+3. Validate all nine unseen canvas targets, copy each point's dx/dy in pixels and median/worst pixel-weighted diagonal error. Measure with portrait/landscape re-entry separately. Repeat complete calibration at least twice to check variance.
 4. Compare hand camera-to-pointer latency and heat with Gaze Lab off and on for a matched session; ensure no camera duplicate/slowdown.
 5. Disarm/pause/leave/return; ensure no face inference remains running and **zero** gaze-generated Android actions. Verify normal gesture navigation, pointer and thumb-middle clicking remain unaffected.
 
