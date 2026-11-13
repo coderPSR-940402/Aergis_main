@@ -34,14 +34,17 @@ class GestureInterpreter(
     // A confirmation is a one-shot event. Keep it briefly if the actual visible
     // pointer hotspot was not dispatchable in the confirmation frame.
     private var pendingTapAt: Long? = null
+    private var lastEvidenceAt: Long? = null
 
     val hasPendingTap: Boolean get() = pendingTapAt != null
 
-    /** Consume a confirmed contact once, only while contact remains held and in budget. */
+    /** A confirmed contact is a one-shot tap even if it is released before the overlay catches up.
+     * Never create a tap from release: only a prior observed and confirmed contact can be pending.
+     * The engine independently requires the same visible frozen hotspot and live action authority.
+     */
     fun takePendingTap(timestampMs: Long, targetDispatchable: Boolean): Boolean {
         val confirmedAt = pendingTapAt ?: return false
-        if (clickStateMachine.getCurrentState() != ClickHysteresisStateMachine.State.CLICKED ||
-            timestampMs < confirmedAt || timestampMs - confirmedAt > PENDING_TAP_MAX_MS) {
+        if (timestampMs < confirmedAt || timestampMs - confirmedAt > PENDING_TAP_MAX_MS) {
             pendingTapAt = null
             return false
         }
@@ -62,6 +65,13 @@ class GestureInterpreter(
             resetActions()
             return null
         }
+        // A duplicate, regressing, or discontinuous camera timestamp cannot carry a
+        // confirmed tap forward into a new inference sequence.
+        val previousEvidence = lastEvidenceAt
+        if (timestampMs < 0L || (previousEvidence != null &&
+                (timestampMs <= previousEvidence || timestampMs - previousEvidence > 350L)))
+            resetActions()
+        lastEvidenceAt = timestampMs
         val poseEvidence = poseEvidenceEvaluator.evaluatePointer(landmarks, aspectRatio, requireIndexTip = !allowIndexRefit)
         val rawIndexTip = landmarks[KinematicValidator.INDEX_TIP]
         val tipInFrame = rawIndexTip.x in 0f..1f && rawIndexTip.y in 0f..1f
@@ -95,10 +105,9 @@ class GestureInterpreter(
         val depthSeparation = validator.calculateNormalizedFingerDepthDistance(landmarks, aspectRatio, depthScale)
         val clickState = clickStateMachine.processFrame(dNorm, timestampMs, depthSeparation)
         if (clickState) pendingTapAt = timestampMs
-        else if (clickStateMachine.getCurrentState() != ClickHysteresisStateMachine.State.CLICKED ||
-            pendingTapAt?.let { timestampMs < it || timestampMs - it > PENDING_TAP_MAX_MS } == true) {
-            // Release, invalid evidence, a stale frame, and timeout invalidate the
-            // pending click immediately, even if dispatch is never polled.
+        else if (pendingTapAt?.let { timestampMs < it || timestampMs - it > PENDING_TAP_MAX_MS } == true) {
+            // Keep a previously CONFIRMED click across an ordinary release, never
+            // across invalid evidence, a timestamp discontinuity, or the delivery budget.
             pendingTapAt = null
         }
         val approaching = clickStateMachine.isPointerLocked
@@ -121,6 +130,7 @@ class GestureInterpreter(
     fun resetActions() {
         clickStateMachine.reset()
         pendingTapAt = null
+        lastEvidenceAt = null
         swipeEngine.reset()
     }
 
