@@ -1,6 +1,8 @@
 package com.airgesture.control.gaze
 
 import android.Manifest
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Canvas
@@ -23,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import com.airgesture.control.AirRuntime
+import com.airgesture.control.BuildConfig
 import com.airgesture.control.ControlMode
 import com.airgesture.control.GestureCaptureService
 import com.airgesture.control.ui.*
@@ -149,6 +152,9 @@ class GazeLabActivity : ComponentActivity() {
             if (complete) {
                 Text(resultText ?: "Validation completed", color = AergisColors.Cyan,
                     style = MaterialTheme.typography.bodyMedium)
+                AergisButton(::copyResults, Modifier.fillMaxWidth(), primary = true) {
+                    Text("Copy accuracy report")
+                }
             } else {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     AergisButton({ capture(manual = true) }, Modifier.weight(1f)) {
@@ -170,6 +176,18 @@ class GazeLabActivity : ComponentActivity() {
                 "No gaze clicks, pointer movement or Android actions.",
                 color = AergisColors.Muted, style = MaterialTheme.typography.labelSmall)
         }
+    }
+
+    private fun copyResults() {
+        if (!complete || errors.size != validationTargets.size) return
+        val report = "Aergis Gaze Lab | build " + BuildConfig.VERSION_CODE +
+            " | source " + BuildConfig.SOURCE_COMMIT + " | " + (resultText ?: "") +
+            " | held-out points " + errors.joinToString(", ") {
+                String.format(Locale.US, "%.1f%%", it)
+            }
+        val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("Aergis gaze validation", report))
+        statusText = "Accuracy report copied. No face images or landmarks included."
     }
 
     private fun startCamera() {
