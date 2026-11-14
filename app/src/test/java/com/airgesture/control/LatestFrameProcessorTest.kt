@@ -85,6 +85,26 @@ class LatestFrameProcessorTest {
         assertEquals(1, bad.closes); assertEquals(1, good.closes)
     }
 
+    @Test fun failureReporterExceptionDoesNotStrandNextFrame() {
+        val worker = Worker()
+        val seen = mutableListOf<Int>()
+        lateinit var processor: Processor
+        val first = Frame(1)
+        val next = Frame(2)
+        processor = Processor(worker, {
+            if (it.id == 1) {
+                processor.offer(next)
+                error("inference failure")
+            }
+            seen.add(it.id)
+        }, { throw IllegalStateException("reporter failure") })
+        processor.offer(first)
+        worker.drain()
+        assertEquals(listOf(2), seen)
+        assertEquals(1, first.closes)
+        assertEquals(1, next.closes)
+    }
+
     @Test fun unexpectedExecutorFailureReleasesWaitingFrame() {
         val failures = mutableListOf<Throwable>()
         val processor = Processor(Executor { throw IllegalStateException("worker unavailable") },
