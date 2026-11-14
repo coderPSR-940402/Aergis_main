@@ -660,6 +660,11 @@ class MainActivity : ComponentActivity() {
             ProductLink(AergisDestination.CALIBRATION, stringResource(R.string.product_calibration_optional), navigate)
             ProductLink(AergisDestination.PRACTICE, stringResource(R.string.product_practice_help), navigate)
             ProductLink(AergisDestination.LIVE, stringResource(R.string.product_live_help), navigate)
+            AergisPanel {
+                AergisSection("Gaze-assisted targeting", stringResource(R.string.product_gaze_help))
+                AergisButton({ startActivity(Intent(this@MainActivity, com.airgesture.control.gaze.GazeLabActivity::class.java)) },
+                    Modifier.fillMaxWidth()) { Text(stringResource(R.string.gaze_lab)) }
+            }
         }
     }
 
