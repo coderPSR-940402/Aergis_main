@@ -261,9 +261,21 @@ class AirAccessibilityService : AccessibilityService() {
                 recordOutcome(ActionDispatchOutcome.POLICY_DENIED)
                 return@post
             }
-            if (precisionDrag.isBusy && action !in setOf(AirAction.POINTER_DRAG, AirAction.TOGGLE_POINTER, AirAction.CALIBRATE_POINTER)) {
-                recordOutcome(ActionDispatchOutcome.PLATFORM_REJECTED)
-                return@post
+            when (DragActionArbitration.decide(precisionDrag.isBusy, action)) {
+                DragActionArbitration.Decision.ALLOW -> Unit
+                DragActionArbitration.Decision.CANCEL_THEN_ALLOW -> {
+                    // Global navigation is the escape route from an active native drag.
+                    // Cancel the held stroke before requesting Back/Home/Recents/panels;
+                    // do not let ordinary taps or scrolls compete with the drag.
+                    // Keep the UI's native-drag state until Android acknowledges
+                    // cancellation. If cancellation is rejected, ownership stays
+                    // fail-closed rather than authorizing another injected touch.
+                    precisionDrag.cancel()
+                }
+                DragActionArbitration.Decision.REJECT -> {
+                    recordOutcome(ActionDispatchOutcome.PLATFORM_REJECTED)
+                    return@post
+                }
             }
             if (action == AirAction.SELECT_ITEM && boundedInput.isBusy) {
                 recordOutcome(ActionDispatchOutcome.PLATFORM_REJECTED)

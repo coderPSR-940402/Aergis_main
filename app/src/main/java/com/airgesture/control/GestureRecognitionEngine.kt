@@ -39,6 +39,9 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
     private var lastAppliedCalibration: PointerCalibrationProfile? = null
     private var lastCalibrationContext: Pair<ControlHandPreference, Boolean>? = null
     private val interpreter = GestureInterpreter(mappings)
+    // A delayed confirmed tap belongs to the frozen screen-space contact location,
+    // not the cursor position on the subsequent release or reacquisition frame.
+    private var pendingTapTarget: PointerCoordinateMapper.Point? = null
     private val pinchPointer = PointerPinchController()
     private val selectionPinch = com.airgesture.control.pointer.ClickHysteresisStateMachine()
     private val pinchValidator = KinematicValidator()
@@ -715,9 +718,17 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             // Recognition initiates one bounded tap. Release only rearms. The same
             // frame's pinch evidence excludes the classifier before its dispatch gate.
             val tapService = AirAccessibilityService.instance
-            val appliedTargetReady = touchAllowed && targetTrusted &&
-                tapService?.isVisibleTapTargetReady(pointerEpoch, stabilized.x, stabilized.y) == true
+            if (processed.isClickEngaged) pendingTapTarget = stabilized
+            if (!interpreter.hasPendingTap) pendingTapTarget = null
+            val pendingTarget = pendingTapTarget
+            val appliedTargetReady = touchAllowed && targetTrusted && pendingTarget != null &&
+                // Require both the original contact anchor and the current visible
+                // pointer to agree with the already-applied hotspot. A moved cursor
+                // cannot turn a delayed tap into an unrelated target activation.
+                tapService?.isVisibleTapTargetReady(pointerEpoch, pendingTarget.x, pendingTarget.y) == true &&
+                tapService.isVisibleTapTargetReady(pointerEpoch, stabilized.x, stabilized.y)
             if (touchAllowed && interpreter.takePendingTap(timestamp, appliedTargetReady)) {
+                pendingTapTarget = null
                 // The visible hotspot, not just the raw camera estimate, is the
                 // coordinate source snapshotted by the accessibility dispatcher.
                 tapService?.dispatchPointerTap(pointerEpoch, pointerTapDeadlineMs)
@@ -1005,6 +1016,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
     }
 
     private fun resetPointerTouch() {
+        pendingTapTarget = null
         pinchPointer.reset()
         selectionPinch.reset()
         AirRuntime.pointerInteraction = PointerInteractionPhase.IDLE

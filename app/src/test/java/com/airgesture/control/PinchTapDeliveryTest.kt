@@ -29,13 +29,25 @@ class PinchTapDeliveryTest {
         }
     }
 
-    @Test fun contactReleaseImmediatelyDiscardsPendingWithoutPolling() {
+    @Test fun confirmedContactSurvivesPromptReleaseUntilItsAppliedHotspotCanDispatch() {
         val interpreter = approach()
         interpreter.processFrame(pose(true), 94L)
         assertTrue(interpreter.hasPendingTap)
         interpreter.processFrame(pose(false), 127L)
-        assertFalse("a release must invalidate without a dispatch attempt", interpreter.hasPendingTap)
+        assertTrue("release cannot erase an already confirmed contact", interpreter.hasPendingTap)
+        assertFalse(interpreter.takePendingTap(127L, false))
+        assertTrue(interpreter.takePendingTap(127L, true))
         assertFalse(interpreter.takePendingTap(127L, true))
+    }
+
+    @Test fun releaseWithNoAppliedHotspotExpiresAndNeverReplays() {
+        val interpreter = approach()
+        interpreter.processFrame(pose(true), 94L)
+        interpreter.processFrame(pose(false), 127L)
+        assertFalse(interpreter.takePendingTap(127L, false))
+        for (t in 160L..358L step 33L) interpreter.processFrame(pose(false), t)
+        assertFalse(interpreter.hasPendingTap)
+        assertFalse(interpreter.takePendingTap(358L, true))
     }
 
     @Test fun untrustedContactExpiresEvenWithoutPollingDispatch() {
@@ -44,6 +56,23 @@ class PinchTapDeliveryTest {
         for (t in 127L..358L step 33L) interpreter.processFrame(pose(true), t)
         assertFalse("stale pending taps must not survive", interpreter.hasPendingTap)
         assertFalse(interpreter.takePendingTap(358L, true))
+    }
+
+    @Test fun releasePendingTapIsCancelledByDisabledActionOrClockDiscontinuity() {
+        val blocked = approach()
+        blocked.processFrame(pose(true), 94L)
+        blocked.processFrame(pose(false), 127L, actionsAllowed = false)
+        assertFalse(blocked.takePendingTap(127L, true))
+
+        val repeated = approach()
+        repeated.processFrame(pose(true), 94L)
+        repeated.processFrame(pose(false), 94L)
+        assertFalse(repeated.hasPendingTap)
+
+        val gap = approach()
+        gap.processFrame(pose(true), 94L)
+        gap.processFrame(pose(false), 500L)
+        assertFalse(gap.hasPendingTap)
     }
 
     @Test fun queuedTapDropsOnActionBlockAndReset() {
