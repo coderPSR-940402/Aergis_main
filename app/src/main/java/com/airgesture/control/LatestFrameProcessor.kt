@@ -44,7 +44,11 @@ internal class LatestFrameProcessor<T : AutoCloseable>(
                 next
             }
             try { consume(frame) }
-            catch (failure: Exception) { onFailure(failure) }
+            catch (failure: Exception) {
+                // Diagnostic reporting must not strand a queued camera frame if
+                // the reporter itself fails. The frame is still closed below.
+                try { onFailure(failure) } catch (_: Exception) { /* keep draining */ }
+            }
             finally { frame.close() }
         }
     }
