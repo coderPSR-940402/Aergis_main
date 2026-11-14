@@ -27,6 +27,26 @@ class FrameBufferPoolTest {
         (active as AutoCloseable).close(); (copying as AutoCloseable).close(); (replacement as AutoCloseable).close()
     }
 
+    @Test fun alternatingResolutionsReuseMatchingFreeBuffers() {
+        val pool = pool()
+        val small = acquire(pool, 8)!!
+        val large = acquire(pool, 16)!!
+        val smallBuffer = buffer(small)
+        val largeBuffer = buffer(large)
+        (small as AutoCloseable).close()
+        (large as AutoCloseable).close()
+
+        val reusedLarge = acquire(pool, 16)!!
+        val reusedSmall = acquire(pool, 8)!!
+        assertSame(largeBuffer, buffer(reusedLarge))
+        assertSame(smallBuffer, buffer(reusedSmall))
+        val third = acquire(pool, 8)!!
+        assertNull(acquire(pool, 8))
+        (third as AutoCloseable).close()
+        (reusedLarge as AutoCloseable).close()
+        (reusedSmall as AutoCloseable).close()
+    }
+
     @Test fun newResolutionGetsCorrectSizedStorageWithoutChangingOldLease() {
         val pool = pool(); val old = acquire(pool, 8)!!
         buffer(old).put(0, 42)
