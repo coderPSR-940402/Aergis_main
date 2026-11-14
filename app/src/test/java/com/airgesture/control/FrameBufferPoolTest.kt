@@ -47,6 +47,24 @@ class FrameBufferPoolTest {
         (reusedSmall as AutoCloseable).close()
     }
 
+    @Test fun repeatedResolutionChangesDoNotRetainUnlimitedFreeBuffers() {
+        val pool = pool()
+        val first = acquire(pool, 8)!!
+        val second = acquire(pool, 16)!!
+        val third = acquire(pool, 24)!!
+        val firstBuffer = buffer(first)
+        (first as AutoCloseable).close()
+        (second as AutoCloseable).close()
+        (third as AutoCloseable).close()
+
+        val fourth = acquire(pool, 32)!!
+        (fourth as AutoCloseable).close()
+        // The oldest free buffer must have been evicted after a fourth size.
+        val replacement = acquire(pool, 8)!!
+        assertTrue(firstBuffer !== buffer(replacement))
+        (replacement as AutoCloseable).close()
+    }
+
     @Test fun newResolutionGetsCorrectSizedStorageWithoutChangingOldLease() {
         val pool = pool(); val old = acquire(pool, 8)!!
         buffer(old).put(0, 42)
