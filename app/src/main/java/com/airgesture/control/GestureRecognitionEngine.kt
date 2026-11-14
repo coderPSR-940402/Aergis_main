@@ -31,6 +31,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         )
     }
     private val fingertipPatch = FingertipPatchTracker()
+    private val palmTipFallback = PalmRelativeTipFallback()
     private var patchEpoch = -1L
     private var reacquireFrom: PointerCoordinateMapper.Point? = null
     private var currentPixels: RgbaFrameData? = null
@@ -502,6 +503,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         val mappingChanged = frameCalibration != lastAppliedCalibration || calibrationContext != lastCalibrationContext
         if (mappingChanged) {
             fingertipPatch.reset()
+            palmTipFallback.reset()
             reacquireFrom = null
             resetPointerTouch()
             gestureTransaction.reset()
@@ -521,6 +523,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         val filterChanged = filterMode != lastFilterMode
         if (ownerChanged || filterChanged) {
             fingertipPatch.reset()
+            palmTipFallback.reset()
             reacquireFrom = null
             resetPointerTouch()
             interpreter.reset()
@@ -561,6 +564,11 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         val publicationState = AirRuntime.state.value
         if (inputEpoch != publicationState.inputEpoch) return
         val pointerEpoch = publicationState.actionEpoch
+        // A moving palm may carry a briefly missing index tip for cursor visibility.
+        // This estimate is never fed into click, gesture, drag or calibration inputs.
+        fun palmMotionOnly(): Point3D? = if (controlSafe && pointerActive && handSelection != null)
+            palmTipFallback.predict(reusablePointsList, frameAspectRatio, commandOwnerId,
+                inputEpoch, pointerEpoch, timestamp) else null
         // Only a target from this authority epoch may bridge a brief index refit.
         val refitAnchor = pinchPointer.refitAnchor(timestamp)
         val pointerTouchTracking = freshness.gapMs <= 350L && !mappingChanged && !ownerChanged && !filterChanged &&
@@ -588,7 +596,8 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 actionsAllowed = touchAllowed, aspectRatio = frameAspectRatio, depthScale = depthScale,
                 allowIndexRefit = touchAllowed && refitAnchor != null) ?: run {
                 handlePointerGap(observedAtMs, pointerActive, landmarks.size <= 1,
-                    "NON_FINITE_OR_MISSING_TIP", PointerFeedback.INVALID_TIP)
+                    "NON_FINITE_OR_MISSING_TIP", PointerFeedback.INVALID_TIP,
+                    palmFallback = palmMotionOnly())
                 return
             }
             AirRuntime.recordPoseEvidence(processed.poseEvidence)
@@ -598,7 +607,8 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             val currentPoint = pointerMapper.map(processed.smoothedX, processed.smoothedY, frameCalibration)
             val comparison = if (tipUsable) lineageComparison.update(mappedTip, currentPoint, timestamp)
                 else lineageComparison.latest ?: run {
-                    handlePointerGap(observedAtMs, pointerActive, false, "INVALID_TIP", PointerFeedback.INVALID_TIP)
+                    handlePointerGap(observedAtMs, pointerActive, false, "INVALID_TIP", PointerFeedback.INVALID_TIP,
+                    palmFallback = palmMotionOnly())
                     return
                 }
             val targetCandidate = comparison.selected(filterMode)
@@ -626,7 +636,8 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             })
             if (AirRuntime.actionEpoch != pointerEpoch) { resetTrackingState(); return }
             if (!tipUsable && !anchorProtected) {
-                handlePointerGap(observedAtMs, pointerActive, false, "INVALID_TIP", PointerFeedback.INVALID_TIP)
+                handlePointerGap(observedAtMs, pointerActive, false, "INVALID_TIP", PointerFeedback.INVALID_TIP,
+                    palmFallback = palmMotionOnly())
                 return
             }
             if (tipUsable) AirRuntime.setRawPointerState(rawTip.x, rawTip.y, trusted)
@@ -687,6 +698,10 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 }
             }
             if (trusted) {
+                // Only a real, trusted fingertip may train the visual recovery frame.
+                if (handSelection != null && processed.poseEvidence.accepted)
+                    palmTipFallback.observe(reusablePointsList, frameAspectRatio,
+                        commandOwnerId, inputEpoch, pointerEpoch, timestamp)
                 pointerVisibility.record(stabilized, observedAtMs)
                 lastPointerAt = timestamp
                 lastPointerObservedAt = observedAtMs
@@ -797,7 +812,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                     !pointerActive -> PointerFeedback.DISABLED
                     landmarks.size > 1 -> PointerFeedback.AMBIGUOUS
                     else -> PointerFeedback.NO_HAND
-                })
+                }, palmFallback = if (reason == "MISSING_TIP") palmMotionOnly() else null)
         }
 
         val registeredGesture = RegisteredGesture.fromSignal(gestureName)
@@ -891,13 +906,14 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
 
     /** Retention changes cursor visibility only. Missing evidence immediately cancels all actions. */
     private fun handlePointerGap(now: Long, pointerActive: Boolean, coastAllowed: Boolean,
-        reason: String, feedback: PointerFeedback) {
+        reason: String, feedback: PointerFeedback, palmFallback: Point3D? = null) {
         AirRuntime.setCalibrationGesture(null)
         val pixels = currentPixels
         val fallback = if (reason == "RAW_LANDMARK_DROPOUT" && pointerActive && coastAllowed &&
             pixels != null && patchEpoch == AirRuntime.actionEpoch)
             fingertipPatch.track(pixels.width, pixels.height) { x, y -> luminance(pixels, x, y) } else null
         if (fallback == null) fingertipPatch.reset()
+        val palmMotion = palmFallback.takeIf { fallback == null && pointerActive && coastAllowed }
         resetPointerTouch()
         AirRuntime.invalidatePendingActions(clearSelection = false, invalidateFrames = false)
         patchEpoch = AirRuntime.actionEpoch
@@ -914,6 +930,20 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             AirRuntime.pointerFeedback = PointerFeedback.COASTING
             AirAccessibilityService.instance?.updatePointer(mapped.x, mapped.y, true, false)
             diagnosticTrace?.put("pointerRejection", "PATCH_MOTION_ONLY")?.put("cursorVisible", true)
+            AirRuntime.clearPoseEvidence()
+            return
+        }
+        if (palmMotion != null) {
+            // Action authority has already been revoked; this position is visual only.
+            val mapped = pointerMapper.map(palmMotion.x, palmMotion.y, pointerMapper.snapshot())
+            AirRuntime.setRawPointerState(palmMotion.x, palmMotion.y, false)
+            reacquireFrom = mapped
+            AirRuntime.setPointerState(mapped.x, mapped.y, false)
+            AirRuntime.pointerFeedback = PointerFeedback.COASTING
+            pointerVisibility.record(mapped, now)
+            AirAccessibilityService.instance?.updatePointer(mapped.x, mapped.y, true, false)
+            diagnosticTrace?.put("pointerRejection", "PALM_GEOMETRY_MOTION_ONLY")
+                ?.put("cursorVisible", true)?.put("coasting", true)
             AirRuntime.clearPoseEvidence()
             return
         }
@@ -950,6 +980,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
     private fun resetTrackingState(preserveSelection: Boolean = false, preserveOwnership: Boolean = false) {
         AirRuntime.setCalibrationGesture(null)
         fingertipPatch.reset()
+        palmTipFallback.reset()
         reacquireFrom = null
         resetPointerTouch()
         if (AirRuntime.pointerTracking) AirRuntime.invalidatePendingActions(clearSelection = !preserveSelection, invalidateFrames = false)
