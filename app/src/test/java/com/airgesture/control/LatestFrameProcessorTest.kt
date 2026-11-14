@@ -85,6 +85,18 @@ class LatestFrameProcessorTest {
         assertEquals(1, bad.closes); assertEquals(1, good.closes)
     }
 
+    @Test fun unexpectedExecutorFailureReleasesWaitingFrame() {
+        val failures = mutableListOf<Throwable>()
+        val processor = Processor(Executor { throw IllegalStateException("worker unavailable") },
+            { fail("Must not run") }, failures::add)
+        val frame = Frame(1)
+        processor.offer(frame)
+        processor.close()
+        assertEquals(1, frame.closes)
+        assertEquals(1, failures.size)
+        assertTrue(failures.single() is IllegalStateException)
+    }
+
     @Test fun rejectedExecutorReleasesWaitingFrame() {
         val failures = mutableListOf<Throwable>()
         val processor = Processor(Executor { throw RejectedExecutionException("stopped") }, { fail("Must not run") }, failures::add)
