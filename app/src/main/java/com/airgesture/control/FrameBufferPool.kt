@@ -11,8 +11,11 @@ internal class FrameBufferPool(private val direct: Boolean = true) {
     @Synchronized fun acquire(size: Int): Lease? {
         require(size > 0)
         if (leased == 3) return null
-        val reusable = if (free.isEmpty()) null else free.removeFirst()
-        val buffer = reusable?.takeIf { it.capacity() == size }
+        // Match the requested resolution rather than discarding a different-sized
+        // buffer. Camera rebinds can alternate resolutions; retain both for reuse.
+        val reusable = free.firstOrNull { it.capacity() == size }
+        if (reusable != null) free.remove(reusable)
+        val buffer = reusable
             ?: if (direct) ByteBuffer.allocateDirect(size) else ByteBuffer.allocate(size)
         buffer.clear()
         leased++
