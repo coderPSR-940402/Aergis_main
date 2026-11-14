@@ -1,7 +1,6 @@
 package com.airgesture.control
 
 import java.util.concurrent.Executor
-import java.util.concurrent.RejectedExecutionException
 
 /** One active frame and one replaceable waiting frame; native work stays on one executor. */
 internal class LatestFrameProcessor<T : AutoCloseable>(
@@ -26,7 +25,7 @@ internal class LatestFrameProcessor<T : AutoCloseable>(
         }
         if (schedule) {
             try { executor.execute(::drain) }
-            catch (failure: RejectedExecutionException) {
+            catch (failure: RuntimeException) {
                 close()
                 onFailure(failure)
             }
