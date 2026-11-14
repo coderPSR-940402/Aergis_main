@@ -7,6 +7,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 internal class FrameBufferPool(private val direct: Boolean = true) {
     private val free = ArrayDeque<ByteBuffer>()
     private var leased = 0
+    private val maxCachedBuffers = 3
 
     @Synchronized fun acquire(size: Int): Lease? {
         require(size > 0)
@@ -19,7 +20,13 @@ internal class FrameBufferPool(private val direct: Boolean = true) {
             ?: if (direct) ByteBuffer.allocateDirect(size) else ByteBuffer.allocate(size)
         buffer.clear()
         leased++
-        return Lease(buffer) { synchronized(this) { leased--; free.addLast(it) } }
+        return Lease(buffer) { synchronized(this) {
+            leased--
+            free.addLast(it)
+            // Repeated camera rebinds at different resolutions must not retain
+            // an unbounded number of direct buffers after their leases end.
+            while (free.size > maxCachedBuffers) free.removeFirst()
+        } }
     }
 
     class Lease(val buffer: ByteBuffer, private val release: (ByteBuffer) -> Unit) : AutoCloseable {
