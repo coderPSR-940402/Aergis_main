@@ -48,9 +48,15 @@ jobs:
           test :app:lint :app:assembleDebug :app:assembleRelease
           --no-build-cache --rerun-tasks --stacktrace
 
+      - name: Independently verify candidate against official repositories
+        run: python3 tools/verify_dependency_bootstrap.py gradle/verification-metadata.xml --report dependency-verification-report.json
+
       - name: Upload candidate metadata for review
+        if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: dependency-verification-candidate-${{ github.sha }}
-          path: gradle/verification-metadata.xml
+          path: |
+            gradle/verification-metadata.xml
+            dependency-verification-report.json
           if-no-files-found: error
