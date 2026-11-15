@@ -73,7 +73,15 @@ jobs:
           VERSION_NAME: ${{ steps.request.outputs.version_name }}
         run: |
           set -euo pipefail
-          python3 tools/verify_apk.py source/app/build/outputs/apk/release/app-release-unsigned.apk --aapt "$ANDROID_HOME/build-tools/36.0.0/aapt" --version-code "$VERSION_CODE" --version-name "$VERSION_NAME"
+          # Keep the current verifier even for pre-patch sources with Gaze Lab.
+          # Only sources from before the face-model declaration use the legacy contract.
+          test -s source/app/build.gradle.kts
+          test -r source/app/build.gradle.kts
+          MODEL_ARGS=()
+          if ! grep -Fq 'face_landmarker.task' source/app/build.gradle.kts; then
+            MODEL_ARGS+=(--legacy-gesture-only)
+          fi
+          python3 tools/verify_apk.py source/app/build/outputs/apk/release/app-release-unsigned.apk --aapt "$ANDROID_HOME/build-tools/36.0.0/aapt" --version-code "$VERSION_CODE" --version-name "$VERSION_NAME" "${MODEL_ARGS[@]}"
       - name: Stage immutable candidate inputs
         run: |
           mkdir candidate

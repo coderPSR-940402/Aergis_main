@@ -125,35 +125,42 @@ arm control or enable gesture actions. Protected screens still block actions.
 
 ## Pointer touch controls
 
-Aim with the index fingertip. With control armed and gesture actions enabled,
-bring the **thumb and middle fingertip** together:
+Aim with the index fingertip. With control armed, the pointer enabled and
+**pinch clicking** enabled, bring the **thumb and middle fingertip** together:
 
-- Pinch briefly, then separate: tap at the held pointer position.
-- Keep pinched and hold still: the receiving app gets a native long press.
-- Move deliberately while pinched: drag/scroll as if moving a finger on the screen.
-- Separate to finish the touch and resume aiming.
+- Confirmed contact requests one bounded tap at the frozen visible pointer target.
+- Keeping contact closed does not repeat the tap or turn it into a long press.
+- Separate to rearm and resume aiming. Release does not create a new tap.
+- If the overlay is briefly behind, a previously confirmed tap may wait up to
+  250 ms for the original target to agree with the applied visible hotspot.
 
-The detector requires an open hand gesture before a new pinch, continuous
-contact confirmation, and separation between presses. The cursor anchors
-before contact; small closure movements do not move the target. Dragging starts
-only after deliberate movement following confirmation. Ordinary pointer motion
-no longer dispatches automatic scroll swipes. Saved classifier mappings are
-unchanged. While pointer control is active, pinch touch is the exclusive source
-of taps, long presses and scrolling, so an aiming pose cannot trigger a legacy
-classifier double-tap. Classifier system actions remain available outside a
-pointer pinch; all classifier actions pause during a pinch.
+Pinch clicking and mapped gesture actions have separate switches. Pinch clicking
+can remain available with mapped gestures disabled. When the pointer is off,
+pinch activation uses the highlighted selection rather than stale coordinates.
+Both channels still require armed control and an allowed foreground context.
 
-Tracking loss, disarming, disabled gestures, unsafe foreground context or display changes cancel the held touch. A freshness watchdog also
-handles camera stalls. Native touch cancellation uses an undispatched-stroke
-continuation: Android rejects it and cancels the previous touch without injecting
-another tap. This follows AOSP `MotionEventInjector` continuation validation and
-requires physical-device verification alongside tap, long press and scrolling.
+The detector requires observed opening before contact, contact confirmation and
+separation before another click. The cursor anchors around contact. Pointer
+travel or held pinch contact does not automatically start scrolling or dragging.
+Mapped classifier commands are suppressed during pointer pinch evidence; a
+consumed occurrence needs genuine neutral evidence before it can fire again.
 
-UI clients can observe `AirRuntime.state` / `AirRuntime.uiState` through the
-additive `pointerInteraction` phase: `IDLE`, `AIMING`, `PINCHING`, `PRESSED`,
-`HOLDING`, `DRAGGING`. `HOLDING` reports elapsed pinch time, not confirmation
-that the receiving application handles long press. No visual layout changes
-are required. Calibration and the two legacy pointer filters remain available.
+For long press, assign the **Long press** action to a distinct gesture. For
+precision dragging, assign **Precision drag: start / release**: invoke it to
+press, aim to move, then relax and invoke it again to release. Pinch clicks are
+blocked while that native drag is busy. Scroll/swipe mappings and **Arm one motion
+command** are separate ways to navigate without automatic pointer-travel scrolling.
+
+Tracking loss, disarming, unsafe foreground context, pointer disabling or display
+changes revoke pending coordinate input. Mapped dragging also requires mapped
+gestures enabled and has a freshness watchdog. Native drag cancellation uses an
+undispatched-stroke continuation; its Android behavior still requires physical
+device validation.
+
+UI clients can observe `AirRuntime.state` / `AirRuntime.uiState` through
+`pointerInteraction`. Pinch tracking reports `AIMING`, `PINCHING` or `PRESSED`;
+`DRAGGING` belongs to the separate precision-drag path. `HOLDING` remains an enum
+value for compatibility, not a current pinch-to-long-press feature.
 
 ### Precision tracking and clicking
 
@@ -164,10 +171,9 @@ positions beyond the observed target. **CURRENT** and **VC49** remain selectable
 in Testing Tools for comparison.
 
 Pinch and pose distances account for the upright camera image's aspect ratio.
-Drag thresholds use equal physical distances on both screen axes; a small,
-one-frame excursion cannot start a drag. Releasing contact clears the previous
-drag/hold even while fingers remain close together. Disabling the pointer also
-blocks late native touch dispatch and continuation callbacks.
+Ordinary pointer movement cannot arm a precision drag; the mapped drag command
+starts and releases it. Disabling the pointer blocks late coordinate touch
+dispatch and native drag continuation.
 
 Synthetic 15/30/60 fps replays show 21–27% less stationary jitter and 80–95% less
 target-relative error during steady travel than CURRENT on the tested traces.
@@ -199,21 +205,38 @@ APK model/package checks and preview signing regression suite.
 Device-motion sensing is removed. Aergis does not register gyroscope or accelerometer listeners, collect device-motion readings, or pause pointer, pinch, gesture actions or calibration based on phone movement. Camera/display orientation mapping still keeps screen coordinates aligned.
 
 
-## Classifier occurrence migration (October 2026)
+## Accessibility and local evidence
 
-The 12 registered gesture identities and saved assignments are preserved. A confident
-recognition dispatches its mapped command once without the former configurable hold
-or repeat-delay timer. A continuing pose stays consumed; a disabled, unknown,
-low-confidence, missing or blocked category is not release. Startup, recovery and
-runtime action-epoch changes require fresh, same-owner confident `None` evidence for
-100 ms before a command can fire. This is release validation, not hold-to-confirm.
+The accessibility service can retrieve the active window's accessibility node
+tree. Highlighted-item navigation reads node labels, content descriptions,
+identities and bounds, and activates selected nodes. The foreground safety policy
+separately evaluates window package/class names and blocks protected or unknown
+contexts. These checks do not guarantee detection of every sensitive screen.
+
+The manifest declares no Internet permission. Diagnostic recordings are local
+and can include sampled camera images, landmarks and action events. Saving or
+sharing an exported ZIP can disclose those samples; Gaze Lab does not save its
+face frames. See [the capability matrix](docs/CAPABILITY_MATRIX.md) for scope.
+
+## Classifier occurrence behavior
+
+Registered gesture identities and saved assignments are preserved. A fresh
+transaction starts ready for its first valid occurrence. A short temporal
+confirmation gate rejects transition poses and single-frame spikes: it requires
+three distinct observations, or two spanning at least 80 ms, with valid same-owner
+evidence. Legacy configurable hold/repeat delays are not the confirmation clock.
+
+A continuing consumed pose cannot repeat. A disabled, unknown, low-confidence,
+missing or blocked category is not neutral. Once consumed, recovery or an
+action-epoch change does not rearm that occurrence: fresh, same-owner confident
+`None` evidence spanning 100 ms is needed before another command can fire.
 
 The Gestures screen and picker explain the change. Legacy hold/repeat preference
 values remain stored and survive saving other controls, so reverting this change
 restores their original semantics. Confidence and bounded output-action settings
 are retained. Existing pointer-mode policy restrictions and dispatch checks remain.
 
-This is a classifier-command repair, not completion of the entire interaction
-contract: the thumb-middle release-tap/native-hold path described above still needs
-its separate migration to recognition-triggered taps with incompatible continuous
-drag disabled. Do not release this intermediate build as directive-compliant.
+Recognition-triggered pinch taps and separately mapped precision dragging are
+implemented in current source. Their presence and successful CI do not establish
+physical click accuracy or release readiness; exact-APK device acceptance remains
+required. See [the audit follow-up](docs/audits/2026-11-15-follow-up.md).
