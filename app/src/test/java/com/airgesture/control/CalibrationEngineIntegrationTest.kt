@@ -88,6 +88,97 @@ class CalibrationEngineIntegrationTest {
         assertEquals(0, manifest.getInt("missed_clicks"))
     }
 
+    @Test fun devLoopAttributesActualHeldPointerTapToItsOriginalContact() {
+        assertDevLoopPointerTapAttribution(deferred = false)
+    }
+
+    @Test fun devLoopAttributesActualTapDeliveredAfterReleaseToItsOriginalContact() {
+        assertDevLoopPointerTapAttribution(deferred = true)
+    }
+
+    @Test fun devLoopCannotRecognizePendingTapBeforeHotspotOrAfterAuthorityLoss() {
+        for (blockedBy in listOf("hotspot", "owner", "action_epoch", "input_epoch", "stale", "changed_target")) {
+            assertDevLoopPointerTapAttribution(deferred = true, blockedBy = blockedBy)
+            engine.close()
+            engine = GestureRecognitionEngine(RuntimeEnvironment.getApplication())
+        }
+    }
+
+    private fun assertDevLoopPointerTapAttribution(deferred: Boolean, blockedBy: String? = null) {
+        val context = RuntimeEnvironment.getApplication() as Context
+        val root = java.io.File(context.filesDir, "devloop")
+        root.deleteRecursively()
+        withMappedBackService { shadow ->
+            // Service destruction restores READY; each scenario establishes fresh authority.
+            AirRuntime.controlMode = ControlMode.ARMED
+            val service = AirAccessibilityService.instance!!
+            val looper = org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper())
+            val hotspotField = AirAccessibilityService::class.java.getDeclaredField("visibleHotspot")
+                .apply { isAccessible = true }
+            val open = hand()
+            val closed = open.toMutableList().apply { this[4] = NormalizedLandmark.create(.56f, .65f, 0f) }
+            AergisDevLoop.start(context)
+            try {
+                repeat(4) { publish(open, 1000L + it * 100L); looper.idle() }
+                val hotspot = hotspotField.get(service)
+                assertNotNull("The real overlay must supply an applied hotspot", hotspot)
+                if (deferred) hotspotField.set(service, null)
+                publish(closed, 1400L)
+                val epoch = AirRuntime.actionEpoch
+                val input = AirRuntime.state.value.inputEpoch
+                assertEquals(PointerInteractionPhase.PRESSED, AirRuntime.pointerInteraction)
+                if (deferred) {
+                    assertTrue("Confirmation without applied hotspot cannot dispatch", shadow.gesturesDispatched.isEmpty())
+                    if (blockedBy == "changed_target") {
+                        service.updatePointer(.9f, .2f, true, false)
+                        looper.idle()
+                    } else if (blockedBy != "hotspot") hotspotField.set(service, hotspot)
+                    when (blockedBy) {
+                        "action_epoch" -> AirRuntime.invalidatePendingActions(invalidateFrames = false)
+                        "input_epoch" -> AirRuntime.invalidatePendingActions(invalidateFrames = true)
+                    }
+                    val released = if (blockedBy == "owner") open.map {
+                        NormalizedLandmark.create(it.x() + .3f, it.y(), it.z())
+                    } else open
+                    publish(released, 1500L, rawHandedness = if (blockedBy == "owner") "Right" else "Left",
+                        delayMs = if (blockedBy == "stale") 601L else 0L)
+                }
+                looper.idle()
+                if (blockedBy == null) {
+                    assertEquals("Real engine/service delivery must request exactly one native tap", 1, shadow.gesturesDispatched.size)
+                    val tap = shadow.gesturesDispatched.single()
+                    tap.callback()!!.onCompleted(tap.description())
+                    publish(open, 1600L); looper.idle()
+                } else assertTrue("$blockedBy cannot dispatch or acquire a recognized request", shadow.gesturesDispatched.isEmpty())
+                AergisDevLoop.stop()?.get(5, java.util.concurrent.TimeUnit.SECONDS)
+                val records = org.json.JSONObject(root.resolve("trace.json").readText()).getJSONArray("records")
+                val rows = (0 until records.length()).map(records::getJSONObject)
+                val recognized = rows.filter { it.optString("gate") == "recognized_for_dispatch" }
+                if (blockedBy == null) {
+                    val request = rows.single { it.optString("step") == "open" && it.optString("action") == "TAP" }
+                    val geometry = rows.first { it.optString("step") == "contact_geometry" && it.has("contact_id") }
+                    assertTrue("A real engine TAP must link its original contact", request.has("contact_id"))
+                    assertEquals("A real TAP must retain the original contact", geometry.getLong("contact_id"), request.getLong("contact_id"))
+                    assertEquals(epoch, request.getLong("session_epoch"))
+                    assertEquals(input, request.getLong("input_epoch"))
+                    assertEquals(1, recognized.size)
+                    assertEquals("Recognition retains the confirmation camera frame, even after release", 1400L,
+                        recognized.single().getLong("source_frame_id"))
+                    assertEquals(geometry.getString("hand_id"), request.getString("hand_id"))
+                    assertEquals(request.getLong("request_id"), recognized.single().getLong("request_id"))
+                    assertEquals(request.getDouble("target_x"), recognized.single().getDouble("target_x"), 0.0)
+                    assertEquals(request.getDouble("target_y"), recognized.single().getDouble("target_y"), 0.0)
+                    assertTrue(rows.single { it.optString("step") == "contact_end" }
+                        .getString("outcome") == "linked_to_request")
+                } else assertTrue("$blockedBy cannot emit authoritative recognition early", recognized.isEmpty())
+                val manifest = org.json.JSONObject(root.resolve("session.json").readText())
+                assertEquals(if (blockedBy == null) 1 else 0, manifest.getInt("contacts_linked"))
+                assertEquals(0, manifest.getInt("missed_clicks"))
+                if (blockedBy == null) assertEquals(0, manifest.getInt("contacts_without_action"))
+            } finally { AergisDevLoop.stop()?.get(5, java.util.concurrent.TimeUnit.SECONDS) }
+        }
+    }
+
     @Test fun clippedWristCannotResetVisibleOwnedPinchConfirmation() {
         fun pose(distance: Float, wrist: Float) = hand().toMutableList().apply {
             this[0] = NormalizedLandmark.create(wrist,wrist,0f)

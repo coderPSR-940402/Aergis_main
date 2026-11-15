@@ -119,3 +119,12 @@ stable `voice` key, then requires setup text displayed, disabled Start and absen
 of credential entry. Assertions remain intact; no product behavior was weakened.
 The next CI run must verify these corrections and the previously staged review
 follow-ups. Local Gradle remains distribution-network blocked.
+
+## Combined candidate
+
+Standalone voice head f5fc676 passed Aergis CI 43707814057 and CodeQL 43707814055.
+Diagnostic head c65fa948 passed Aergis CI 43707295672 and CodeQL 43707295730.
+The combined candidate includes both changes. Its sole service signature conflict
+retains the voice request ID and the independent diagnostic contact evidence as
+separate optional arguments; neither is substituted for the other. The combined
+source requires fresh exact-head checks. No device acceptance is inferred.

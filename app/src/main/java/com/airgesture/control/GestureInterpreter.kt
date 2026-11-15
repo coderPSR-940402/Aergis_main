@@ -134,8 +134,8 @@ class GestureInterpreter(
         swipeEngine.reset()
     }
 
-    private companion object {
-        const val PENDING_TAP_MAX_MS = 250L
+    companion object {
+        internal const val PENDING_TAP_MAX_MS = 250L
     }
 }
 
