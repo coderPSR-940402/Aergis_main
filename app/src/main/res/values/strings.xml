@@ -344,4 +344,13 @@
     <string name="feedback_failed">Action failed</string>
     <string name="capture_notification_pause">Pause controls</string>
     <string name="capture_notification_stop">Stop capture</string>
+    <string name="voice_setup_required">Voice setup required</string>
+    <string name="voice_access_code">Voice access code</string>
+    <string name="voice_title">Aergis voice interface</string>
+    <string name="voice_description">Optional camera-session assistant. Start and arm camera controls manually for ordinary voice actions. Voice cannot arm controls.</string>
+    <string name="voice_connect">Agree and start voice</string>
+    <string name="voice_disconnect">Disconnect voice assistant</string>
+    <string name="voice_feedback_title">Spoken action feedback</string>
+    <string name="voice_feedback_description">Announce important gesture-action results with Android speech when the conversation is off.</string>
+    <string name="voice_privacy">Starting voice consents to microphone audio being sent to ElevenLabs. Voice must be set up by your administrator. Your temporary voice access code is kept only in memory for this connection. Voice is off by default. Stop here or from the persistent notification; pause, disarm and stop never arm controls.</string>
 </resources>

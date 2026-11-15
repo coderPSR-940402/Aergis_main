@@ -33,6 +33,22 @@ import java.io.File
 class RefinedProductUiTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
 
+    @Test fun unconfiguredVoiceShowsSetupWithoutCredentialEntry() {
+        org.junit.Assume.assumeTrue(com.airgesture.control.BuildConfig.VOICE_TOKEN_BROKER_URL.isEmpty())
+        compose.setContent {
+            AergisTheme {
+                AergisShell { _, navigate ->
+                    ControlScreen(true, false, true, 5, null, {}, {}, {}, {}, navigate)
+                }
+            }
+        }
+        compose.onNodeWithTag("control-dashboard").performScrollToKey("voice")
+        compose.onNodeWithText("Voice setup required").assertIsDisplayed()
+        compose.onNodeWithText("Agree and start voice").assertIsNotEnabled()
+        compose.onNodeWithText("Voice access code").assertDoesNotExist()
+        compose.onNodeWithText("Broker access token (temporary)").assertDoesNotExist()
+    }
+
     @Test fun stoppedPrimaryStartsCaptureWithoutArming() {
         var captures = 0
         var arms = 0

@@ -205,7 +205,7 @@ APK model/package checks and preview signing regression suite.
 Device-motion sensing is removed. Aergis does not register gyroscope or accelerometer listeners, collect device-motion readings, or pause pointer, pinch, gesture actions or calibration based on phone movement. Camera/display orientation mapping still keeps screen coordinates aligned.
 
 
-## Accessibility and local evidence
+## Accessibility, optional voice and local evidence
 
 The accessibility service can retrieve the active window's accessibility node
 tree. Highlighted-item navigation reads node labels, content descriptions,
@@ -213,10 +213,21 @@ identities and bounds, and activates selected nodes. The foreground safety polic
 separately evaluates window package/class names and blocks protected or unknown
 contexts. These checks do not guarantee detection of every sensitive screen.
 
-The manifest declares no Internet permission. Diagnostic recordings are local
-and can include sampled camera images, landmarks and action events. Saving or
-sharing an exported ZIP can disclose those samples; Gaze Lab does not save its
-face frames. See [the capability matrix](docs/CAPABILITY_MATRIX.md) for scope.
+The manifest declares Internet, microphone and microphone foreground-service
+permissions for the optional ElevenLabs voice assistant. Voice is off by default;
+unconfigured builds show setup required with Start disabled and no access-code
+field. Configured builds require an explicit start, microphone permission and a
+temporary voice access code. Starting voice sends microphone audio to ElevenLabs
+through its conversation SDK; authenticated token-broker access is also networked.
+Voice supplements manually armed camera controls and cannot arm them. Stop voice
+from the app or its persistent notification. See [voice setup and privacy](docs/AERGIS_VOICE_ASSISTANT.md).
+
+Gesture recognition runs on-device. Diagnostic recordings are local and can
+include sampled camera images, landmarks and action events; the optional voice
+session does not upload those recordings. Saving or sharing an exported ZIP can
+disclose those samples; Gaze Lab does not save its face frames. Optional Android
+spoken feedback uses the configured system TTS engine, which may use its own
+network services. Cleartext traffic remains disabled. See [the capability matrix](docs/CAPABILITY_MATRIX.md) for scope.
 
 ## Classifier occurrence behavior
 
