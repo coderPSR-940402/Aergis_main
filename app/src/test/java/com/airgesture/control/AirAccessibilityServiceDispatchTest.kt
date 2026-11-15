@@ -959,4 +959,47 @@ class AirAccessibilityServiceDispatchTest {
         assertFalse(service.nativeTouchInFlight)
         assertEquals(ActionDispatchOutcome.CANCELLED,AirRuntime.state.value.actionFeedback?.outcome)
     }
+
+    @Test fun voiceSelectionSurvivesRealGestureSetterButNotDisarm() {
+        val stateField = AergisVoiceService::class.java.getDeclaredField("state").apply { isAccessible = true }
+        @Suppress("UNCHECKED_CAST")
+        val voiceState = stateField.get(null) as kotlinx.coroutines.flow.MutableStateFlow<AergisVoiceState>
+        val priorVoice = voiceState.value
+        @Suppress("DEPRECATION")
+        val node = android.view.accessibility.AccessibilityNodeInfo.obtain().apply {
+            isVisibleToUser = true; isEnabled = true; isClickable = true
+            packageName = "com.example.safe"; text = "Open"
+            setBoundsInScreen(android.graphics.Rect(10, 10, 100, 100))
+        }
+        val highlight = object : ScreenTargetHighlight {
+            override var isVisible = false
+            override fun show(target: android.graphics.Rect): Boolean { isVisible = true; return true }
+            override fun hide() { isVisible = false }
+        }
+        AirAccessibilityService::class.java.getDeclaredField("screenNavigator\$delegate").apply { isAccessible = true }
+            .set(service, lazyOf(ScreenTargetNavigator(highlight)))
+        shadow.setRootInActiveWindow(node)
+        AirRuntime.running = true; AirRuntime.cameraReady = true; AirRuntime.visionReady = true
+        AirRuntime.visionError = null
+        voiceState.value = AergisVoiceState(active = true, connected = true)
+        val looper = shadowOf(Looper.getMainLooper())
+        try {
+            service.dispatchVoice(AirAction.NEXT_ITEM, AirRuntime.beginActionFeedback(AirAction.NEXT_ITEM))
+            looper.idle()
+            assertTrue(highlight.isVisible)
+            val epoch = AirRuntime.state.value.selectionEpoch
+            AirRuntime.gesturesEnabled = false
+            looper.idleFor(java.time.Duration.ofMillis(110))
+            assertEquals(epoch, AirRuntime.state.value.selectionEpoch)
+            assertTrue("Gesture setter must retain current voice-owned selection", highlight.isVisible)
+            AirRuntime.controlMode = ControlMode.READY
+            looper.idleFor(java.time.Duration.ofMillis(110))
+            assertFalse(highlight.isVisible)
+        } finally {
+            voiceState.value = priorVoice
+            AirRuntime.running = false; AirRuntime.cameraReady = false; AirRuntime.visionReady = false
+            AirRuntime.gesturesEnabled = true
+            shadow.setRootInActiveWindow(null)
+        }
+    }
 }

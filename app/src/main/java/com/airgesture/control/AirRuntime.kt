@@ -163,11 +163,23 @@ object AirRuntime {
             else it.copy(pointerClickingEnabled = value).advanceAuthority()
         }
 
+    @Volatile private var voiceSelectionOwner: Pair<Long, Long>? = null
+    internal fun recordSelectionOwner(origin: ActionOrigin, epoch: Long) {
+        voiceSelectionOwner = if (origin == ActionOrigin.VOICE) epoch to AergisVoiceService.sessionId() else null
+    }
+    private fun retainsVoiceSelection(snapshot: AirRuntimeState): Boolean {
+        val owner = voiceSelectionOwner ?: return false
+        return owner.first == snapshot.selectionEpoch && owner.second == AergisVoiceService.sessionId() &&
+            AergisVoiceService.isConnected() && snapshot.running && snapshot.cameraReady &&
+            snapshot.visionReady && snapshot.visionError == null && snapshot.controlMode == ControlMode.ARMED &&
+            snapshot.foregroundContext.safety == ForegroundSafety.SAFE
+    }
+
     var gesturesEnabled: Boolean
         get() = state.value.gesturesEnabled
         set(value) = _state.update {
             if (it.gesturesEnabled == value) it
-            else it.copy(gesturesEnabled = value).advanceAuthority()
+            else it.copy(gesturesEnabled = value).advanceAuthority(clearSelection = !retainsVoiceSelection(it))
         }
 
     var controlMode: ControlMode
@@ -299,6 +311,12 @@ object AirRuntime {
         _state.update { it.copy(poseEvidence = null) }
     }
 
+    // Only explicit waiters are retained; visual latest-feedback updates cannot overwrite them.
+    private val actionResults = java.util.concurrent.ConcurrentHashMap<Long, MutableStateFlow<ActionDispatchOutcome?>>()
+    internal fun observeActionResult(id: Long): StateFlow<ActionDispatchOutcome?> =
+        actionResults.getOrPut(id) { MutableStateFlow(null) }.asStateFlow()
+    internal fun releaseActionResult(id: Long) { actionResults.remove(id) }
+
     private val feedbackSequence = java.util.concurrent.atomic.AtomicLong()
     internal fun beginActionFeedback(action: AirAction): Long {
         val id = feedbackSequence.incrementAndGet()
@@ -307,6 +325,9 @@ object AirRuntime {
         return id
     }
     internal fun recordActionFeedback(outcome: ActionDispatchOutcome, id: Long) {
+        actionResults[id]?.let { result ->
+            result.update { previous -> if (previous == null || previous == ActionDispatchOutcome.SUBMITTED) outcome else previous }
+        }
         val now = android.os.SystemClock.uptimeMillis()
         recordActionTelemetry(outcome, id)
         AergisDevLoop.recordActionOutcome(outcome, id, now)

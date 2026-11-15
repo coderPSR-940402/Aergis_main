@@ -21,11 +21,17 @@ internal fun ControlScreen(
     accessibilityEnabled: Boolean, pointerClickingEnabled: Boolean,
     gesturesEnabled: Boolean, assignedCount: Int, startError: String?, onStart: () -> Unit, onStop: () -> Unit,
     onArm: (Boolean) -> Unit, onGestures: (Boolean) -> Unit, onNavigate: (AergisDestination) -> Unit,
-    cameraAllowed: Boolean = true
+    cameraAllowed: Boolean = true,
+    onVoiceStart: (String) -> Unit = {}, onVoiceStop: () -> Unit = {}
 ) {
     // Do not recompose the dashboard for every camera frame.
     val flow = remember { AirRuntime.uiState.map { HomeUiState.from(it) }.distinctUntilChanged() }
     val home by flow.collectAsStateWithLifecycle(initialValue = HomeUiState.from(AirRuntime.uiStateSnapshot()))
+    val voice by AergisVoiceService.status.collectAsStateWithLifecycle()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var spokenFeedback by remember { mutableStateOf(AergisSpeechFeedback.enabled(context)) }
+    var brokerAccessToken by remember { mutableStateOf("") }
+    val voiceConfigured = remember { VoiceBrokerPolicy.configured(BuildConfig.VOICE_TOKEN_BROKER_URL) }
     val visionError = home.visionError
     val session = ProductSession.from(home.running, home.cameraReady, home.visionReady, visionError,
         home.controlMode, home.foregroundSafety, accessibilityEnabled, gesturesEnabled || pointerClickingEnabled)
@@ -100,6 +106,32 @@ internal fun ControlScreen(
                 stringResource(R.string.ui_gestures_screen_description))
         }
         item(key = "input-tiles") { ProductInputTiles(assignedCount, onNavigate) }
+        item(key = "voice") {
+            AergisPanel {
+                AergisSection(stringResource(R.string.voice_title), stringResource(R.string.voice_description))
+                Text(if (voiceConfigured) voice.message else stringResource(R.string.voice_setup_required), color = AergisColors.Muted)
+                if (voiceConfigured && !voice.active) {
+                    androidx.compose.material3.OutlinedTextField(value = brokerAccessToken,
+                        onValueChange = { brokerAccessToken = it }, label = { Text(stringResource(R.string.voice_access_code)) },
+                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                        singleLine = true, modifier = Modifier.fillMaxWidth())
+                }
+                AergisButton({
+                    if (voice.active) onVoiceStop() else {
+                        onVoiceStart(brokerAccessToken)
+                        brokerAccessToken = ""
+                    }
+                }, Modifier.fillMaxWidth(), enabled = voice.active || (voiceConfigured && brokerAccessToken.isNotBlank())) {
+                    Text(stringResource(if (voice.active) R.string.voice_disconnect else R.string.voice_connect))
+                }
+                AergisSettingRow(stringResource(R.string.voice_feedback_title),
+                    stringResource(R.string.voice_feedback_description), spokenFeedback) { enabled ->
+                    spokenFeedback = enabled
+                    AergisSpeechFeedback.setEnabled(context, enabled)
+                }
+                Text(stringResource(R.string.voice_privacy), style = MaterialTheme.typography.bodySmall, color = AergisColors.Muted)
+            }
+        }
         item(key = "practice-heading") { AergisSection(stringResource(R.string.product_practice_tools)) }
         item(key = "practice") { ProductLink(AergisDestination.PRACTICE, stringResource(R.string.product_practice_help), onNavigate) }
         item(key = "learn") { ProductLink(AergisDestination.LEARN, stringResource(R.string.product_learn_help), onNavigate) }

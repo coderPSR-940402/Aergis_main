@@ -31,6 +31,9 @@ android {
     defaultConfig {
         applicationId = "com.airgesture.control"
         minSdk = 26
+        val voiceBroker = providers.gradleProperty("aergisVoiceTokenBrokerUrl").orElse("").get()
+        require(voiceBroker.matches(Regex("[A-Za-z0-9:/._?=&%~-]*"))) { "Invalid voice broker URL" }
+        buildConfigField("String", "VOICE_TOKEN_BROKER_URL", "\"$voiceBroker\"")
         targetSdk = 36
         buildConfigField("String", "SOURCE_COMMIT", "\"${System.getenv("GITHUB_SHA") ?: "local-uncommitted"}\"")
         versionCode = 1000 + previewBuildNumber
@@ -144,6 +147,7 @@ dependencies {
     implementation("androidx.camera:camera-lifecycle:$cameraX")
 
     implementation("com.google.mediapipe:tasks-vision:1.0.0")
+    implementation("io.elevenlabs:elevenlabs-android:0.13.0")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     // Native Compose navigation and mapping-draft regression tests (no runtime dependency).

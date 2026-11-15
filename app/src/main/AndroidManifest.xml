@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
@@ -26,6 +29,7 @@
         </activity>
         <receiver android:name=".GestureCaptureNotificationReceiver" android:exported="false" />
         <service android:name=".GestureCaptureService" android:exported="false" android:foregroundServiceType="camera" />
+        <service android:name=".AergisVoiceService" android:exported="false" android:foregroundServiceType="microphone" />
         <service android:name=".AirAccessibilityService" android:exported="true" android:label="Aergis" android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
             <intent-filter><action android:name="android.accessibilityservice.AccessibilityService" /></intent-filter>
             <meta-data android:name="android.accessibilityservice" android:resource="@xml/air_accessibility_service" />

@@ -22,6 +22,7 @@ import java.util.concurrent.atomic.AtomicLong
 
 class AirAccessibilityService : AccessibilityService() {
     private val feedbackScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var spokenFeedback: AergisSpeechFeedback? = null
     private var feedbackOverlay: ActionFeedbackOverlay? = null
     private var currentFeedbackId = 0L // Main-thread synchronous dispatch context only.
     private var dragFeedbackId = 0L
@@ -66,6 +67,8 @@ class AirAccessibilityService : AccessibilityService() {
     private val selectionActivationGuard = object : Runnable {
         override fun run() { screenNavigator.expireActivation(AirRuntime.state.value.selectionEpoch) }
     }
+    private var selectionOrigin = ActionOrigin.GESTURE
+    private var selectionVoiceSession = -1L
     private var selectionEpoch = -1L
     private val selectionGuard = object : Runnable {
         override fun run() {
@@ -86,6 +89,7 @@ class AirAccessibilityService : AccessibilityService() {
         pointerOverlay = PointerOverlay(this)
         trackingMirror = TrackingMirrorOverlay(this)
         feedbackOverlay = ActionFeedbackOverlay(this)
+        spokenFeedback = AergisSpeechFeedback(this, feedbackScope)
         feedbackScope.launch {
             AirRuntime.state.map { Triple(it.actionFeedback, it.running, it.foregroundContext.safety) }
                 .distinctUntilChanged().collect { (feedback, running, safety) ->
@@ -182,8 +186,15 @@ class AirAccessibilityService : AccessibilityService() {
         dispatch(AirAction.SELECT_ITEM, origin = ActionOrigin.POINTER, expectedEpoch = expectedEpoch,
             sourceDeadlineMs = sourceDeadlineMs)
 
-    private fun selectionAllowed(): Boolean = isActionAllowed(AirAction.NEXT_ITEM) ||
-        (!AirRuntime.pointerEnabled && isActionAllowed(AirAction.SELECT_ITEM, origin = ActionOrigin.POINTER))
+    private fun selectionAllowed(): Boolean =
+        VoiceSelectionAuthority.valid(selectionOrigin, selectionVoiceSession,
+            AergisVoiceService.sessionId(), AergisVoiceService.isConnected()) &&
+        if (selectionOrigin == ActionOrigin.VOICE) isActionAllowed(AirAction.NEXT_ITEM, origin = ActionOrigin.VOICE)
+        else isActionAllowed(AirAction.NEXT_ITEM) ||
+            (!AirRuntime.pointerEnabled && isActionAllowed(AirAction.SELECT_ITEM, origin = ActionOrigin.POINTER))
+
+    internal fun dispatchVoice(action: AirAction, requestId: Long) =
+        dispatch(action, GestureTuning(), ActionOrigin.VOICE, AirRuntime.actionEpoch, null, requestId)
 
     internal fun dispatchPointerTap(expectedEpoch: Long = AirRuntime.actionEpoch, sourceDeadlineMs: Long? = null) =
         dispatch(AirAction.TAP, origin = ActionOrigin.POINTER, expectedEpoch = expectedEpoch,
@@ -208,10 +219,10 @@ class AirAccessibilityService : AccessibilityService() {
         dispatch(action, tuning, ActionOrigin.GESTURE, expectedEpoch, sourceDeadlineMs)
 
     private fun dispatch(action: AirAction, tuning: GestureTuning = GestureTuning(), origin: ActionOrigin,
-        expectedEpoch: Long, sourceDeadlineMs: Long?) {
+        expectedEpoch: Long, sourceDeadlineMs: Long?, requestId: Long? = null) {
         val settings = tuning.bounded()
         if (action == AirAction.NONE) return
-        val feedbackId = AirRuntime.beginActionFeedback(action)
+        val feedbackId = requestId ?: AirRuntime.beginActionFeedback(action)
         fun recordOutcome(outcome: ActionDispatchOutcome) = AirRuntime.recordActionFeedback(outcome, feedbackId)
         val requestedHotspot = visibleHotspot
         val requestedSearch = if (action == AirAction.SELECT_ITEM) AppSearchActivity.active.get() else null
@@ -324,6 +335,9 @@ class AirAccessibilityService : AccessibilityService() {
                             AirRuntime.state.value.selectionEpoch == navigationEpoch
                     }
                     mainHandler.removeCallbacks(selectionGuard)
+                    AirRuntime.recordSelectionOwner(origin, navigationEpoch)
+                    selectionOrigin = origin
+                    selectionVoiceSession = AergisVoiceService.sessionId()
                     selectionEpoch = navigationEpoch
                     if (screenNavigator.hasSelection) mainHandler.postDelayed(selectionGuard, 100L)
                     if (accepted && action == AirAction.SELECT_ITEM) {
@@ -379,7 +393,9 @@ class AirAccessibilityService : AccessibilityService() {
             controlMode = AirRuntime.controlMode,
             foregroundSafety = AirRuntime.state.value.foregroundContext.safety,
             origin = origin, pointerEnabled = AirRuntime.pointerEnabled,
-            pointerClickingEnabled = AirRuntime.pointerClickingEnabled
+            pointerClickingEnabled = AirRuntime.pointerClickingEnabled,
+            voiceEnabled = AergisVoiceService.isConnected() && AirRuntime.running &&
+                AirRuntime.cameraReady && AirRuntime.visionReady && AirRuntime.visionError == null
         ).allowed
     }
 
@@ -556,6 +572,8 @@ class AirAccessibilityService : AccessibilityService() {
     }
 
     override fun onDestroy() {
+        spokenFeedback?.close()
+        spokenFeedback = null
         feedbackScope.cancel()
         feedbackOverlay?.close()
         feedbackOverlay = null
