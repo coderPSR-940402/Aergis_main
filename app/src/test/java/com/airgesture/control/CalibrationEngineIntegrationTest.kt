@@ -109,6 +109,8 @@ class CalibrationEngineIntegrationTest {
         val root = java.io.File(context.filesDir, "devloop")
         root.deleteRecursively()
         withMappedBackService { shadow ->
+            // Service destruction restores READY; each scenario establishes fresh authority.
+            AirRuntime.controlMode = ControlMode.ARMED
             val service = AirAccessibilityService.instance!!
             val looper = org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper())
             val hotspotField = AirAccessibilityService::class.java.getDeclaredField("visibleHotspot")

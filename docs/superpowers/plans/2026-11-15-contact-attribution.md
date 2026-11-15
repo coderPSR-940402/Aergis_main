@@ -11,9 +11,9 @@ Scope: observation-only engine-to-DevLoop correlation for actual held and pendin
 
 ## Progress
 
-- Read AGENTS.md, evidence ledger and overlap review. Base main: `307f5e91ad9e84b9f924ef4ce07b86b8e56de636`; dynamic CI reference resolution belongs to parent orchestration.
+- Read AGENTS.md, evidence ledger and overlap review. Base main: `307f5e91ad9e84b9f924ef4ce07b86b8e56de636`; parent resolved `main` and dynamic `baseline-successful-apk` to that same commit. No new physical-device baseline identity is available.
 - Root cause: the early `confirmed_or_pending_hotspot_check` observation is deliberately non-authoritative; no final recognized observation exists. Ordinary release finalizes contact before a deferred dispatch can correlate.
-- Added test-only engine/service/worker recorder coverage for held and post-release native taps, and no recognition for unavailable hotspot, owner/action/input epoch loss, stale evidence or changed target. Awaiting CI red run before production implementation.
+- Added test-only engine/service/worker recorder coverage for held and post-release native taps, and no recognition for unavailable hotspot, owner/action/input epoch loss, stale evidence or changed target. Observed RED on PR #103 head `16caebc44ac57c57bf8bc6aca02a45d686c0b4be`, CI run `43706655692`, before production edits: both real TAP tests failed their missing-contact assertion at line 158. The negative loop exposed a separate test fixture omission at line 122: service destruction restores READY, so subsequent loop scenarios must explicitly arm their new service. Fixed fixture setup without changing runtime safety.
 - Android tests have not been run locally; no SDK or Kotlin compiler is available. No device outcome is claimed.
 
 ## Repair design
@@ -34,3 +34,12 @@ The production change that must fail these tests is removal of the explicit fina
 - `python -m unittest tools/test_aergis_live_collector.py`: 30 passed (0.571 seconds).
 
 - `python -m unittest discover -s tools -p 'test_*.py'`: all 59 Python tooling tests passed (2.057 seconds).
+
+## Implementation checkpoint
+
+- Added immutable confirmation evidence and request-bound transport through the final pointer TAP open; the recorder emits authoritative recognition with the exact request id, frozen target, original source frame, owner and epochs.
+- Retains at most one confirmed released contact. The existing camera pending budget (250 ms) and recorder observation timeout bound retention; resets, discontinuity, evidence loss and stop revoke it. This is diagnostic state only.
+- No runtime dispatch predicates, hotspot readiness, pointer stabilization, tap deadlines, gesture dispatch, native touch or interpreter behavior changed.
+- `git diff --check`: passed after production edits.
+- `python -m unittest discover -s tools -p 'test_*.py'`: 59 passed after production edits (2.137 seconds).
+- Corrected Android tests, full Android CI/lint/APK checks and exact-APK device acceptance remain pending; no local Android run or device success claimed.

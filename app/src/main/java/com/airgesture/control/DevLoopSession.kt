@@ -37,6 +37,9 @@ internal class DevLoopSession(
         var frameId: Long, var observedAt: Long, var linked: Boolean = false,
         var decisionGate: String = "", var recognizedFrame: Long? = null)
     private var contact: Contact? = null
+    private data class PendingPointerTap(val contact: Contact, val evidence: PointerTapContactEvidence,
+        val confirmedAt: Long, var releasedAt: Long? = null)
+    private var pendingPointerTap: PendingPointerTap? = null
     private var contactSequence = 0L
     private var lastContactTraceFrame: Long? = null
     private var lastGeometryBand: String? = null
@@ -115,14 +118,20 @@ internal class DevLoopSession(
             LiveDiagnosticSeverity.WARNING, uptimeMs, wallClockMs, reasonCode = "unclean_prior_session"))
     }
 
-    fun open(id: Long, uptimeMs: Long, action: String, x: Float, y: Float, epoch: Long, input: Long) {
+    fun open(id: Long, uptimeMs: Long, action: String, x: Float, y: Float, epoch: Long, input: Long,
+        pointerTapContact: PointerTapContactEvidence? = null) {
         if (stopped || !evidenceComplete || id in seenRequests) return
         if (requests.size >= 4096) { invalidateEvidence(1); return }
         seenRequests.add(id)
         if (seenRequests.size > 4096) seenRequests.remove(seenRequests.first())
         requests[id] = action
         if (action == "TAP") increment("click_attempts")
-        val matchingContact = contact?.takeIf {
+        val pending = pendingPointerTap
+        val matchingContact = if (pointerTapContact != null) pending?.takeIf {
+            action == "TAP" && it.evidence == pointerTapContact && !it.contact.linked &&
+                it.evidence.epoch == epoch && it.evidence.input == input &&
+                uptimeMs - it.confirmedAt in 0..350
+        }?.contact else contact?.takeIf {
             val recognizedAction = when (it.decisionGate) {
                 "recognized_for_dispatch" -> "TAP"
                 "recognized_for_selection_dispatch" -> "SELECT_ITEM"
@@ -134,9 +143,20 @@ internal class DevLoopSession(
         if (matchingContact != null && !matchingContact.linked) {
             matchingContact.linked = true
             increment("contacts_linked")
+            if (pointerTapContact != null) {
+                // Final recognition belongs to this authoritative request, never an early
+                // confirmation whose visible hotspot may still be unavailable.
+                emit("trace", linkedMapOf("step" to "contact_decision", "uptime_ms" to uptimeMs,
+                    "source_frame_id" to pointerTapContact.frameId, "contact_id" to matchingContact.id,
+                    "hand_id" to pointerTapContact.owner, "session_epoch" to epoch, "input_epoch" to input,
+                    "gate" to "recognized_for_dispatch", "request_id" to id, "target_x" to x, "target_y" to y))
+                pendingPointerTap = null
+                if (pending?.releasedAt != null) emitContactEnd(matchingContact, uptimeMs, "released")
+            }
         }
         emit("trace", linkedMapOf("step" to "open", "uptime_ms" to uptimeMs, "request_id" to id,
-            "contact_id" to matchingContact?.id,
+            "contact_id" to matchingContact?.id, "hand_id" to matchingContact?.owner,
+            "source_frame_id" to if (matchingContact != null) pointerTapContact?.frameId else null,
             "action" to action, "target_x" to x, "target_y" to y, "session_epoch" to epoch, "input_epoch" to input))
         diagnostics.openInteraction(id, uptimeMs, action, x, y, epoch, input,
             completionTimeoutMs = if (action == "POINTER_DRAG") null else 2500)
@@ -147,6 +167,12 @@ internal class DevLoopSession(
         distance: Float, depth: Float, gate: String) {
         if (stopped) return
         increment("contact_observation_frames")
+        pendingPointerTap?.let { pending ->
+            val evidence = pending.evidence
+            if (owner != evidence.owner || epoch != evidence.epoch || input != evidence.input ||
+                frameId <= evidence.frameId || frameId - evidence.frameId > GestureInterpreter.PENDING_TAP_MAX_MS ||
+                !distance.isFinite() || !depth.isFinite()) cancelPendingPointerTap(uptimeMs, "interrupted")
+        }
         val old = contact
         if (old != null && (old.owner != owner || old.epoch != epoch || old.input != input ||
                 frameId <= old.frameId || frameId - old.frameId > 350 || !distance.isFinite() || !depth.isFinite())) {
@@ -182,6 +208,24 @@ internal class DevLoopSession(
         lastGeometryGate = gate
     }
 
+    /** Confirmation retains provenance only; it is not recognition for dispatch. */
+    fun pendingPointerTap(evidence: PointerTapContactEvidence?, uptimeMs: Long) {
+        if (stopped || !evidenceComplete || pendingPointerTap?.evidence == evidence) return
+        cancelPendingPointerTap(uptimeMs, "released")
+        if (evidence == null) return
+        val active = contact?.takeIf {
+            it.frameId == evidence.frameId && it.owner == evidence.owner &&
+                it.epoch == evidence.epoch && it.input == evidence.input && !it.linked
+        } ?: return
+        pendingPointerTap = PendingPointerTap(active, evidence, uptimeMs)
+    }
+
+    private fun cancelPendingPointerTap(uptimeMs: Long, reason: String) {
+        val pending = pendingPointerTap ?: return
+        pendingPointerTap = null
+        if (pending.releasedAt != null) emitContactEnd(pending.contact, uptimeMs, reason)
+    }
+
     fun contactDecision(frameId: Long, uptimeMs: Long, gate: String) {
         val active = contact?.takeIf { it.frameId == frameId } ?: return
         active.recognizedFrame = frameId.takeIf {
@@ -195,6 +239,20 @@ internal class DevLoopSession(
 
     private fun finishContact(uptimeMs: Long, reason: String) {
         val active = contact ?: return
+        contact = null
+        lastContactTraceFrame = null
+        val pending = pendingPointerTap?.takeIf { it.contact === active }
+        if (pending != null && reason == "released") {
+            // A confirmed tap can dispatch after ordinary release. Delay only this
+            // diagnostic episode's terminal classification until dispatch/cancel/expiry.
+            pending.releasedAt = uptimeMs
+            return
+        }
+        if (pending != null) pendingPointerTap = null
+        emitContactEnd(active, uptimeMs, reason)
+    }
+
+    private fun emitContactEnd(active: Contact, uptimeMs: Long, reason: String) {
         val outcome = when {
             active.linked -> "linked_to_request"
             reason == "released" -> "no_action_observed"
@@ -205,8 +263,6 @@ internal class DevLoopSession(
         emit("trace", linkedMapOf("step" to "contact_end", "uptime_ms" to uptimeMs,
             "source_frame_id" to active.frameId, "contact_id" to active.id, "outcome" to outcome,
             "reason_code" to reason))
-        contact = null
-        lastContactTraceFrame = null
     }
 
     fun outcome(outcome: ActionDispatchOutcome, id: Long, uptimeMs: Long) {
@@ -306,6 +362,8 @@ internal class DevLoopSession(
 
     fun tick(uptimeMs: Long, wallClockMs: Long) {
         if (stopped || uptimeMs < lastUptime) return
+        if (pendingPointerTap?.let { uptimeMs - it.confirmedAt > 350 } == true)
+            cancelPendingPointerTap(uptimeMs, "released")
         if (contact?.let { uptimeMs - it.observedAt > 350 } == true) finishContact(uptimeMs, "observation_expired")
         lastUptime = uptimeMs
         lastWall = wallClockMs
@@ -325,6 +383,7 @@ internal class DevLoopSession(
         counts["queue_dropped"] = counts.getValue("queue_dropped") + dropped
         evidenceComplete = false
         finishContact(lastUptime, "observation_loss")
+        cancelPendingPointerTap(lastUptime, "observation_loss")
         // A dropped callback is missing recorder evidence, never evidence of a missed click.
         requests.keys.toList().forEach(diagnostics::forgetInteraction)
         requests.clear()
@@ -336,6 +395,7 @@ internal class DevLoopSession(
         val finalRecords = mutableListOf<String>()
         heldRelay = finalRecords
         finishContact(uptimeMs, "capture_stopped")
+        cancelPendingPointerTap(uptimeMs, "capture_stopped")
         emit("trace", linkedMapOf("step" to "stop", "uptime_ms" to uptimeMs))
         diagnostics.finish(uptimeMs)
         lastUptime = maxOf(lastUptime, uptimeMs)

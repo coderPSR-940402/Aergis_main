@@ -185,9 +185,10 @@ class AirAccessibilityService : AccessibilityService() {
     private fun selectionAllowed(): Boolean = isActionAllowed(AirAction.NEXT_ITEM) ||
         (!AirRuntime.pointerEnabled && isActionAllowed(AirAction.SELECT_ITEM, origin = ActionOrigin.POINTER))
 
-    internal fun dispatchPointerTap(expectedEpoch: Long = AirRuntime.actionEpoch, sourceDeadlineMs: Long? = null) =
+    internal fun dispatchPointerTap(expectedEpoch: Long = AirRuntime.actionEpoch, sourceDeadlineMs: Long? = null,
+        contactEvidence: PointerTapContactEvidence? = null) =
         dispatch(AirAction.TAP, origin = ActionOrigin.POINTER, expectedEpoch = expectedEpoch,
-            sourceDeadlineMs = sourceDeadlineMs)
+            sourceDeadlineMs = sourceDeadlineMs, pointerTapContact = contactEvidence)
 
     /** Check the applied, epoch-matching hotspot rather than an asynchronously queued position. */
     internal fun isVisibleTapTargetReady(expectedEpoch: Long, normalizedX: Float, normalizedY: Float): Boolean {
@@ -208,7 +209,7 @@ class AirAccessibilityService : AccessibilityService() {
         dispatch(action, tuning, ActionOrigin.GESTURE, expectedEpoch, sourceDeadlineMs)
 
     private fun dispatch(action: AirAction, tuning: GestureTuning = GestureTuning(), origin: ActionOrigin,
-        expectedEpoch: Long, sourceDeadlineMs: Long?) {
+        expectedEpoch: Long, sourceDeadlineMs: Long?, pointerTapContact: PointerTapContactEvidence? = null) {
         val settings = tuning.bounded()
         if (action == AirAction.NONE) return
         val feedbackId = AirRuntime.beginActionFeedback(action)
@@ -221,7 +222,7 @@ class AirAccessibilityService : AccessibilityService() {
         val diagnosticTarget = requestedHotspot?.takeIf { action.usesPointerTouch && it.epoch == expectedEpoch }?.point
         AergisDevLoop.openAction(feedbackId, SystemClock.uptimeMillis(), action.name,
             diagnosticTarget?.x ?: Float.NaN, diagnosticTarget?.y ?: Float.NaN,
-            expectedEpoch, AirRuntime.state.value.inputEpoch)
+            expectedEpoch, AirRuntime.state.value.inputEpoch, pointerTapContact)
         if (TestingTools.state.value.status == RecordingStatus.RECORDING) {
             TestingTools.event("action_requested", org.json.JSONObject().put("action", action.name)
                 .put("target", DiagnosticFrameData.pointer(AirRuntime.pointerSnapshot())).put("epoch", expectedEpoch)
