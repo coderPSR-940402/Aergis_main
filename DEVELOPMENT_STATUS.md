@@ -1,6 +1,6 @@
 # Development Status
 
-_Last refreshed: 2026-11-02._
+_Last refreshed: 2026-11-15 (documentation and artifact-verification follow-up; no new device acceptance)._
 
 ## Source of truth
 
@@ -29,11 +29,21 @@ PR #75 merged the latest pinch-confirmation and tracking hardening work after su
 
 This is **remotely verified code**, not a physical-device acceptance claim. The Galaxy A54 still needs exact-APK validation for deliberate clicks, false clicks, release/reclick, partial-hand recovery, edge motion, second-hand appearance, pointer-off gesture navigation, latency, and sustained use.
 
-### Live diagnostics foundation
+### Live diagnostics
 
-PR #77 added only Stage 1 of live diagnostics: a compact monotonic sample type and a hard-bounded in-memory timeline with boundary, eviction, ordering, and empty-buffer tests. It intentionally adds no disk I/O, relay, CameraX, gesture, pointer, or accessibility behavior.
+PR #77 originally added the bounded in-memory timeline. Current source also wires
+the `AergisDevLoop` observer to `DevLoopWorker`, action correlation, persistence,
+relay/snapshot exports and collector/replay tools. These observe existing input
+authority; they do not gain command authority. Their presence does not prove
+complete automatic diagnosis or negligible overhead on a physical device.
 
-The broader event-promotion/relay design remains staged work. Do not treat the presence of the timeline as completion of automatic live diagnosis.
+### Latest merged camera recovery work
+
+PRs #98–#101 added scheduling-failure recovery, exact-size frame-buffer reuse,
+bounded retained buffers and isolation of error-reporting failures from the frame
+drain. Main and the CI build reference resolved to `c6aa7f4` during this follow-up;
+both Aergis CI and CodeQL passed for that source. Resolve references again for
+future changes. No device performance improvement is claimed from these checks.
 
 ### Pointer authority cleanup
 
@@ -58,7 +68,8 @@ The latest retained device evidence still shows substantial tracking interruptio
 Highest-priority device checks:
 
 - normal-posture repeated thumb-middle clicks on labelled targets;
-- false-click rate, hold behavior, release-to-rearm, and rapid re-click;
+- false-click rate, one tap per held contact, release-to-rearm, rapid re-click,
+  separately mapped long press and precision-drag start/release;
 - hand loss/reacquisition, partial-hand visibility, frame edges, and near-camera motion;
 - stable controlling-hand ownership when a second hand appears;
 - pointer-off gesture navigation, selection, scrolling, Back/Home/Recents, and pointer toggle;
@@ -76,7 +87,12 @@ Highest-priority device checks:
 
 ## Administrative gap
 
-`main` currently has no GitHub branch-protection/ruleset enforcement. Repository administration should require pull requests plus successful Aergis CI and CodeQL checks and should block force-push/deletion of `main`. This is an account/repository setting; it is not implemented by application code.
+The rules inspected on 2026-11-15 include an active ruleset blocking deletion and
+non-fast-forward updates and requesting Copilot review. They do not require pull
+requests or successful CI/CodeQL status checks. Add those required gates while
+preserving existing protection. This is repository administration, not an
+application-code change. Exact remaining steps are in
+[the audit follow-up](docs/audits/2026-11-15-follow-up.md).
 
 ## Next engineering gate
 
