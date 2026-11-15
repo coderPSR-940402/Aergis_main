@@ -126,12 +126,44 @@ def parse_metadata(path):
     return entries
 
 
+class URLPolicyError(ValueError):
+    def __init__(self, routing=None):
+        super().__init__('URL is outside the official HTTPS repository allowlist')
+        self.routing = routing or {}
+
+
+def safe_redirect_routing(source, target):
+    """Expose only bounded public domain names and flags, never URL contents."""
+    def domain(parsed):
+        host = parsed.hostname
+        if host is None or not host.isascii() or len(host) > 253:
+            return None
+        labels = host.split('.')
+        if len(labels) < 2 or not any(character.isalpha() for character in labels[-1]):
+            return None
+        if not all(re.fullmatch(r'[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?', label) for label in labels):
+            return None
+        return host
+    try:
+        nondefault_port = target.port not in (None, 443 if target.scheme == 'https' else 80 if target.scheme == 'http' else None)
+    except ValueError:
+        nondefault_port = True
+    return {
+        'source_host': domain(source), 'target_host': domain(target),
+        'same_path': source.path == target.path,
+        'target_scheme': target.scheme if target.scheme in ('https', 'http') else 'other',
+        'target_has_userinfo': target.username is not None or target.password is not None,
+        'target_has_query': bool(target.query), 'target_has_fragment': bool(target.fragment),
+        'target_nondefault_port': nondefault_port,
+    }
+
+
 def validate_url(url):
     parsed = urllib.parse.urlsplit(url)
     if (parsed.scheme != 'https' or parsed.hostname not in OFFICIAL_HOSTS
             or parsed.username is not None or parsed.password is not None
             or parsed.port not in (None, 443) or parsed.query or parsed.fragment):
-        raise ValueError('URL is outside the official HTTPS repository allowlist')
+        raise URLPolicyError()
 
 
 class OfficialRedirectHandler(urllib.request.HTTPRedirectHandler):
@@ -144,11 +176,15 @@ class OfficialRedirectHandler(urllib.request.HTTPRedirectHandler):
             # the mirror is deliberately not an allowed starting repository.
             source = urllib.parse.urlsplit(req.full_url if req is not None else '')
             target = urllib.parse.urlsplit(newurl)
+            try:
+                ports_valid = source.port in (None, 443) and target.port in (None, 443)
+            except ValueError:
+                ports_valid = False
             valid = (
                 source.scheme == target.scheme == 'https'
                 and source.hostname == 'repo.maven.apache.org'
                 and target.hostname == 'gcp.mirrors.maven.org'
-                and source.port in (None, 443) and target.port in (None, 443)
+                and ports_valid
                 and source.username is None and source.password is None
                 and target.username is None and target.password is None
                 and not source.query and not source.fragment
@@ -156,7 +192,7 @@ class OfficialRedirectHandler(urllib.request.HTTPRedirectHandler):
                 and source.path == target.path
             )
             if not valid:
-                raise
+                raise URLPolicyError(safe_redirect_routing(source, target)) from None
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
@@ -198,6 +234,8 @@ def _download(url, max_bytes, collect=False):
         except (urllib.error.URLError, TimeoutError, OSError):
             if attempt == 2:
                 raise
+        except URLPolicyError:
+            raise
         except ValueError as error:
             raise OSError(str(error)) from error
         time.sleep(attempt + 1)
@@ -269,6 +307,8 @@ def module_location(entry, repository, pinned, fetch_module=download_module):
 
 def safe_error(error):
     """Return bounded diagnostic categories, never exception bodies or URLs."""
+    if isinstance(error, URLPolicyError):
+        return {'error': 'url-policy-rejected', **error.routing}
     if isinstance(error, urllib.error.HTTPError):
         code = error.code
         return {'error': 'HTTP ' + str(code) if isinstance(code, int) and 100 <= code <= 599 else 'HTTPError'}

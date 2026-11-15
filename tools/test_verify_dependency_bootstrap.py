@@ -154,6 +154,43 @@ class VerificationTests(unittest.TestCase):
             with self.subTest(source=source, target=target), self.assertRaises(ValueError):
                 verifier.OfficialRedirectHandler().redirect_request(verifier.urllib.request.Request(source), None, 302, 'Found', {}, target)
 
+    def test_redirect_policy_failure_reports_only_safe_routing_fields(self):
+        source = verifier.urllib.request.Request('https://repo.maven.apache.org/maven2/private-path.jar')
+        target = 'https://user:password@redirect.example.org:444/secret-path.jar?token=secret#private-fragment'
+        class Opener:
+            def open(self, request, timeout):
+                return verifier.OfficialRedirectHandler().redirect_request(source, None, 302, 'secret response body', {}, target)
+        with patch.object(verifier.urllib.request, 'build_opener', return_value=Opener()):
+            try:
+                verifier.download_hash(source.full_url)
+            except (OSError, ValueError) as error:
+                diagnostic = verifier.safe_error(error)
+            else:
+                self.fail('policy rejection expected')
+        self.assertEqual(diagnostic, {
+            'error': 'url-policy-rejected', 'source_host': 'repo.maven.apache.org',
+            'target_host': 'redirect.example.org', 'same_path': False,
+            'target_scheme': 'https', 'target_has_userinfo': True,
+            'target_has_query': True, 'target_has_fragment': True,
+            'target_nondefault_port': True,
+        })
+        serialized = json.dumps(diagnostic)
+        for secret in ('password', 'secret', 'private-path', 'token=', 'private-fragment', 'https://'):
+            self.assertNotIn(secret, serialized)
+
+    def test_redirect_policy_host_diagnostic_rejects_non_domain_values(self):
+        source = verifier.urllib.request.Request('https://repo.maven.apache.org/maven2/lib.jar')
+        for host in ('localhost', '127.0.0.1', 'a_' + '.example.org', 'a' * 64 + '.example.org'):
+            with self.subTest(host=host):
+                try:
+                    verifier.OfficialRedirectHandler().redirect_request(source, None, 302, 'Found', {}, 'https://' + host + '/maven2/lib.jar')
+                except ValueError as error:
+                    diagnostic = verifier.safe_error(error)
+                else:
+                    self.fail('policy rejection expected')
+                self.assertIn('target_host', diagnostic)
+                self.assertIsNone(diagnostic['target_host'])
+
     def test_download_enforces_size_limit_and_hashes_bytes(self):
         class Response(io.BytesIO):
             headers = {}
