@@ -154,6 +154,86 @@ class VerificationTests(unittest.TestCase):
             with self.subTest(source=source, target=target), self.assertRaises(ValueError):
                 verifier.OfficialRedirectHandler().redirect_request(verifier.urllib.request.Request(source), None, 302, 'Found', {}, target)
 
+    def test_reviewed_compiler_redirect_allows_only_exact_vendor_asset_then_signed_cdn(self):
+        canonical = 'https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-compiler-embeddable/2.4.0/kotlin-compiler-embeddable-2.4.0.jar'
+        vendor = 'https://github.com/JetBrains/kotlin/releases/download/v2.4.0/kotlin-compiler-embeddable-2.4.0.jar'
+        cdn = 'https://release-assets.githubusercontent.com/github-production-release-asset/123/asset?sig=private-signature'
+        handler = verifier.OfficialRedirectHandler()
+        first = handler.redirect_request(verifier.urllib.request.Request(canonical), None, 302, 'Found', {}, vendor)
+        self.assertEqual(first.full_url, vendor)
+        second = handler.redirect_request(first, None, 302, 'Found', {}, cdn)
+        self.assertEqual(second.full_url, cdn)
+        for direct in (vendor, cdn):
+            with self.assertRaises(ValueError):
+                verifier.validate_url(direct)
+
+    def test_reviewed_compiler_redirect_cannot_change_vendor_version_asset_or_source(self):
+        canonical = 'https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-compiler-embeddable/2.4.0/kotlin-compiler-embeddable-2.4.0.jar'
+        vendor = 'https://github.com/JetBrains/kotlin/releases/download/v2.4.0/kotlin-compiler-embeddable-2.4.0.jar'
+        cases = [
+            (canonical.replace('repo.maven.apache.org', 'plugins.gradle.org'), vendor),
+            (canonical.replace('/2.4.0/', '/2.4.1/'), vendor),
+            (canonical + '?token=private', vendor),
+            (canonical, vendor.replace('JetBrains', 'OtherVendor')),
+            (canonical, vendor.replace('v2.4.0', 'v2.4.1')),
+            (canonical, vendor.replace('embeddable-2.4.0.jar', 'embeddable-2.4.0.zip')),
+            (canonical, vendor + '?token=private'),
+            (canonical, vendor + '#fragment'),
+            (canonical, vendor.replace('https://', 'http://')),
+            (canonical, vendor.replace('github.com', 'user:password@github.com')),
+            (canonical, vendor.replace('github.com', 'github.com:444')),
+        ]
+        for source, target in cases:
+            with self.subTest(source=source, target=target), self.assertRaises(ValueError):
+                verifier.OfficialRedirectHandler().redirect_request(verifier.urllib.request.Request(source), None, 302, 'Found', {}, target)
+
+    def test_reviewed_vendor_cdn_hop_rejects_foreign_hosts_sources_ports_and_credentials(self):
+        vendor = 'https://github.com/JetBrains/kotlin/releases/download/v2.4.0/kotlin-compiler-embeddable-2.4.0.jar'
+        cdn = 'https://release-assets.githubusercontent.com/release/asset?sig=private-signature'
+        cases = [
+            (vendor.replace('JetBrains', 'OtherVendor'), cdn),
+            (vendor + '?token=private', cdn),
+            (vendor, cdn.replace('release-assets.githubusercontent.com', 'objects.githubusercontent.com')),
+            (vendor, cdn.replace('release-assets.githubusercontent.com', 'release-assets.githubusercontent.com.evil.test')),
+            (vendor, cdn.replace('https://', 'http://')),
+            (vendor, cdn.replace('release-assets.githubusercontent.com', 'release-assets.githubusercontent.com:444')),
+            (vendor, cdn.replace('release-assets.githubusercontent.com', 'user:password@release-assets.githubusercontent.com')),
+            (vendor, cdn + '#private-fragment'),
+        ]
+        for source, target in cases:
+            with self.subTest(source=source, target=target), self.assertRaises(ValueError):
+                verifier.OfficialRedirectHandler().redirect_request(verifier.urllib.request.Request(source), None, 302, 'Found', {}, target)
+
+    def test_reviewed_release_byte_mismatch_cannot_be_masked_by_later_repository(self):
+        path = 'org/jetbrains/kotlin/kotlin-compiler-embeddable/2.4.0/kotlin-compiler-embeddable-2.4.0.jar'
+        requests = []
+        class Response(io.BytesIO):
+            headers = {}
+        class Opener:
+            def open(self, request, timeout):
+                url = request.full_url
+                requests.append(url)
+                if url.startswith(verifier.REPOSITORIES[0]):
+                    raise urllib.error.HTTPError(url, 404, 'missing', {}, None)
+                if url.startswith(verifier.REPOSITORIES[1]):
+                    return Response(b'tampered compiler bytes')
+                return Response(BODY)
+        with patch.object(verifier.urllib.request, 'build_opener', return_value=Opener()):
+            result = verifier.verify_entry(verifier.Entry(path, DIGEST))
+        self.assertEqual(result['status'], 'mismatch', result)
+        self.assertEqual(result['actual_sha256'], hashlib.sha256(b'tampered compiler bytes').hexdigest())
+        self.assertFalse(any(url.startswith(verifier.REPOSITORIES[2]) for url in requests))
+
+    def test_reviewed_compiler_artifact_requires_independent_release_digest(self):
+        canonical = 'https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-compiler-embeddable/2.4.0/kotlin-compiler-embeddable-2.4.0.jar'
+        class Response(io.BytesIO):
+            headers = {}
+        class Opener:
+            def open(self, request, timeout):
+                return Response(b'tampered compiler bytes')
+        with patch.object(verifier.urllib.request, 'build_opener', return_value=Opener()), self.assertRaisesRegex(verifier.ReviewedVendorDigestMismatch, 'reviewed vendor artifact digest mismatch'):
+            verifier.download_hash(canonical)
+
     def test_redirect_policy_failure_reports_only_safe_routing_fields(self):
         source = verifier.urllib.request.Request('https://repo.maven.apache.org/maven2/private-path.jar')
         target = 'https://user:password@redirect.example.org:444/secret-path.jar?token=secret#private-fragment'

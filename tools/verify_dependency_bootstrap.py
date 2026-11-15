@@ -29,6 +29,16 @@ OFFICIAL_HOSTS = frozenset((
     'dl.google.com', 'dl.googleusercontent.com', 'repo.maven.apache.org',
     'plugins.gradle.org', 'plugins-artifacts.gradle.org', 'repo.gradle.org',
 ))
+# Independently reviewed from JetBrains' official v2.4.0 GitHub release API
+# on 2026-11-15: asset size 60,351,320 bytes and SHA256 below. This exception
+# is one immutable artifact route, not permission to fetch arbitrary GitHub URLs.
+REVIEWED_VENDOR_REDIRECTS = {
+    'https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-compiler-embeddable/2.4.0/kotlin-compiler-embeddable-2.4.0.jar': {
+        'url': 'https://github.com/JetBrains/kotlin/releases/download/v2.4.0/kotlin-compiler-embeddable-2.4.0.jar',
+        'sha256': 'c2b25e8c1c93ec416ba4327f5e31eaec0f0c8847241b9353e294b8db9dce564f',
+    },
+}
+
 NAMESPACE = 'https://schema.gradle.org/dependency-verification'
 MAX_METADATA_BYTES = 16 * 1024 * 1024
 MAX_ARTIFACT_BYTES = 256 * 1024 * 1024
@@ -126,6 +136,13 @@ def parse_metadata(path):
     return entries
 
 
+class ReviewedVendorDigestMismatch(ValueError):
+    def __init__(self, actual_sha256, reviewed_sha256):
+        super().__init__('reviewed vendor artifact digest mismatch')
+        self.actual_sha256 = actual_sha256
+        self.reviewed_sha256 = reviewed_sha256
+
+
 class URLPolicyError(ValueError):
     def __init__(self, routing=None):
         super().__init__('URL is outside the official HTTPS repository allowlist')
@@ -191,7 +208,20 @@ class OfficialRedirectHandler(urllib.request.HTTPRedirectHandler):
                 and not target.query and not target.fragment
                 and source.path == target.path
             )
-            if not valid:
+            source_url = req.full_url if req is not None else ''
+            reviewed = REVIEWED_VENDOR_REDIRECTS.get(source_url)
+            vendor_hop = reviewed is not None and newurl == reviewed['url']
+            # The exact reviewed vendor asset may issue a signed CDN URL.
+            # Query values stay entirely inside urllib and are never reported.
+            cdn_hop = (
+                source_url in {item['url'] for item in REVIEWED_VENDOR_REDIRECTS.values()}
+                and target.scheme == 'https'
+                and target.hostname == 'release-assets.githubusercontent.com'
+                and ports_valid
+                and target.username is None and target.password is None
+                and not target.fragment
+            )
+            if not (valid or vendor_hop or cdn_hop):
                 raise URLPolicyError(safe_redirect_routing(source, target)) from None
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
@@ -227,14 +257,18 @@ def _download(url, max_bytes, collect=False):
                     digest.update(chunk)
                     if collect:
                         chunks.append(chunk)
-                return b''.join(chunks) if collect else digest.hexdigest()
+                actual = digest.hexdigest()
+                reviewed = REVIEWED_VENDOR_REDIRECTS.get(url)
+                if reviewed is not None and actual != reviewed['sha256']:
+                    raise ReviewedVendorDigestMismatch(actual, reviewed['sha256'])
+                return b''.join(chunks) if collect else actual
         except urllib.error.HTTPError as error:
             if error.code not in (408, 429, 500, 502, 503, 504) or attempt == 2:
                 raise
         except (urllib.error.URLError, TimeoutError, OSError):
             if attempt == 2:
                 raise
-        except URLPolicyError:
+        except (URLPolicyError, ReviewedVendorDigestMismatch):
             raise
         except ValueError as error:
             raise OSError(str(error)) from error
@@ -314,6 +348,7 @@ def safe_error(error):
         return {'error': 'HTTP ' + str(code) if isinstance(code, int) and 100 <= code <= 599 else 'HTTPError'}
     fixed_messages = {
         'artifact exceeds download limit': 'download-size-limit',
+        'reviewed vendor artifact digest mismatch': 'reviewed-vendor-digest-mismatch',
         'URL is outside the official HTTPS repository allowlist': 'url-policy-rejected',
         'artifact download exceeded time limit': 'download-time-limit',
     }
@@ -336,6 +371,12 @@ def verify_entry(entry, fetch=download_hash, pinned=None, fetch_module=download_
         url = repository + entry.path
         try:
             actual = fetch(url)
+        except ReviewedVendorDigestMismatch as error:
+            return {'artifact': entry.path, 'expected_sha256': entry.sha256,
+                    'actual_sha256': error.actual_sha256,
+                    'reviewed_release_sha256': error.reviewed_sha256,
+                    'repository': repository, 'method': 'download-sha256-reviewed-vendor',
+                    'status': 'mismatch'}
         except (OSError, ValueError) as error:
             if getattr(error, 'code', None) == 404 and pinned:
                 try:
@@ -346,6 +387,12 @@ def verify_entry(entry, fetch=download_hash, pinned=None, fetch_module=download_
                                 'actual_sha256': actual, 'repository': repository,
                                 'source_url': alias, 'method': 'download-sha256-pinned-module-location',
                                 'status': 'verified' if actual == entry.sha256 else 'mismatch'}
+                except ReviewedVendorDigestMismatch as error:
+                    return {'artifact': entry.path, 'expected_sha256': entry.sha256,
+                            'actual_sha256': error.actual_sha256,
+                            'reviewed_release_sha256': error.reviewed_sha256,
+                            'repository': repository, 'method': 'download-sha256-reviewed-vendor',
+                            'status': 'mismatch'}
                 except ModuleLocationError as module_error:
                     # A bad pinned document/location must not be hidden by a
                     # later repository, just like an artifact hash mismatch.
