@@ -93,3 +93,29 @@ Pinned SDK source checks (GitHub reads, not compilation):
 The additional focused Android test command was attempted before these fixes and
 remains blocked at Gradle distribution fetch (Network is unreachable), with no
 assertion execution. Static diff/XML/conflict-marker checks are repeated below.
+
+
+General README and capability-matrix disclosures were updated after integration
+review: the manifest now declares Internet/microphone/microphone-FGS permissions;
+optional default-off voice sends audio to ElevenLabs and uses an authenticated
+broker, while recognition remains on-device and diagnostic recordings remain
+local unless exported/shared. Unconfigured disabled UI and system-TTS network
+behavior are explicit. The root task's 59-test Python suite proof is retained;
+these documentation edits do not replace or broaden that execution claim.
+
+
+## First voice CI failures and corrections
+
+Run 43707256629 (initial voice commit 085c) compiled production and test sources,
+then reported three failures among 761 completed tests. Downloaded HTML confirms
+VoiceRequestResultTest and AergisVoiceServiceTest used manifest target SDK 36 by
+default; Robolectric requires Java 21 for that sandbox while CI runs Java 17.
+Both new test classes now explicitly select SDK 35, matching existing service
+regressions. This does not change app compileSdk/targetSdk or production behavior.
+
+The unconfigured UI regression attempted performScrollTo on text in an uncomposed
+LazyColumn item. It now asks the actual dashboard LazyColumn to scroll to its
+stable `voice` key, then requires setup text displayed, disabled Start and absence
+of credential entry. Assertions remain intact; no product behavior was weakened.
+The next CI run must verify these corrections and the previously staged review
+follow-ups. Local Gradle remains distribution-network blocked.

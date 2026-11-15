@@ -42,7 +42,8 @@ class RefinedProductUiTest {
                 }
             }
         }
-        compose.onNodeWithText("Voice setup required").performScrollTo().assertExists()
+        compose.onNodeWithTag("control-dashboard").performScrollToKey("voice")
+        compose.onNodeWithText("Voice setup required").assertIsDisplayed()
         compose.onNodeWithText("Agree and start voice").assertIsNotEnabled()
         compose.onNodeWithText("Voice access code").assertDoesNotExist()
         compose.onNodeWithText("Broker access token (temporary)").assertDoesNotExist()

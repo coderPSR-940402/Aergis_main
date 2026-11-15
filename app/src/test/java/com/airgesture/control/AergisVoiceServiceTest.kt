@@ -7,9 +7,11 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import org.robolectric.Shadows.shadowOf
 
 @RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class AergisVoiceServiceTest {
     @Test fun unconfiguredStartNeverActivatesMicrophoneSession() {
         // CI/default builds deliberately ship no broker configuration.

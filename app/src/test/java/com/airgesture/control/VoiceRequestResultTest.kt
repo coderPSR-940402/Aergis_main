@@ -5,8 +5,10 @@ import org.junit.Test
 import kotlinx.coroutines.async
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class VoiceRequestResultTest {
     @Test fun overlappingGestureDoesNotDiscardVoiceOutcome() {
         val first = AirRuntime.beginActionFeedback(AirAction.NEXT_ITEM)
