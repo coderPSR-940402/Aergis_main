@@ -42,6 +42,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
     // A delayed confirmed tap belongs to the frozen screen-space contact location,
     // not the cursor position on the subsequent release or reacquisition frame.
     private var pendingTapTarget: PointerCoordinateMapper.Point? = null
+    private var pendingTapContact: PointerTapContactEvidence? = null
     private val pinchPointer = PointerPinchController()
     private val selectionPinch = com.airgesture.control.pointer.ClickHysteresisStateMachine()
     private val pinchValidator = KinematicValidator()
@@ -718,8 +719,15 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             // Recognition initiates one bounded tap. Release only rearms. The same
             // frame's pinch evidence excludes the classifier before its dispatch gate.
             val tapService = AirAccessibilityService.instance
-            if (processed.isClickEngaged) pendingTapTarget = stabilized
-            if (!interpreter.hasPendingTap) pendingTapTarget = null
+            if (processed.isClickEngaged) {
+                pendingTapTarget = stabilized
+                pendingTapContact = commandOwnerId?.let { PointerTapContactEvidence(timestamp, it, pointerEpoch, inputEpoch) }
+                AergisDevLoop.recordPendingPointerTap(pendingTapContact)
+            }
+            if (!interpreter.hasPendingTap) {
+                pendingTapTarget = null
+                clearPendingTapContact()
+            }
             val pendingTarget = pendingTapTarget
             val appliedTargetReady = touchAllowed && targetTrusted && pendingTarget != null &&
                 // Require both the original contact anchor and the current visible
@@ -729,9 +737,11 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 tapService.isVisibleTapTargetReady(pointerEpoch, stabilized.x, stabilized.y)
             if (touchAllowed && interpreter.takePendingTap(timestamp, appliedTargetReady)) {
                 pendingTapTarget = null
+                val contactEvidence = pendingTapContact
+                pendingTapContact = null
                 // The visible hotspot, not just the raw camera estimate, is the
                 // coordinate source snapshotted by the accessibility dispatcher.
-                tapService?.dispatchPointerTap(pointerEpoch, pointerTapDeadlineMs)
+                tapService?.dispatchPointerTap(pointerEpoch, pointerTapDeadlineMs, contactEvidence)
             }
 
             // Pointer travel and held contact never dispatch scrolling or drag.
@@ -1015,8 +1025,14 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         AirAccessibilityService.instance?.updatePointer(0f, 0f, false)
     }
 
+    private fun clearPendingTapContact() {
+        if (pendingTapContact != null) AergisDevLoop.recordPendingPointerTap(null)
+        pendingTapContact = null
+    }
+
     private fun resetPointerTouch() {
         pendingTapTarget = null
+        clearPendingTapContact()
         pinchPointer.reset()
         selectionPinch.reset()
         AirRuntime.pointerInteraction = PointerInteractionPhase.IDLE

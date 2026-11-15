@@ -1,5 +1,10 @@
 package com.airgesture.control
 
+/** Immutable confirmation provenance; never consulted for control authority. */
+internal data class PointerTapContactEvidence(
+    val frameId: Long, val owner: String, val epoch: Long, val input: Long
+)
+
 /**
  * Thin observer bridge between Aergis' existing action pipeline and [LiveDiagnostics].
  *
@@ -55,6 +60,11 @@ internal object AergisDevLoop {
         runCatching { worker?.observe { contactDecision(frameId, now, gate) } }
     }
 
+    fun recordPendingPointerTap(evidence: PointerTapContactEvidence?) {
+        val now = android.os.SystemClock.uptimeMillis()
+        runCatching { worker?.observe { pendingPointerTap(evidence, now) } }
+    }
+
     fun recordSelectionUnconfirmed(requestId: Long, reason: String) {
         val now = android.os.SystemClock.uptimeMillis()
         runCatching { worker?.observe { selectionUnconfirmed(requestId, now, reason) } }
@@ -88,9 +98,11 @@ internal object AergisDevLoop {
         frozenTargetX: Float,
         frozenTargetY: Float,
         sessionEpoch: Long,
-        inputEpoch: Long
+        inputEpoch: Long,
+        pointerTapContact: PointerTapContactEvidence? = null
     ) {
-        runCatching { worker?.observe { open(requestId, openedUptimeMs, action, frozenTargetX, frozenTargetY, sessionEpoch, inputEpoch) } }
+        runCatching { worker?.observe { open(requestId, openedUptimeMs, action, frozenTargetX, frozenTargetY,
+            sessionEpoch, inputEpoch, pointerTapContact) } }
         val current = diagnostics ?: return
         runCatching {
             current.openInteraction(

@@ -1,6 +1,32 @@
 # Aergis Evidence Ledger and Decision Log
 
 
+## 2026-11-15 — pointer TAP contact attribution repair
+
+Base and resolved CI build reference: `307f5e91ad9e84b9f924ef4ce07b86b8e56de636`.
+This repairs diagnostic correlation only. Confirmed pointer contact provenance now
+follows the existing pending target into the final authoritative TAP request. The
+recorder emits `recognized_for_dispatch` with the request id, frozen target,
+original confirmation frame, owner, action epoch and input epoch. A confirmed
+contact released before hotspot readiness retains one bounded diagnostic episode
+until request opening, cancellation, expiry or interruption; it cannot link an
+unrelated nearby TAP. Recognition gates, visible-hotspot checks, deadlines and
+native dispatch semantics retain their existing behavior.
+
+Test-first evidence: PR #103 head `16caebc44ac57c57bf8bc6aca02a45d686c0b4be`,
+CI run `43706655692`, executed the Android unit task. Both real engine/service/
+worker TAP integration tests failed at the missing-contact assertion before the
+production fix. The negative loop also found a fixture isolation omission: service
+destruction restores READY, so each loop scenario now explicitly establishes ARMED.
+The coverage includes held and released deferred taps and blocked hotspot, wrong
+owner, action/input epoch changes, stale evidence and changed applied target.
+
+After production edits, all 59 Python tooling tests and `git diff --check` pass.
+Android SDK/kotlinc are unavailable locally; corrected Android CI, lint and APK
+checks await the parent integration run. No new physical-device evidence, exact-APK
+acceptance or functional baseline advancement is claimed. Full implementation and
+validation notes: `docs/superpowers/plans/2026-11-15-contact-attribution.md`.
+
 ## Current continuation — 2026-10-28: five touchless-runtime improvements
 
 Base: PR #74 `e825204c8915afb716a9f9760b2536e6c10f7bb3`, CI #330 successful;
