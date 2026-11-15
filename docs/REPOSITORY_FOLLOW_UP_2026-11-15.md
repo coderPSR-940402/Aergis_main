@@ -71,9 +71,13 @@ The 48 branches below are integrated or superseded in main307f5e9 according to t
 
 ## Dependency verification
 
-The generator workflow now also runs on PRs changing its own file. It produces review-only metadata; it never automatically commits/trusts those hashes. Review the candidate against the actual configured official repositories and pinned versions before adding gradle/verification-metadata.xml. Normal CI must reject a deliberately changed checksum in a disposable copy.
+The review-only generator runs on PRs changing its workflow or verifier. It never automatically commits/trusts checksums. The reviewed current-main candidate is now checked in as `gradle/verification-metadata.xml`: SHA256 `0add1c09aee6f9e9decd4df9a8f7e49153b7ab7e9b7589b9686aaa44121adae9`, 434 components and743 artifacts. No trusted/ignored bypass entries or alternate artifact hashes were added.
 
-The candidate is tied to the generator PR's exact source; final optional voice dependencies must be resolved and reviewed separately from current-main dependencies. No current-main-only candidate can claim to verify those new dependencies.
+CI43739293642 independently downloaded708 matching artifacts. The other35 initially failed because33 Gradle logical filenames differ from their declared module URLs and2 large artifacts follow a Central mirror redirect. Follow-up fresh official HTTPS downloads verified all35 against the same candidate. Alias locations require freshly downloaded candidate-pinned module bytes and remain in the same repository/group/module. Central mirror redirects require the exact source, fixed target and unchanged path; direct mirror starting URLs remain rejected. No size/time limits were relaxed. See [the split CI/local review record](evidence/dependency-bootstrap-2026-11-15.json) for exact provenance and hashes.
+
+The verifier has24 focused tests; the full Python suite passes83. Fresh strict CI and the deliberate AGP checksum-tamper probe remain required before calling dependency enforcement complete. The probe restores the metadata in a finally block and retains its log in CI reports. Ordinary CI never regenerates trusted metadata.
+
+This candidate covers current-main dependencies only. Optional voice/JitPack dependencies require separate capture and review before combining with strict metadata. Repository byte comparison does not establish publisher identity or vulnerability status.
 
 ## Device and provider gates
 

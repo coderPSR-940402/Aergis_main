@@ -1,6 +1,8 @@
 """Offline security and verification contract tests (no network access)."""
 import hashlib
+from contextlib import redirect_stdout
 import io
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -90,6 +92,27 @@ class VerificationTests(unittest.TestCase):
             raise OSError('unavailable')
         self.assertEqual(verifier.verify_entry(self.parse(metadata())[0], missing)['status'], 'unavailable')
 
+    def test_failure_diagnostics_are_fixed_codes_without_response_content(self):
+        entry = self.parse(metadata())[0]
+        cases = [
+            (OSError('artifact exceeds download limit'), {'error': 'download-size-limit'}),
+            (OSError('URL is outside the official HTTPS repository allowlist'), {'error': 'url-policy-rejected'}),
+            (TimeoutError('artifact download exceeded time limit'), {'error': 'download-time-limit'}),
+            (urllib.error.URLError(ConnectionRefusedError(111, 'secret https://user:password@host/body')),
+             {'error': 'network-error', 'reason_type': 'ConnectionRefusedError', 'errno': 111}),
+            (urllib.error.URLError('secret https://user:password@host/body'), {'error': 'network-error', 'reason_type': 'str'}),
+            (OSError('secret https://user:password@host/body'), {'error': 'OSError'}),
+        ]
+        for error, expected in cases:
+            with self.subTest(error=type(error).__name__):
+                def fail(url):
+                    raise error
+                result = verifier.verify_entry(entry, fail)
+                diagnostics = {key: value for key, value in result['attempts'][0].items() if key != 'repository'}
+                self.assertEqual(diagnostics, expected)
+                self.assertNotIn('secret', json.dumps(result))
+                self.assertNotIn('password', json.dumps(result))
+
     def test_redirects_allow_only_explicit_https_official_hosts(self):
         for url in ('http://dl.google.com/a', 'https://dl.google.com.evil.test/a', 'https://user:secret@dl.google.com/a', 'https://repo.maven.apache.org:444/a', 'https://github.com/a', 'https://127.0.0.1/a'):
             with self.subTest(url=url), self.assertRaises(ValueError):
@@ -98,6 +121,38 @@ class VerificationTests(unittest.TestCase):
         redirect = verifier.OfficialRedirectHandler()
         with self.assertRaises(ValueError):
             redirect.redirect_request(None, None, 302, 'redirect', {}, 'https://evil.test/payload')
+
+    def test_central_mirror_redirect_preserves_exact_canonical_artifact_path(self):
+        path = '/maven2/org/example/lib/1.0/lib-1.0.jar'
+        source = verifier.urllib.request.Request('https://repo.maven.apache.org' + path)
+        target = 'https://gcp.mirrors.maven.org' + path
+        result = verifier.OfficialRedirectHandler().redirect_request(source, None, 302, 'Found', {}, target)
+        self.assertEqual(result.full_url, target)
+        with self.assertRaises(ValueError):
+            verifier.validate_url(target)
+
+    def test_central_mirror_redirect_rejects_other_sources_paths_and_credentials(self):
+        path = '/maven2/org/example/lib/1.0/lib-1.0.jar'
+        canonical = 'https://repo.maven.apache.org' + path
+        mirror = 'https://gcp.mirrors.maven.org' + path
+        cases = [
+            ('https://dl.google.com' + path, mirror),
+            ('https://plugins.gradle.org' + path, mirror),
+            ('http://repo.maven.apache.org' + path, mirror),
+            ('https://repo.maven.apache.org:444' + path, mirror),
+            ('https://user:secret@repo.maven.apache.org' + path, mirror),
+            (canonical + '?secret=x', mirror),
+            (canonical, mirror.replace('lib-1.0.jar', 'other.jar')),
+            (canonical, 'http://gcp.mirrors.maven.org' + path),
+            (canonical, 'https://gcp.mirrors.maven.org:444' + path),
+            (canonical, 'https://user:secret@gcp.mirrors.maven.org' + path),
+            (canonical, mirror + '?secret=x'),
+            (canonical, mirror + '#fragment'),
+            (canonical, 'https://gcp.mirrors.maven.org.evil.test' + path),
+        ]
+        for source, target in cases:
+            with self.subTest(source=source, target=target), self.assertRaises(ValueError):
+                verifier.OfficialRedirectHandler().redirect_request(verifier.urllib.request.Request(source), None, 302, 'Found', {}, target)
 
     def test_download_enforces_size_limit_and_hashes_bytes(self):
         class Response(io.BytesIO):
@@ -120,6 +175,89 @@ class VerificationTests(unittest.TestCase):
         for text in (settings.replace('google()', 'maven { url = uri("https://evil.test") }', 1), settings.replace('gradlePluginPortal()', ''), settings + '\nmavenLocal()'):
             with self.subTest(text=text), self.assertRaises(ValueError):
                 verifier.validate_settings(text)
+
+    def run_module_fixture(self, filename='lib.aar', relative='lib-1.0.aar', module_digest=None, extra_files=(), include_module=True, artifact_body=BODY, module_document=None, alias_error=None):
+        module_url = verifier.REPOSITORIES[0] + 'org/example/lib/1.0/lib-1.0.module'
+        artifact_url = verifier.REPOSITORIES[0] + 'org/example/lib/1.0/' + filename
+        payload = json.dumps(module_document if module_document is not None else {'formatVersion': '1.1', 'variants': [{'files': [
+            {'name': filename, 'url': relative}, *extra_files]}]}).encode()
+        digest = module_digest or hashlib.sha256(payload).hexdigest()
+        module_artifact = '<artifact name="lib-1.0.module"><sha256 value="' + digest + '"/></artifact>' if include_module else ''
+        xml = metadata(filename=filename).replace('</component>', module_artifact + '</component>')
+        requested = []
+        class Response(io.BytesIO):
+            headers = {}
+        class Opener:
+            def open(self, request, timeout):
+                url = request.full_url
+                requested.append(url)
+                if url == module_url:
+                    return Response(payload)
+                if url == verifier.urllib.parse.urljoin(module_url, relative) and url != artifact_url:
+                    if alias_error is not None:
+                        raise alias_error
+                    return Response(artifact_body)
+                raise urllib.error.HTTPError(url, 404, 'missing', {}, None)
+        with tempfile.TemporaryDirectory() as directory, patch.object(verifier.urllib.request, 'build_opener', return_value=Opener()):
+            root = Path(directory)
+            (root / 'candidate.xml').write_text(xml)
+            (root / 'settings.gradle.kts').write_text(verifier.EXPECTED_SETTINGS)
+            with redirect_stdout(io.StringIO()):
+                status = verifier.main([str(root / 'candidate.xml'), '--settings', str(root / 'settings.gradle.kts'), '--report', str(root / 'report.json'), '--workers', '1'])
+            report = json.loads((root / 'report.json').read_text())
+        return status, report, requested
+
+    def test_module_filename_alias_downloads_actual_bytes(self):
+        status, report, _ = self.run_module_fixture()
+        self.assertEqual(status, 0, report)
+        self.assertEqual(report['summary']['verified'], 2)
+
+    def test_module_alias_can_use_sibling_version_within_same_component(self):
+        status, report, _ = self.run_module_fixture('lib-1.0-android.jar', '../1.0-android/lib-1.0-android.jar')
+        self.assertEqual(status, 0, report)
+
+    def test_alias_download_failure_retains_safe_stage_diagnostic(self):
+        status, report, _ = self.run_module_fixture(alias_error=OSError('artifact exceeds download limit'))
+        self.assertEqual(status, 1)
+        artifact = next(item for item in report['artifacts'] if item['artifact'].endswith('lib.aar'))
+        self.assertTrue(any(attempt.get('stage') == 'module-location-or-artifact' and attempt.get('error') == 'download-size-limit'
+                            for attempt in artifact['attempts']))
+
+    def test_alias_bytes_mismatch_is_not_hidden_by_repository_fallback(self):
+        status, report, requests = self.run_module_fixture(artifact_body=b'tampered artifact')
+        self.assertEqual(status, 1)
+        self.assertEqual(report['summary']['mismatch'], 1)
+        self.assertFalse(any(url.startswith(verifier.REPOSITORIES[1]) for url in requests))
+
+    def test_malformed_pinned_module_fails_as_unavailable(self):
+        for document in ([], {'formatVersion': '1.1', 'variants': [None]},
+                         {'formatVersion': '1.1', 'variants': [{'files': [None]}]},
+                         {'formatVersion': '1.1', 'variants': [{'files': [{'name': 'lib.aar', 'url': []}]}]}):
+            with self.subTest(document=document):
+                status, report, _ = self.run_module_fixture(module_document=document)
+                self.assertEqual(status, 1)
+                self.assertEqual(report['summary']['unavailable'], 1)
+
+    def test_unpinned_module_cannot_supply_aliases(self):
+        status, report, requests = self.run_module_fixture(include_module=False)
+        self.assertEqual(status, 1)
+        self.assertFalse(any(url.endswith('.module') for url in requests))
+
+    def test_tampered_module_cannot_supply_aliases(self):
+        status, report, requests = self.run_module_fixture(module_digest='0' * 64)
+        self.assertEqual(status, 1)
+        self.assertFalse(any(url.endswith('lib-1.0.aar') for url in requests))
+
+    def test_ambiguous_or_external_module_locations_fail_closed(self):
+        cases = ['https://evil.test/lib.jar', '//dl.google.com/lib.jar', '../../other/1.0/lib.jar',
+                 'lib.jar?token=x', 'lib%2fsecret.jar', 'lib\\secret.jar', '../../../lib.jar']
+        for relative in cases:
+            with self.subTest(relative=relative):
+                status, report, requests = self.run_module_fixture(relative=relative)
+                self.assertEqual(status, 1)
+                self.assertFalse(any(url == verifier.urllib.parse.urljoin(verifier.REPOSITORIES[0] + 'org/example/lib/1.0/lib-1.0.module', relative) for url in requests))
+        status, report, _ = self.run_module_fixture(extra_files=[{'name': 'lib.aar', 'url': 'other.aar'}])
+        self.assertEqual(status, 1)
 
     def test_comment_markers_inside_strings_cannot_hide_repository_changes(self):
         injected = verifier.EXPECTED_SETTINGS.replace(

@@ -136,11 +136,31 @@ def validate_url(url):
 
 class OfficialRedirectHandler(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
-        validate_url(newurl)
+        try:
+            validate_url(newurl)
+        except ValueError:
+            # Central serves some large artifacts through this fixed mirror.
+            # Accept only a source-bound redirect preserving the exact path;
+            # the mirror is deliberately not an allowed starting repository.
+            source = urllib.parse.urlsplit(req.full_url if req is not None else '')
+            target = urllib.parse.urlsplit(newurl)
+            valid = (
+                source.scheme == target.scheme == 'https'
+                and source.hostname == 'repo.maven.apache.org'
+                and target.hostname == 'gcp.mirrors.maven.org'
+                and source.port in (None, 443) and target.port in (None, 443)
+                and source.username is None and source.password is None
+                and target.username is None and target.password is None
+                and not source.query and not source.fragment
+                and not target.query and not target.fragment
+                and source.path == target.path
+            )
+            if not valid:
+                raise
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
-def download_hash(url, max_bytes=MAX_ARTIFACT_BYTES):
+def _download(url, max_bytes, collect=False):
     validate_url(url)
     # No ambient proxy credentials, netrc, cookies, or cache are used.
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), OfficialRedirectHandler())
@@ -152,6 +172,7 @@ def download_hash(url, max_bytes=MAX_ARTIFACT_BYTES):
                 if length and int(length) > max_bytes:
                     raise ValueError('artifact exceeds download limit')
                 digest = hashlib.sha256()
+                chunks = [] if collect else None
                 total = 0
                 deadline = time.monotonic() + 120
                 while True:
@@ -168,7 +189,9 @@ def download_hash(url, max_bytes=MAX_ARTIFACT_BYTES):
                     if time.monotonic() > deadline:
                         raise TimeoutError('artifact download exceeded time limit')
                     digest.update(chunk)
-                return digest.hexdigest()
+                    if collect:
+                        chunks.append(chunk)
+                return b''.join(chunks) if collect else digest.hexdigest()
         except urllib.error.HTTPError as error:
             if error.code not in (408, 429, 500, 502, 503, 504) or attempt == 2:
                 raise
@@ -180,16 +203,118 @@ def download_hash(url, max_bytes=MAX_ARTIFACT_BYTES):
         time.sleep(attempt + 1)
 
 
-def verify_entry(entry, fetch=download_hash):
+def download_hash(url, max_bytes=MAX_ARTIFACT_BYTES):
+    return _download(url, max_bytes)
+
+
+def download_module(url):
+    return _download(url, 4 * 1024 * 1024, collect=True)
+
+
+class ModuleLocationError(ValueError):
+    """A pinned module is inconsistent or tries to leave its component scope."""
+
+
+def module_location(entry, repository, pinned, fetch_module=download_module):
+    directory, filename = entry.path.rsplit('/', 1)
+    component, version = directory.rsplit('/', 1)
+    module_name = component.rsplit('/', 1)[1]
+    module_path = directory + '/' + module_name + '-' + version + '.module'
+    module_entry = pinned.get(module_path)
+    if module_entry is None or filename.endswith('.module'):
+        return None
+    module_url = repository + module_path
+    data = fetch_module(module_url)
+    if hashlib.sha256(data).hexdigest() != module_entry.sha256:
+        raise ModuleLocationError('module-checksum-mismatch')
+    try:
+        document = json.loads(data)
+        if not isinstance(document, dict) or document.get('formatVersion') != '1.1':
+            raise ModuleLocationError('unsupported-module-format')
+        variants = document.get('variants')
+        if not isinstance(variants, list):
+            raise ModuleLocationError('invalid-module-document')
+        urls = set()
+        for variant in variants:
+            if not isinstance(variant, dict) or not isinstance(variant.get('files', []), list):
+                raise ModuleLocationError('invalid-module-document')
+            for file in variant.get('files', []):
+                if not isinstance(file, dict):
+                    raise ModuleLocationError('invalid-module-document')
+                if file.get('name') == filename:
+                    if not isinstance(file.get('url'), str):
+                        raise ModuleLocationError('unsafe-module-location')
+                    urls.add(file['url'])
+        if not urls:
+            return None
+        if len(urls) != 1:
+            raise ModuleLocationError('ambiguous-module-location')
+        relative = next(iter(urls))
+        # Gradle module metadata may rename artifacts or point at a sibling
+        # version (e.g. Guava Android). It cannot widen the repository/component.
+        if not isinstance(relative, str) or not re.fullmatch(r'[A-Za-z0-9_+./-]+', relative) or relative.startswith('/'):
+            raise ModuleLocationError('unsafe-module-location')
+        url = urllib.parse.urljoin(module_url, relative)
+        prefix = repository + component + '/'
+        if not url.startswith(prefix):
+            raise ModuleLocationError('module-location-outside-component')
+        parts = url[len(prefix):].split('/')
+        if len(parts) != 2 or any(not re.fullmatch(r'[A-Za-z0-9_+.-]+', part) or '..' in part or part == '.' for part in parts):
+            raise ModuleLocationError('unsafe-module-location')
+        validate_url(url)
+        return url
+    except (KeyError, TypeError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ModuleLocationError('invalid-module-document') from error
+
+
+def safe_error(error):
+    """Return bounded diagnostic categories, never exception bodies or URLs."""
+    if isinstance(error, urllib.error.HTTPError):
+        code = error.code
+        return {'error': 'HTTP ' + str(code) if isinstance(code, int) and 100 <= code <= 599 else 'HTTPError'}
+    fixed_messages = {
+        'artifact exceeds download limit': 'download-size-limit',
+        'URL is outside the official HTTPS repository allowlist': 'url-policy-rejected',
+        'artifact download exceeded time limit': 'download-time-limit',
+    }
+    category = fixed_messages.get(str(error))
+    if category:
+        return {'error': category}
+    if isinstance(error, urllib.error.URLError):
+        reason = error.reason
+        result = {'error': 'network-error', 'reason_type': type(reason).__name__}
+        errno = getattr(reason, 'errno', None)
+        if isinstance(errno, int):
+            result['errno'] = errno
+        return result
+    return {'error': type(error).__name__}
+
+
+def verify_entry(entry, fetch=download_hash, pinned=None, fetch_module=download_module):
     errors = []
     for repository in REPOSITORIES:
         url = repository + entry.path
         try:
             actual = fetch(url)
         except (OSError, ValueError) as error:
-            # Avoid copying arbitrary response bodies, credentials or URLs into reports.
-            code = getattr(error, 'code', None)
-            errors.append({'repository': repository, 'error': 'HTTP ' + str(code) if code else type(error).__name__})
+            if getattr(error, 'code', None) == 404 and pinned:
+                try:
+                    alias = module_location(entry, repository, pinned, fetch_module)
+                    if alias is not None:
+                        actual = fetch(alias)
+                        return {'artifact': entry.path, 'expected_sha256': entry.sha256,
+                                'actual_sha256': actual, 'repository': repository,
+                                'source_url': alias, 'method': 'download-sha256-pinned-module-location',
+                                'status': 'verified' if actual == entry.sha256 else 'mismatch'}
+                except ModuleLocationError as module_error:
+                    # A bad pinned document/location must not be hidden by a
+                    # later repository, just like an artifact hash mismatch.
+                    return {'artifact': entry.path, 'expected_sha256': entry.sha256,
+                            'status': 'unavailable', 'error': str(module_error)}
+                except (OSError, ValueError) as alias_error:
+                    errors.append({'repository': repository, 'stage': 'module-location-or-artifact',
+                                   **safe_error(alias_error)})
+            errors.append({'repository': repository, **safe_error(error)})
             continue
         return {'artifact': entry.path, 'expected_sha256': entry.sha256,
                 'actual_sha256': actual, 'repository': repository,
@@ -210,8 +335,9 @@ def main(argv=None):
     try:
         validate_settings(args.settings.read_text())
         entries = parse_metadata(args.candidate)
+        pinned = {entry.path: entry for entry in entries}
         with concurrent.futures.ThreadPoolExecutor(max_workers=args.workers) as executor:
-            results = list(executor.map(verify_entry, entries))
+            results = list(executor.map(lambda entry: verify_entry(entry, pinned=pinned), entries))
         counts = Counter(result['status'] for result in results)
         report.update(candidate_sha256=hashlib.sha256(args.candidate.read_bytes()).hexdigest(),
                       summary={status: counts[status] for status in ('verified', 'mismatch', 'unavailable')},
