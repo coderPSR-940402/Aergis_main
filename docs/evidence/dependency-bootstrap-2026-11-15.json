@@ -1,0 +1,341 @@
+{
+  "candidate_sha256": "0add1c09aee6f9e9decd4df9a8f7e49153b7ab7e9b7589b9686aaa44121adae9",
+  "ci": {
+    "artifact_id": 14172107009,
+    "head_sha": "7472df2a93721a4e520432361c97de2b962a74a0",
+    "note": "Capture completed; original verifier gate failed on33 logical filename aliases and2 Central mirror redirects.",
+    "run_id": 43739293642,
+    "url": "https://github.com/coderPSR-940402/Aergis_main/actions/runs/43739293642",
+    "verified_count": 708
+  },
+  "follow_up": {
+    "method": "Fresh official HTTPS artifact downloads through environment network proxy, source-bound Central mirror redirect and candidate-pinned module location mappings; no Gradle cache. Same byte/time limits.",
+    "results": [
+      {
+        "actual_sha256": "4a9534afa595551d97b991319055c73b76014a89cf43b811aa99102e2d6ffd73",
+        "artifact": "androidx/compose/animation/animation-android/1.11.4/animation.aar",
+        "expected_sha256": "4a9534afa595551d97b991319055c73b76014a89cf43b811aa99102e2d6ffd73",
+        "method": "download-sha256-pinned-module-location",
+        "repository": "https://dl.google.com/dl/android/maven2/",
+        "source_url": "https://dl.google.com/dl/android/maven2/androidx/compose/animation/animation-android/1.11.4/animation-android-1.11.4.aar",
+        "status": "verified"
+      },
+      {
+        "actual_sha256": "66d489454bfcb1230b60ae33c3c1c6c756358ce0ba3ca96c98cda9430c67e21f",
+        "artifact": "androidx/compose/animation/animation-core-android/1.11.4/animation-core.aar",
+        "expected_sha256": "66d489454bfcb1230b60ae33c3c1c6c756358ce0ba3ca96c98cda9430c67e21f",
+        "method": "download-sha256-pinned-module-location",
+        "repository": "https://dl.google.com/dl/android/maven2/",
+        "source_url": "https://dl.google.com/dl/android/maven2/androidx/compose/animation/animation-core-android/1.11.4/animation-core-android-1.11.4.aar",
+        "status": "verified"
+      },
+      {
+        "actual_sha256": "a6aac6be46b7756982436b11118d3e630f9a1845e167bf821ae6986ef2c45895",
+        "artifact": "androidx/compose/foundation/foundation-android/1.11.4/foundation.aar",
+        "expected_sha256": "a6aac6be46b7756982436b11118d3e630f9a1845e167bf821ae6986ef2c45895",
+        "method": "download-sha256-pinned-module-location",
+        "repository": "https://dl.google.com/dl/android/maven2/",
+        "source_url": "https://dl.google.com/dl/android/maven2/androidx/compose/foundation/foundation-android/1.11.4/foundation-android-1.11.4.aar",
+        "status": "verified"
+      },
+      {
+        "actual_sha256": "23ff32f548deccf48d1e2094a868b08ed738a01de1d65940d68633bcdd04bf33",
+        "artifact": "androidx/compose/foundation/foundation-layout-android/1.11.4/foundation-layout.aar",
+        "expected_sha256": "23ff32f548deccf48d1e2094a868b08ed738a01de1d65940d68633bcdd04bf33",
+        "method": "download-sha256-pinned-module-location",
+        "repository": "https://dl.google.com/dl/android/maven2/",
+        "source_url": "https://dl.google.com/dl/android/maven2/androidx/compose/foundation/foundation-layout-android/1.11.4/foundation-layout-android-1.11.4.aar",
+        "status": "verified"
+      },
+      {
+        "actual_sha256": "38bd10db57ffd6f82fc6f32443e379fb640ae93e138bdd31daea0d584441b10e",
+        "artifact": "androidx/compose/material/material-ripple-android/1.11.4/material-ripple.aar",
+        "expected_sha256": "38bd10db57ffd6f82fc6f32443e379fb640ae93e138bdd31daea0d584441b10e",
+        "method": "download-sha256-pinned-module-location",
+        "repository": "https://dl.google.com/dl/android/maven2/",
+        "source_url": "https://dl.google.com/dl/android/maven2/androidx/compose/material/material-ripple-android/1.11.4/material-ripple-android-1.11.4.aar",
+        "status": "verified"
+      },
+      {
+        "actual_sha256": "3a37e8b36df3822fe1e6059f0f9fafda8800388860477624ac1b9422c418a36e",
+        "artifact": "androidx/compose/material3/material3-android/1.4.0/material3.aar",
+        "expected_sha256": "3a37e8b36df3822fe1e6059f0f9fafda8800388860477624ac1b9422c418a36e",
+        "method": "download-sha256-pinned-module-location",
+        "repository": "https://dl.google.com/dl/android/maven2/",
+        "source_url": "https://dl.google.com/dl/android/maven2/androidx/compose/material3/material3-android/1.4.0/material3-android-1.4.0.aar",
+        "status": "verified"
+      },
+      {
+        "actual_sha256": "18fd863f42c06100a046dbc2e04f420db0c1b5196d2b63a9006ee8464c69738d",
+        "artifact": "androidx/compose/runtime/runtime-android/1.11.4/runtime.aar",
+        "expected_sha256": "18fd863f42c06100a046dbc2e04f420db0c1b5196d2b63a9006ee8464c69738d",
+        "method": "download-sha256-pinned-module-location",
+        "repository": "https://dl.google.com/dl/android/maven2/",
+        "source_url": "https://dl.google.com/dl/android/maven2/androidx/compose/runtime/runtime-android/1.11.4/runtime-android-1.11.4.aar",
+        "status": "verified"
+      },
+      {
+        "actual_sha256": "ea7cc60386f10fe5b33f57f366c294859c1f860cbfa77b437a11f1f0ac7bc4fd",
+        "artifact": "androidx/compose/runtime/runtime-annotation-android/1.11.4/runtime-annotation.aar",
+        "expected_sha256": "ea7cc60386f10fe5b33f57f366c294859c1f860cbfa77b437a11f1f0ac7bc4fd",
+        "method": "download-sha256-pinned-module-location",
+        "repository": "https://dl.google.com/dl/android/maven2/",
+        "source_url": "https://dl.google.com/dl/android/maven2/androidx/compose/runtime/runtime-annotation-android/1.11.4/runtime-annotation-android-1.11.4.aar",
+        "status": "verified"
+      },
+      {
+        "actual_sha256": "48d960544c81e82b674e86e04ead25eeb5d05a54948b6b2ca8690cc94067e600",
+        "artifact": "androidx/compose/runtime/runtime-retain-android/1.11.4/runtime-retain.aar",
+        "expected_sha256": "48d960544c81e82b674e86e04ead25eeb5d05a54948b6b2ca8690cc94067e600",
+        "method": "download-sha256-pinned-module-location",
+        "repository": "https://dl.google.com/dl/android/maven2/",
+        "source_url": "https://dl.google.com/dl/android/maven2/androidx/compose/runtime/runtime-retain-android/1.11.4/runtime-retain-android-1.11.4.aar",
+        "status": "verified"
+      },
+      {
+        "actual_sha256": "75acd64c040fc768dd38b6f40c2e46de0dee13cd1f828e4c3480dd7745c737c1",
+        "artifact": "androidx/compose/runtime/runtime-saveable-android/1.11.4/runtime-saveable.aar",
+        "expected_sha256": "75acd64c040fc768dd38b6f40c2e46de0dee13cd1f828e4c3480dd7745c737c1",
+        "method": "download-sha256-pinned-module-location",
+        "repository": "https://dl.google.com/dl/android/maven2/",
+        "source_url": "https://dl.google.com/dl/android/maven2/androidx/compose/runtime/runtime-saveable-android/1.11.4/runtime-saveable-android-1.11.4.aar",
+        "status": "verified"
+      },
+      {
+        "actual_sha256": "893c3b0a4f90631bbd8cc053a0271e51c525b427b900cc10c6f1a4b3c89e3041",
+        "artifact": "androidx/compose/ui/ui-android/1.11.4/ui.aar",
+        "expected_sha256": "893c3b0a4f90631bbd8cc053a0271e51c525b427b900cc10c6f1a4b3c89e3041",
+        "method": "download-sha256-pinned-module-location",
+        "repository": "https://dl.google.com/dl/android/maven2/",
+        "source_url": "https://dl.google.com/dl/android/maven2/androidx/compose/ui/ui-android/1.11.4/ui-android-1.11.4.aar",
+        "status": "verified"
+      },
+      {
+        "actual_sha256": "393066ecd102f8cd60e585367dd7bc1c5d2d3ecc3ed82a43aab0668e5ce85285",
+        "artifact": "androidx/compose/ui/ui-geometry-android/1.11.4/ui-geometry.aar",
+        "expected_sha256": "393066ecd102f8cd60e585367dd7bc1c5d2d3ecc3ed82a43aab0668e5ce85285",
+        "method": "download-sha256-pinned-module-location",
+        "repository": "https://dl.google.com/dl/android/maven2/",
+        "source_url": "https://dl.google.com/dl/android/maven2/androidx/compose/ui/ui-geometry-android/1.11.4/ui-geometry-android-1.11.4.aar",
+        "status": "verified"
+      },
+      {
+        "actual_sha256": "4ccaf8e169c158f74c15a1377a28d62197f8ca209db1a997a81a54624f5db306",
+        "artifact": "androidx/compose/ui/ui-graphics-android/1.11.4/ui-graphics.aar",
+        "expected_sha256": "4ccaf8e169c158f74c15a1377a28d62197f8ca209db1a997a81a54624f5db306",
+        "method": "download-sha256-pinned-module-location",
+        "repository": "https://dl.google.com/dl/android/maven2/",
+        "source_url": "https://dl.google.com/dl/android/maven2/androidx/compose/ui/ui-graphics-android/1.11.4/ui-graphics-android-1.11.4.aar",
+        "status": "verified"
+      },
+      {
+        "actual_sha256": "e716f2a6adc9e713ad93f7e7fdc50d52b51be3475bf47bf59444eb7fa27c68ca",
+        "artifact": "androidx/compose/ui/ui-test-android/1.11.4/ui-test.aar",
+        "expected_sha256": "e716f2a6adc9e713ad93f7e7fdc50d52b51be3475bf47bf59444eb7fa27c68ca",
+        "method": "download-sha256-pinned-module-location",
+        "repository": "https://dl.google.com/dl/android/maven2/",
+        "source_url": "https://dl.google.com/dl/android/maven2/androidx/compose/ui/ui-test-android/1.11.4/ui-test-android-1.11.4.aar",
+        "status": "verified"
+      },
+      {
+        "actual_sha256": "4dcbb44d0a6024ac74b7bf9e9a549c7751868d87ea3472abaf38f6633ef0dab0",
+        "artifact": "androidx/compose/ui/ui-test-junit4-android/1.11.4/ui-test-junit4.aar",
+        "expected_sha256": "4dcbb44d0a6024ac74b7bf9e9a549c7751868d87ea3472abaf38f6633ef0dab0",
+        "method": "download-sha256-pinned-module-location",
+        "repository": "https://dl.google.com/dl/android/maven2/",
+        "source_url": "https://dl.google.com/dl/android/maven2/androidx/compose/ui/ui-test-junit4-android/1.11.4/ui-test-junit4-android-1.11.4.aar",
+        "status": "verified"
+      },
+      {
+        "actual_sha256": "01284212abb9ab6bba5de336adbe392888bba53711d8293c6713f5c2b56313fd",
+        "artifact": "androidx/compose/ui/ui-text-android/1.11.4/ui-text.aar",
+        "expected_sha256": "01284212abb9ab6bba5de336adbe392888bba53711d8293c6713f5c2b56313fd",
+        "method": "download-sha256-pinned-module-location",
+        "repository": "https://dl.google.com/dl/android/maven2/",
+        "source_url": "https://dl.google.com/dl/android/maven2/androidx/compose/ui/ui-text-android/1.11.4/ui-text-android-1.11.4.aar",
+        "status": "verified"
+      },
+      {
+        "actual_sha256": "dd50fb8e34deeba0cf30c5ff33cd7e528f1b82c9ad28bf7960027ae522d0b346",
+        "artifact": "androidx/compose/ui/ui-tooling-android/1.11.4/ui-tooling.aar",
+        "expected_sha256": "dd50fb8e34deeba0cf30c5ff33cd7e528f1b82c9ad28bf7960027ae522d0b346",
+        "method": "download-sha256-pinned-module-location",
+        "repository": "https://dl.google.com/dl/android/maven2/",
+        "source_url": "https://dl.google.com/dl/android/maven2/androidx/compose/ui/ui-tooling-android/1.11.4/ui-tooling-android-1.11.4.aar",
+        "status": "verified"
+      },
+      {
+        "actual_sha256": "d3503757d5d0c3be25fe648ed0cd103ee339c6901ae560306e7b380e9182bf1a",
+        "artifact": "androidx/compose/ui/ui-tooling-data-android/1.11.4/ui-tooling-data.aar",
+        "expected_sha256": "d3503757d5d0c3be25fe648ed0cd103ee339c6901ae560306e7b380e9182bf1a",
+        "method": "download-sha256-pinned-module-location",
+        "repository": "https://dl.google.com/dl/android/maven2/",
+        "source_url": "https://dl.google.com/dl/android/maven2/androidx/compose/ui/ui-tooling-data-android/1.11.4/ui-tooling-data-android-1.11.4.aar",
+        "status": "verified"
+      },
+      {
+        "actual_sha256": "86124401724b7e188b09af7f6b5cde5b215a3a273f3d7d6f8a15f898b5803793",
+        "artifact": "androidx/compose/ui/ui-tooling-preview-android/1.11.4/ui-tooling-preview.aar",
+        "expected_sha256": "86124401724b7e188b09af7f6b5cde5b215a3a273f3d7d6f8a15f898b5803793",
+        "method": "download-sha256-pinned-module-location",
+        "repository": "https://dl.google.com/dl/android/maven2/",
+        "source_url": "https://dl.google.com/dl/android/maven2/androidx/compose/ui/ui-tooling-preview-android/1.11.4/ui-tooling-preview-android-1.11.4.aar",
+        "status": "verified"
+      },
+      {
+        "actual_sha256": "8b778afa16102b89da672c3324566e66bbf90e29a2fc7acdc1db1595d976933f",
+        "artifact": "androidx/compose/ui/ui-unit-android/1.11.4/ui-unit.aar",
+        "expected_sha256": "8b778afa16102b89da672c3324566e66bbf90e29a2fc7acdc1db1595d976933f",
+        "method": "download-sha256-pinned-module-location",
+        "repository": "https://dl.google.com/dl/android/maven2/",
+        "source_url": "https://dl.google.com/dl/android/maven2/androidx/compose/ui/ui-unit-android/1.11.4/ui-unit-android-1.11.4.aar",
+        "status": "verified"
+      },
+      {
+        "actual_sha256": "d6ca2aaed3f71455988b2d7bcc708d7811640309e12f0482598f9d318d1efa45",
+        "artifact": "androidx/compose/ui/ui-util-android/1.11.4/ui-util.aar",
+        "expected_sha256": "d6ca2aaed3f71455988b2d7bcc708d7811640309e12f0482598f9d318d1efa45",
+        "method": "download-sha256-pinned-module-location",
+        "repository": "https://dl.google.com/dl/android/maven2/",
+        "source_url": "https://dl.google.com/dl/android/maven2/androidx/compose/ui/ui-util-android/1.11.4/ui-util-android-1.11.4.aar",
+        "status": "verified"
+      },
+      {
+        "actual_sha256": "2193a1573d623f37b20c7d27d1a8f903a72f651cc6f32e5794f85dda744fee75",
+        "artifact": "androidx/lifecycle/lifecycle-runtime-android/2.10.0/lifecycle-runtime.aar",
+        "expected_sha256": "2193a1573d623f37b20c7d27d1a8f903a72f651cc6f32e5794f85dda744fee75",
+        "method": "download-sha256-pinned-module-location",
+        "repository": "https://dl.google.com/dl/android/maven2/",
+        "source_url": "https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-runtime-android/2.10.0/lifecycle-runtime-android-2.10.0.aar",
+        "status": "verified"
+      },
+      {
+        "actual_sha256": "46e996d526829596f6db4626169a967f056fde7103507ff596bcd177b73c3675",
+        "artifact": "androidx/lifecycle/lifecycle-runtime-compose-android/2.10.0/lifecycle-runtime-compose.aar",
+        "expected_sha256": "46e996d526829596f6db4626169a967f056fde7103507ff596bcd177b73c3675",
+        "method": "download-sha256-pinned-module-location",
+        "repository": "https://dl.google.com/dl/android/maven2/",
+        "source_url": "https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-runtime-compose-android/2.10.0/lifecycle-runtime-compose-android-2.10.0.aar",
+        "status": "verified"
+      },
+      {
+        "actual_sha256": "871883703339f87284d232cb436e317c6f4af5612d92b43f27c6b13b92109fa7",
+        "artifact": "androidx/lifecycle/lifecycle-runtime-ktx-android/2.10.0/lifecycle-runtime-ktx.aar",
+        "expected_sha256": "871883703339f87284d232cb436e317c6f4af5612d92b43f27c6b13b92109fa7",
+        "method": "download-sha256-pinned-module-location",
+        "repository": "https://dl.google.com/dl/android/maven2/",
+        "source_url": "https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-runtime-ktx-android/2.10.0/lifecycle-runtime-ktx-android-2.10.0.aar",
+        "status": "verified"
+      },
+      {
+        "actual_sha256": "9303287030027ca0b8cf98a748ddeb121ec1bfa1312c0069428e4765bbabce78",
+        "artifact": "androidx/lifecycle/lifecycle-viewmodel-android/2.10.0/lifecycle-viewmodel.aar",
+        "expected_sha256": "9303287030027ca0b8cf98a748ddeb121ec1bfa1312c0069428e4765bbabce78",
+        "method": "download-sha256-pinned-module-location",
+        "repository": "https://dl.google.com/dl/android/maven2/",
+        "source_url": "https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-viewmodel-android/2.10.0/lifecycle-viewmodel-android-2.10.0.aar",
+        "status": "verified"
+      },
+      {
+        "actual_sha256": "19404239fa584322c2f81e9659e162bc011b746d29dc950a11d260624d83225e",
+        "artifact": "androidx/lifecycle/lifecycle-viewmodel-savedstate-android/2.10.0/lifecycle-viewmodel-savedstate.aar",
+        "expected_sha256": "19404239fa584322c2f81e9659e162bc011b746d29dc950a11d260624d83225e",
+        "method": "download-sha256-pinned-module-location",
+        "repository": "https://dl.google.com/dl/android/maven2/",
+        "source_url": "https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-viewmodel-savedstate-android/2.10.0/lifecycle-viewmodel-savedstate-android-2.10.0.aar",
+        "status": "verified"
+      },
+      {
+        "actual_sha256": "cda4bb83d1c892a208732e99c2d59e4f247ab5c23a1d2524fc004db2e4e9a780",
+        "artifact": "androidx/navigationevent/navigationevent-android/1.0.0/navigationevent.aar",
+        "expected_sha256": "cda4bb83d1c892a208732e99c2d59e4f247ab5c23a1d2524fc004db2e4e9a780",
+        "method": "download-sha256-pinned-module-location",
+        "repository": "https://dl.google.com/dl/android/maven2/",
+        "source_url": "https://dl.google.com/dl/android/maven2/androidx/navigationevent/navigationevent-android/1.0.0/navigationevent-android-1.0.0.aar",
+        "status": "verified"
+      },
+      {
+        "actual_sha256": "5cee018dbe130b538d2c43cc6f383a109a98f19ba9c8d7a6dda8ca90a2034671",
+        "artifact": "androidx/navigationevent/navigationevent-compose-android/1.0.0/navigationevent-compose.aar",
+        "expected_sha256": "5cee018dbe130b538d2c43cc6f383a109a98f19ba9c8d7a6dda8ca90a2034671",
+        "method": "download-sha256-pinned-module-location",
+        "repository": "https://dl.google.com/dl/android/maven2/",
+        "source_url": "https://dl.google.com/dl/android/maven2/androidx/navigationevent/navigationevent-compose-android/1.0.0/navigationevent-compose-android-1.0.0.aar",
+        "status": "verified"
+      },
+      {
+        "actual_sha256": "1656ce62cd233d488bdbbd42e533b80b22435b7a690acae6dbe7302392512c14",
+        "artifact": "androidx/savedstate/savedstate-android/1.4.0/savedstate.aar",
+        "expected_sha256": "1656ce62cd233d488bdbbd42e533b80b22435b7a690acae6dbe7302392512c14",
+        "method": "download-sha256-pinned-module-location",
+        "repository": "https://dl.google.com/dl/android/maven2/",
+        "source_url": "https://dl.google.com/dl/android/maven2/androidx/savedstate/savedstate-android/1.4.0/savedstate-android-1.4.0.aar",
+        "status": "verified"
+      },
+      {
+        "actual_sha256": "0f0ae3032d6c6eea834ee22179c8976160d09d841d30e47f53f56b1b3438774b",
+        "artifact": "androidx/savedstate/savedstate-compose-android/1.4.0/savedstate-compose.aar",
+        "expected_sha256": "0f0ae3032d6c6eea834ee22179c8976160d09d841d30e47f53f56b1b3438774b",
+        "method": "download-sha256-pinned-module-location",
+        "repository": "https://dl.google.com/dl/android/maven2/",
+        "source_url": "https://dl.google.com/dl/android/maven2/androidx/savedstate/savedstate-compose-android/1.4.0/savedstate-compose-android-1.4.0.aar",
+        "status": "verified"
+      },
+      {
+        "actual_sha256": "f59782bbe3470a6b0c531cef262dd1fc9d9a0233490bb5e6d553e1fe6a1816b2",
+        "artifact": "androidx/tracing/tracing-android/1.3.0/tracing.aar",
+        "expected_sha256": "f59782bbe3470a6b0c531cef262dd1fc9d9a0233490bb5e6d553e1fe6a1816b2",
+        "method": "download-sha256-pinned-module-location",
+        "repository": "https://dl.google.com/dl/android/maven2/",
+        "source_url": "https://dl.google.com/dl/android/maven2/androidx/tracing/tracing-android/1.3.0/tracing-android-1.3.0.aar",
+        "status": "verified"
+      },
+      {
+        "actual_sha256": "d0d50db0756194a6d49a66ad8dafd17b24b4c5fbd8379375056e2eb9bdfeaf22",
+        "artifact": "androidx/window/window-core-android/1.5.0/window-core.aar",
+        "expected_sha256": "d0d50db0756194a6d49a66ad8dafd17b24b4c5fbd8379375056e2eb9bdfeaf22",
+        "method": "download-sha256-pinned-module-location",
+        "repository": "https://dl.google.com/dl/android/maven2/",
+        "source_url": "https://dl.google.com/dl/android/maven2/androidx/window/window-core-android/1.5.0/window-core-android-1.5.0.aar",
+        "status": "verified"
+      },
+      {
+        "actual_sha256": "9532ca9ba8aceb4cd2067171f981c799988b7f5844e3e274811a3bb757034bc4",
+        "artifact": "com/google/guava/guava/33.6.0-jre/guava-33.6.0-android.jar",
+        "expected_sha256": "9532ca9ba8aceb4cd2067171f981c799988b7f5844e3e274811a3bb757034bc4",
+        "method": "download-sha256-pinned-module-location",
+        "repository": "https://repo.maven.apache.org/maven2/",
+        "source_url": "https://repo.maven.apache.org/maven2/com/google/guava/guava/33.6.0-android/guava-33.6.0-android.jar",
+        "status": "verified"
+      },
+      {
+        "actual_sha256": "c2b25e8c1c93ec416ba4327f5e31eaec0f0c8847241b9353e294b8db9dce564f",
+        "artifact": "org/jetbrains/kotlin/kotlin-compiler-embeddable/2.4.0/kotlin-compiler-embeddable-2.4.0.jar",
+        "expected_sha256": "c2b25e8c1c93ec416ba4327f5e31eaec0f0c8847241b9353e294b8db9dce564f",
+        "method": "download-sha256",
+        "repository": "https://repo.maven.apache.org/maven2/",
+        "status": "verified"
+      },
+      {
+        "actual_sha256": "33e0a0982b3ba599763af250b86eb8d67ab6c186c2fa2c5e823ee003bdcd4ed8",
+        "artifact": "org/robolectric/nativeruntime-dist-compat/1.0.19/nativeruntime-dist-compat-1.0.19.jar",
+        "expected_sha256": "33e0a0982b3ba599763af250b86eb8d67ab6c186c2fa2c5e823ee003bdcd4ed8",
+        "method": "download-sha256",
+        "repository": "https://repo.maven.apache.org/maven2/",
+        "status": "verified"
+      }
+    ],
+    "verified_count": 35
+  },
+  "limitations": [
+    "Repository byte comparison does not establish publisher identity or vulnerability status.",
+    "This is a split CI/local review record, not a claim that the newer complete generator CI passed.",
+    "Strict build and deliberately altered checksum CI probe remain required.",
+    "Optional voice/JitPack dependencies are not covered."
+  ],
+  "summary": {
+    "mismatch": 0,
+    "unavailable": 0,
+    "verified": 743
+  }
+}

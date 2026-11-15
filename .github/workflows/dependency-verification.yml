@@ -4,11 +4,35 @@ name: Prepare dependency verification metadata
 # regenerate trusted checksums automatically during normal CI verification.
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/dependency-verification.yml'
+      - 'tools/verify_dependency_bootstrap.py'
+      - 'tools/test_verify_dependency_bootstrap.py'
 
 permissions:
   contents: read
 
 jobs:
+  verify-committed:
+    name: Verify committed dependency metadata
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Test dependency verifier
+        run: python3 -m unittest discover -s tools -p test_verify_dependency_bootstrap.py
+      - name: Compare committed hashes with fresh repository bytes
+        run: python3 tools/verify_dependency_bootstrap.py gradle/verification-metadata.xml --report committed-dependency-verification-report.json
+      - name: Upload committed comparison report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: committed-dependency-verification-${{ github.sha }}
+          path: committed-dependency-verification-report.json
+          if-no-files-found: error
+
   checksums:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -39,15 +63,24 @@ jobs:
         with:
           cache-disabled: true
 
+      - name: Test dependency verifier
+        run: python3 -m unittest discover -s tools -p test_verify_dependency_bootstrap.py
+
       - name: Resolve dependencies used by all CI tasks
         run: >-
           ./gradlew --write-verification-metadata sha256
           test :app:lint :app:assembleDebug :app:assembleRelease
           --no-build-cache --rerun-tasks --stacktrace
 
+      - name: Independently verify candidate against official repositories
+        run: python3 tools/verify_dependency_bootstrap.py gradle/verification-metadata.xml --report dependency-verification-report.json
+
       - name: Upload candidate metadata for review
+        if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: dependency-verification-candidate-${{ github.sha }}
-          path: gradle/verification-metadata.xml
+          path: |
+            gradle/verification-metadata.xml
+            dependency-verification-report.json
           if-no-files-found: error

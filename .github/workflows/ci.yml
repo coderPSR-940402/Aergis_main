@@ -69,6 +69,37 @@ jobs:
       - name: Run unit tests
         run: ./gradlew test --build-cache --stacktrace --warning-mode all
 
+      - name: Confirm altered dependency checksum is rejected
+        shell: bash
+        run: |
+          python3 - <<'PYTHON'
+          import re
+          import subprocess
+          from pathlib import Path
+
+          metadata = Path('gradle/verification-metadata.xml')
+          original = metadata.read_bytes()
+          marker = b'<artifact name="gradle-9.4.1.jar">'
+          start = original.index(marker)
+          end = original.index(b'</artifact>', start)
+          artifact = original[start:end]
+          altered, count = re.subn(rb'(<sha256 value=")[0-9a-f]{64}', rb'\g<1>' + b'0' * 64, artifact)
+          assert count == 1, 'Expected exactly one AGP checksum'
+          try:
+              metadata.write_bytes(original[:start] + altered + original[end:])
+              result = subprocess.run(
+                  ['./gradlew', 'help', '--dependency-verification', 'strict', '--no-configuration-cache'],
+                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=180)
+              Path('dependency-tamper-probe.log').write_text(result.stdout)
+              assert result.returncode != 0, 'Gradle accepted a changed checksum'
+              assert 'Dependency verification failed' in result.stdout, 'Failure was not dependency verification'
+              assert 'gradle-9.4.1.jar' in result.stdout, 'Failure did not identify the changed AGP artifact'
+              print('Gradle rejected the deliberately altered AGP checksum')
+          finally:
+              metadata.write_bytes(original)
+          assert metadata.read_bytes() == original, 'Original metadata was not restored'
+          PYTHON
+
       - name: Capture fresh production DevLoop evidence
         run: |
           cp -a app/build/reports/tests app/build/reports/tests-full
@@ -196,6 +227,7 @@ jobs:
             app/build/reports/tests-full/
             app/build/reports/lint-results*
             app/build/reports/testing-tools/
+            dependency-tamper-probe.log
           if-no-files-found: ignore
 
   update-baseline:
