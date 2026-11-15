@@ -53,7 +53,8 @@ def validate_settings(settings):
     # Deliberately fail closed if the checked-in repository configuration changes.
     # This is a small pinned Kotlin settings file, not a general Kotlin parser.
     def normalize(text):
-        text = re.sub(r'/\*.*?\*/|//[^\n]*', '', text, flags=re.S)
+        # Reject comments and any added syntax instead of attempting to strip
+        # Kotlin comments: comment markers inside strings are not comments.
         return re.sub(r'[\s;]+', '', text)
     if normalize(settings) != normalize(EXPECTED_SETTINGS):
         raise ValueError('settings.gradle.kts changed: review and update the official repository policy')
@@ -154,7 +155,11 @@ def download_hash(url, max_bytes=MAX_ARTIFACT_BYTES):
                 total = 0
                 deadline = time.monotonic() + 120
                 while True:
-                    chunk = response.read(min(128 * 1024, max_bytes + 1 - total))
+                    if time.monotonic() > deadline:
+                        raise TimeoutError('artifact download exceeded time limit')
+                    # read1 returns after one buffered/raw read. read(size) can
+                    # keep receiving slow progress indefinitely before returning.
+                    chunk = response.read1(min(128 * 1024, max_bytes + 1 - total))
                     if not chunk:
                         break
                     total += len(chunk)
