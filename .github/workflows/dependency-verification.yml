@@ -4,6 +4,9 @@ name: Prepare dependency verification metadata
 # regenerate trusted checksums automatically during normal CI verification.
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/dependency-verification.yml'
 
 permissions:
   contents: read
