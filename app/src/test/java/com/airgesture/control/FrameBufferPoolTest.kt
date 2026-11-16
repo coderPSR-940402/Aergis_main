@@ -117,4 +117,24 @@ class FrameBufferPoolTest {
             (third as AutoCloseable).close()
         }
     }
+
+    @Test fun cachedAndLeasedStorageShareOneThreeBufferBudget() {
+        val pool = pool()
+        val original = listOf(8, 16, 24).map { acquire(pool, it)!! }
+        original.forEach { (it as AutoCloseable).close() }
+        val active = mutableListOf<Any>()
+        try {
+            for (size in listOf(32, 40, 48)) {
+                active += acquire(pool, size)!!
+                val free = pool.javaClass.getDeclaredField("free").apply { isAccessible = true }
+                    .get(pool) as Collection<*>
+                assertTrue("Resolution changes must not retain three cached buffers plus active storage",
+                    free.size + active.size <= 3)
+            }
+            assertNull(acquire(pool, 64))
+        } finally {
+            active.forEach { (it as AutoCloseable).close() }
+        }
+    }
+
 }

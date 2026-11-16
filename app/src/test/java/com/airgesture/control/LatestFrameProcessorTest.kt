@@ -6,9 +6,9 @@ import java.util.concurrent.Executor
 import java.util.concurrent.RejectedExecutionException
 
 class LatestFrameProcessorTest {
-    private class Frame(val id: Int) : AutoCloseable {
+    private class Frame(val id: Int, val releaseFailure: Boolean = false) : AutoCloseable {
         var closes = 0
-        override fun close() { closes++ }
+        override fun close() { closes++; if (releaseFailure) error("pixel release failed") }
     }
     private class Worker : Executor {
         val tasks = ArrayDeque<Runnable>()
@@ -123,4 +123,63 @@ class LatestFrameProcessorTest {
         val frame = Frame(1); processor.offer(frame); processor.close()
         assertEquals(1, frame.closes); assertEquals(1, failures.size)
     }
+
+    @Test fun activeReleaseFailureCannotStrandNewestWaitingFrame() {
+        val worker = Worker(); val seen = mutableListOf<Int>(); val failures = mutableListOf<Throwable>()
+        val first = Frame(1, releaseFailure = true); val next = Frame(2)
+        lateinit var processor: Processor
+        processor = Processor(worker, {
+            seen += it.id
+            if (it === first) processor.offer(next)
+        }, failures::add)
+        processor.offer(first); worker.drain()
+        assertEquals(listOf(1, 2), seen)
+        assertEquals(1, failures.size)
+        assertEquals(1, first.closes); assertEquals(1, next.closes)
+    }
+
+    @Test fun replacedReleaseFailureCannotRejectNewerFrame() {
+        val worker = Worker(); val seen = mutableListOf<Int>(); val failures = mutableListOf<Throwable>()
+        val processor = Processor(worker, { seen += it.id }, failures::add)
+        val old = Frame(1, releaseFailure = true); val newest = Frame(2)
+        processor.offer(old); processor.offer(newest); worker.drain()
+        assertEquals(listOf(2), seen)
+        assertEquals(1, old.closes); assertEquals(1, newest.closes)
+        assertEquals(1, failures.size)
+    }
+
+    @Test fun shutdownDetachesFailingPendingFrameBeforeReleasingIt() {
+        val worker = Worker(); val failures = mutableListOf<Throwable>()
+        val processor = Processor(worker, { fail("Stopped work cannot be consumed") }, failures::add)
+        val pending = Frame(1, releaseFailure = true)
+        processor.offer(pending); processor.close(); processor.close(); worker.drain()
+        assertEquals(1, pending.closes)
+        assertEquals(1, failures.size)
+        val late = Frame(2, releaseFailure = true)
+        processor.offer(late)
+        assertEquals(1, late.closes)
+        assertEquals(2, failures.size)
+    }
+
+    @Test fun workerRejectionCannotEscapeThroughTheFailureReporter() {
+        val processor = Processor(Executor { throw RejectedExecutionException("worker stopped") },
+            { fail("Must not consume") }, { error("reporter unavailable") })
+        val first = Frame(1); val late = Frame(2)
+        processor.offer(first); processor.offer(late); processor.close()
+        assertEquals(1, first.closes); assertEquals(1, late.closes)
+    }
+
+    @Test fun releaseAndReporterFailuresTogetherCannotKillTheDrain() {
+        val worker = Worker(); val seen = mutableListOf<Int>()
+        val first = Frame(1, releaseFailure = true); val next = Frame(2)
+        lateinit var processor: Processor
+        processor = Processor(worker, {
+            seen += it.id
+            if (it === first) processor.offer(next)
+        }, { error("reporter unavailable") })
+        processor.offer(first); worker.drain()
+        assertEquals(listOf(1, 2), seen)
+        assertEquals(1, first.closes); assertEquals(1, next.closes)
+    }
+
 }
