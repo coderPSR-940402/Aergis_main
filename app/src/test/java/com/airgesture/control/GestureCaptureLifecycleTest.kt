@@ -103,14 +103,45 @@ class GestureCaptureLifecycleTest {
         }
     }
 
+
+    @Test fun rejectedNativeDisposalStillCompletesServiceTeardown() {
+        verifyFailedWorkerTeardown(QueuedExecutor(rejectSubmission = true))
+    }
+
+    @Test fun failedWorkerShutdownStillClearsRuntimeAuthority() {
+        verifyFailedWorkerTeardown(QueuedExecutor(failShutdown = true))
+    }
+
+    private fun verifyFailedWorkerTeardown(executor: QueuedExecutor) {
+        shadowOf(RuntimeEnvironment.getApplication()).denyPermissions(Manifest.permission.CAMERA)
+        val controller = Robolectric.buildService(GestureCaptureService::class.java).create()
+        val service = controller.get()
+        val capture = field("captureExecutor").get(service) as java.util.concurrent.ExecutorService
+        (field("executor").get(service) as java.util.concurrent.ExecutorService).shutdown()
+        field("executor").set(service, executor)
+        AirRuntime.controlMode = ControlMode.ARMED
+        controller.destroy()
+        assertFalse(AirRuntime.running)
+        assertFalse(AirRuntime.cameraReady)
+        assertFalse(AirRuntime.visionReady)
+        assertEquals(ControlMode.OFF, AirRuntime.controlMode)
+        assertTrue(capture.isShutdown)
+        assertTrue(executor.isShutdown)
+        assertFalse("Native inference must never be interrupted", executor.interrupted)
+        assertNull(field("executor").get(service))
+        assertNull(field("captureExecutor").get(service))
+        assertNull(field("visionEngine").get(service))
+        while (executor.tasks.isNotEmpty()) executor.tasks.removeFirst().run()
+    }
+
     private fun field(name: String) = GestureCaptureService::class.java.getDeclaredField(name).apply { isAccessible = true }
 
-    private class QueuedExecutor : AbstractExecutorService() {
+    private class QueuedExecutor(private val rejectSubmission: Boolean = false, private val failShutdown: Boolean = false) : AbstractExecutorService() {
         val tasks = ArrayDeque<Runnable>()
         var interrupted = false
         private var stopped = false
-        override fun execute(command: Runnable) { check(!stopped); tasks.addLast(command) }
-        override fun shutdown() { stopped = true }
+        override fun execute(command: Runnable) { if (rejectSubmission) throw java.util.concurrent.RejectedExecutionException("worker unavailable"); check(!stopped); tasks.addLast(command) }
+        override fun shutdown() { stopped = true; if (failShutdown) error("shutdown unavailable") }
         override fun shutdownNow(): MutableList<Runnable> { interrupted = true; stopped = true; return tasks.toMutableList() }
         override fun isShutdown() = stopped
         override fun isTerminated() = stopped && tasks.isEmpty()
