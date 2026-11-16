@@ -41,6 +41,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
     private val interpreter = GestureInterpreter(mappings)
     // A delayed confirmed tap belongs to the frozen screen-space contact location,
     // not the cursor position on the subsequent release or reacquisition frame.
+    private var pinchDragRequested = false
     private var pendingTapTarget: PointerCoordinateMapper.Point? = null
     private var pendingTapContact: PointerTapContactEvidence? = null
     private val pinchPointer = PointerPinchController()
@@ -591,8 +592,11 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             expectedEpoch = pointerEpoch, sourceDeadlineMs = commandDeadlineMs)
         var pinchInProgress = motionWasActive
         if (pointerActive && indexTip != null) {
-            val dragging = AirAccessibilityService.instance?.precisionDragActive == true
-            val touchAllowed = pointerTouchTracking && AirRuntime.pointerClickingEnabled && !motionWasActive && !dragging && reacquireFrom == null
+            val dragMode = mappings.pointerDraggingEnabled()
+            val service = AirAccessibilityService.instance
+            val dragging = service?.precisionDragActive == true
+            val mappedDragging = dragging && service?.pinchDragActive != true
+            val touchAllowed = pointerTouchTracking && AirRuntime.pointerClickingEnabled && !motionWasActive && !mappedDragging && reacquireFrom == null
             // toUpright rotates x/y but preserves MediaPipe's sensor-width z.
             // Upright height equals sensor width for quarter-turn buffers.
             val depthScale = if (rotationDegrees == 90 || rotationDegrees == 270) 1f else frameAspectRatio
@@ -609,7 +613,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             val tipUsable = rawTip.x in 0f..1f && rawTip.y in 0f..1f
             val mappedTip = pointerMapper.map(rawTip.x, rawTip.y, frameCalibration)
             val currentPoint = pointerMapper.map(processed.smoothedX, processed.smoothedY, frameCalibration)
-            val comparison = if (tipUsable) lineageComparison.update(mappedTip, currentPoint, timestamp)
+            val comparison = if (tipUsable) lineageComparison.update(mappedTip, currentPoint, timestamp, resultAgeMs = freshness.ageMs)
                 else lineageComparison.latest ?: run {
                     handlePointerGap(observedAtMs, pointerActive, false, "INVALID_TIP", PointerFeedback.INVALID_TIP,
                     palmFallback = palmMotionOnly())
@@ -626,7 +630,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                     reacquireFrom = if (fraction == 1f) null else it
                 }
             } else targetCandidate
-            val trusted = tipUsable && (filterMode != PointerFilterMode.PRECISION || comparison.precisionTrusted)
+            val trusted = tipUsable && (filterMode !in setOf(PointerFilterMode.PRECISION, PointerFilterMode.CLASSIC) || comparison.precisionTrusted)
             val anchorProtected = !trusted && refitAnchor != null && touchAllowed && processed.poseEvidence.accepted &&
                 (processed.isPinchApproaching || processed.isPinchPressed)
             val targetTrusted = trusted || anchorProtected
@@ -648,6 +652,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             else AirRuntime.rawPointerSnapshot().let { AirRuntime.setRawPointerState(it.x, it.y, false) }
             val stabilized = if (dragging && pointerTouchTracking && trusted) {
                 AirRuntime.pointerInteraction = PointerInteractionPhase.DRAGGING
+                pinchInProgress = true
                 candidate
             } else if (touchAllowed && processed.poseEvidence.accepted && targetTrusted) {
                 val interaction = pinchPointer.update(if (anchorProtected) refitAnchor!! else candidate,
@@ -675,7 +680,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 ?.put("currentFilteredUpright", point(PointerCoordinateMapper.Point(processed.smoothedX, processed.smoothedY)))
                 ?.put("comparison", org.json.JSONObject().put("mappedTip", point(mappedTip))
                     .put("current", point(comparison.current)).put("vc49", point(comparison.vc49))
-                    .put("precision", point(comparison.precision)))
+                    .put("precision", point(comparison.precision)).put("classic", point(comparison.classic)))
                 ?.put("precisionTrusted", comparison.precisionTrusted)?.put("geometryAspectRatio", frameAspectRatio)
                 ?.put("pointerInteraction", AirRuntime.pointerInteraction.name)
                 ?.put("thumbMiddleDistance", DiagnosticFrameData.number(processed.normalizedDistance))
@@ -716,8 +721,14 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             }
             AirRuntime.pointerFeedback = if (targetTrusted) PointerFeedback.TRACKING else PointerFeedback.COASTING
             AirRuntime.setPointerState(stabilized.x, stabilized.y, targetTrusted)
-            // Recognition initiates one bounded tap. Release only rearms. The same
-            // frame's pinch evidence excludes the classifier before its dispatch gate.
+            // Contact owns its command channel until separation. In drag mode
+            // release is a discrete edge, never an aim sample or a second tap.
+            if (dragMode && pinchDragRequested && !processed.isPinchPressed) {
+                service?.releasePointerDrag(pointerEpoch)
+                pinchDragRequested = false
+            }
+            if (dragMode && (pinchDragRequested || processed.isPinchApproaching || processed.isPinchPressed))
+                pinchInProgress = true
             val tapService = AirAccessibilityService.instance
             if (processed.isClickEngaged) {
                 pendingTapTarget = stabilized
@@ -735,16 +746,19 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 // cannot turn a delayed tap into an unrelated target activation.
                 tapService?.isVisibleTapTargetReady(pointerEpoch, pendingTarget.x, pendingTarget.y) == true &&
                 tapService.isVisibleTapTargetReady(pointerEpoch, stabilized.x, stabilized.y)
-            if (touchAllowed && interpreter.takePendingTap(timestamp, appliedTargetReady)) {
+            if (touchAllowed && interpreter.takePendingTap(timestamp, appliedTargetReady && (!dragMode || processed.isPinchPressed))) {
                 pendingTapTarget = null
                 val contactEvidence = pendingTapContact
                 pendingTapContact = null
                 // The visible hotspot, not just the raw camera estimate, is the
                 // coordinate source snapshotted by the accessibility dispatcher.
-                tapService?.dispatchPointerTap(pointerEpoch, pointerTapDeadlineMs, contactEvidence)
+                if (dragMode) {
+                    pinchDragRequested = true
+                    tapService?.dispatchPointerDrag(pointerEpoch, pointerTapDeadlineMs, contactEvidence)
+                } else tapService?.dispatchPointerTap(pointerEpoch, pointerTapDeadlineMs, contactEvidence)
             }
 
-            // Pointer travel and held contact never dispatch scrolling or drag.
+            // Held movement continues the existing stroke through the applied hotspot.
             AirAccessibilityService.instance?.updatePointer(
                 stabilized.x,
                 stabilized.y,
@@ -1031,6 +1045,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
     }
 
     private fun resetPointerTouch() {
+        pinchDragRequested = false
         pendingTapTarget = null
         clearPendingTapContact()
         pinchPointer.reset()

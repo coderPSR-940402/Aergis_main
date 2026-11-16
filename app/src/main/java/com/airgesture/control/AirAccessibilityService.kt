@@ -33,11 +33,19 @@ class AirAccessibilityService : AccessibilityService() {
         record = AirRuntime::recordActionDispatchOutcome)
     @Volatile var precisionDragActive = false
         private set
+    @Volatile var pinchDragActive = false
+        private set
+    @Volatile private var pinchDragReleaseRequested = false
+    private var dragOrigin = ActionOrigin.GESTURE
+    private var pinchDragEpoch = -1L
     private val precisionDrag = PrecisionDragController(mainHandler,
         dispatch = { gesture, callback -> dispatchGesture(gesture, callback, mainHandler) },
-        permitted = { epoch -> AirRuntime.pointerEnabled && isActionAllowed(AirAction.POINTER_DRAG, epoch) },
+        permitted = { epoch -> AirRuntime.pointerEnabled && isActionAllowed(AirAction.POINTER_DRAG, epoch, dragOrigin) },
         record = { outcome ->
-            if (outcome != ActionDispatchOutcome.SUBMITTED) precisionDragActive = false
+            if (outcome != ActionDispatchOutcome.SUBMITTED) {
+                precisionDragActive = false
+                pinchDragActive = false
+            }
             AirRuntime.recordActionFeedback(outcome, dragFeedbackId)
         }, recordCancellationRejection = AirRuntime::recordActionDispatchOutcome)
     val nativeTouchInFlight: Boolean get() = boundedInput.isBusy || precisionDrag.isBusy
@@ -115,6 +123,7 @@ class AirAccessibilityService : AccessibilityService() {
         mainHandler.post {
             if (coordinateInput) boundedInput.cancel()
             precisionDragActive = false
+            pinchDragActive = false
             precisionDrag.cancel()
         }
     }
@@ -141,6 +150,7 @@ class AirAccessibilityService : AccessibilityService() {
             !AirRuntime.pointerEnabled || AirRuntime.controlMode != ControlMode.ARMED) {
             visibleHotspot = null
             precisionDragActive = false
+            pinchDragActive = false
             precisionDrag.cancel()
             overlay.hide()
             if (TestingTools.state.value.status == RecordingStatus.RECORDING) {
@@ -161,13 +171,14 @@ class AirAccessibilityService : AccessibilityService() {
                 pointerCommandGeneration.incrementAndGet()
                 boundedInput.cancel()
                 precisionDragActive = false
+                pinchDragActive = false
                 precisionDrag.cancel()
             }
             // Attachment can finish after the first update. Publish only once the
             // overlay actually applies the position, including that delayed layout.
             visibleHotspot = applied?.takeIf { pending.epoch == AirRuntime.actionEpoch }
                 ?.let { VisibleHotspot(it, pending.epoch) }
-            if (precisionDragActive && applied != null && pending.epoch == AirRuntime.actionEpoch)
+            if (precisionDragActive && !pinchDragReleaseRequested && applied != null && pending.epoch == AirRuntime.actionEpoch)
                 precisionDrag.update(applied, true, pending.epoch, SystemClock.uptimeMillis())
         }
         if (TestingTools.state.value.status == RecordingStatus.RECORDING) {
@@ -189,6 +200,30 @@ class AirAccessibilityService : AccessibilityService() {
         contactEvidence: PointerTapContactEvidence? = null) =
         dispatch(AirAction.TAP, origin = ActionOrigin.POINTER, expectedEpoch = expectedEpoch,
             sourceDeadlineMs = sourceDeadlineMs, pointerTapContact = contactEvidence)
+
+    internal fun dispatchPointerDrag(expectedEpoch: Long = AirRuntime.actionEpoch, sourceDeadlineMs: Long? = null,
+        contactEvidence: PointerTapContactEvidence? = null) =
+        dispatch(AirAction.POINTER_DRAG, origin = ActionOrigin.POINTER, expectedEpoch = expectedEpoch,
+            sourceDeadlineMs = sourceDeadlineMs, pointerTapContact = contactEvidence)
+
+    internal fun releasePointerDrag(expectedEpoch: Long = AirRuntime.actionEpoch) {
+        if (expectedEpoch != AirRuntime.actionEpoch) return
+        // Contact edges cannot be coalesced with pointer travel. Revoke a queued
+        // pickup immediately and freeze the last applied held target before new aim.
+        pointerCommandGeneration.incrementAndGet()
+        pinchDragReleaseRequested = true
+        mainHandler.post {
+            if (!pinchDragActive || pinchDragEpoch != expectedEpoch) return@post
+            precisionDragActive = false
+            if (!isActionAllowed(AirAction.POINTER_DRAG, expectedEpoch, ActionOrigin.POINTER)) {
+                pinchDragActive = false
+                precisionDrag.cancel()
+            } else {
+                precisionDrag.update(visibleHotspot?.point ?: PointerCoordinateMapper.Point(0f, 0f),
+                    false, expectedEpoch, SystemClock.uptimeMillis())
+            }
+        }
+    }
 
     /** Check the applied, epoch-matching hotspot rather than an asynchronously queued position. */
     internal fun isVisibleTapTargetReady(expectedEpoch: Long, normalizedX: Float, normalizedY: Float): Boolean {
@@ -260,6 +295,10 @@ class AirAccessibilityService : AccessibilityService() {
             if (!sourceIsFresh() || !isActionAllowed(action, dispatchEpoch, origin) ||
                 (action.usesPointerTouch && pointerGeneration != pointerCommandGeneration.get())) {
                 recordOutcome(ActionDispatchOutcome.POLICY_DENIED)
+                return@post
+            }
+            if (action == AirAction.POINTER_DRAG && origin == ActionOrigin.POINTER && precisionDrag.isBusy) {
+                recordOutcome(ActionDispatchOutcome.PLATFORM_REJECTED)
                 return@post
             }
             when (DragActionArbitration.decide(precisionDrag.isBusy, action)) {
@@ -340,8 +379,13 @@ class AirAccessibilityService : AccessibilityService() {
                 }
                 AirAction.POINTER_DRAG -> {
                     dragFeedbackId = feedbackId
-                    if (!precisionDrag.isBusy)
+                    if (!precisionDrag.isBusy) {
+                        dragOrigin = origin
+                        pinchDragActive = origin == ActionOrigin.POINTER
+                        pinchDragEpoch = dispatchEpoch
+                        pinchDragReleaseRequested = false
                         precisionDrag.update(target, false, dispatchEpoch, SystemClock.uptimeMillis())
+                    }
                     precisionDragActive = !precisionDragActive
                     precisionDrag.update(target, precisionDragActive, dispatchEpoch, SystemClock.uptimeMillis())
                 }
@@ -372,6 +416,8 @@ class AirAccessibilityService : AccessibilityService() {
     }
 
     private fun isActionAllowed(action: AirAction, expectedEpoch: Long? = null, origin: ActionOrigin = ActionOrigin.GESTURE): Boolean {
+        if (origin == ActionOrigin.POINTER && action == AirAction.POINTER_DRAG &&
+            !ActionMappingStore(this).pointerDraggingEnabled()) return false
         return ActionDispatchGate.evaluate(
             action = action,
             expectedEpoch = expectedEpoch,
@@ -533,6 +579,7 @@ class AirAccessibilityService : AccessibilityService() {
         mainHandler.removeCallbacks(selectionActivationGuard)
         boundedInput.cancel()
         precisionDragActive = false
+        pinchDragActive = false
         precisionDrag.cancel()
         visibleHotspot = null
         AirRuntime.invalidatePendingActions()
@@ -546,6 +593,7 @@ class AirAccessibilityService : AccessibilityService() {
         screenNavigator.close()
         boundedInput.cancel()
         precisionDragActive = false
+        pinchDragActive = false
         precisionDrag.cancel()
         visibleHotspot = null
         AirRuntime.pointerInteraction = PointerInteractionPhase.IDLE
@@ -564,6 +612,7 @@ class AirAccessibilityService : AccessibilityService() {
         screenNavigator.close()
         boundedInput.cancel()
         precisionDragActive = false
+        pinchDragActive = false
         precisionDrag.cancel()
         visibleHotspot = null
         AirRuntime.pointerInteraction = PointerInteractionPhase.IDLE

@@ -11,6 +11,13 @@ class ActionMappingStore(context: Context) {
     fun pointerClickingEnabled(): Boolean = prefs.getBoolean("pointer_clicking_enabled", true)
     fun setPointerClickingEnabled(enabled: Boolean) = prefs.edit().putBoolean("pointer_clicking_enabled", enabled).apply()
 
+    fun pointerDraggingEnabled(): Boolean = prefs.getBoolean("pointer_dragging_enabled", false)
+    fun setPointerDraggingEnabled(enabled: Boolean) {
+        if (pointerDraggingEnabled() == enabled) return
+        prefs.edit().putBoolean("pointer_dragging_enabled", enabled).apply()
+        AirRuntime.invalidatePendingActions()
+    }
+
     fun gesturesEnabled(): Boolean = prefs.getBoolean(KEY_GESTURES, true)
     fun setGesturesEnabled(enabled: Boolean) = prefs.edit().putBoolean(KEY_GESTURES, enabled).apply()
 

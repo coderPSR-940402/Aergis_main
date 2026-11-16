@@ -7,6 +7,6 @@ internal object InputChannelPolicy {
         pointerClickingEnabled: Boolean, gesturesEnabled: Boolean): Boolean = when (origin) {
         ActionOrigin.GESTURE -> gesturesEnabled
         ActionOrigin.POINTER -> pointerClickingEnabled &&
-            ((pointerEnabled && action == AirAction.TAP) || (!pointerEnabled && action == AirAction.SELECT_ITEM))
+            ((pointerEnabled && action in setOf(AirAction.TAP, AirAction.POINTER_DRAG)) || (!pointerEnabled && action == AirAction.SELECT_ITEM))
     }
 }
