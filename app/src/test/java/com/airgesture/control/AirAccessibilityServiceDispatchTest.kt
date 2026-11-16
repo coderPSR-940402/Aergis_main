@@ -72,6 +72,7 @@ class AirAccessibilityServiceDispatchTest {
 
     @After
     fun tearDown() {
+        setHoldToDrag(false)
         legacyTouch.cancel()
         controller.destroy()
         AirRuntime.pointerEnabled = true
@@ -958,5 +959,101 @@ class AirAccessibilityServiceDispatchTest {
         down.callback()!!.onCancelled(down.description())
         assertFalse(service.nativeTouchInFlight)
         assertEquals(ActionDispatchOutcome.CANCELLED,AirRuntime.state.value.actionFeedback?.outcome)
+    }
+
+    private fun setHoldToDrag(enabled: Boolean) {
+        service.getSharedPreferences("aergis_mappings", Context.MODE_PRIVATE).edit()
+            .putBoolean("pointer_dragging_enabled", enabled).commit()
+    }
+
+    // Reflection lets these regressions run against the pre-feature baseline as well.
+    private fun beginPinchDrag(epoch: Long = AirRuntime.actionEpoch) {
+        val method = AirAccessibilityService::class.java.declaredMethods.firstOrNull {
+            it.name.startsWith("dispatchPointerDrag") && it.parameterCount == 3
+        }
+        assertNotNull("The pointer needs a real held-contact dispatch path", method)
+        method!!.apply { isAccessible = true }.invoke(service, epoch, null, null)
+    }
+
+    private fun endPinchDrag(epoch: Long = AirRuntime.actionEpoch) {
+        val method = AirAccessibilityService::class.java.declaredMethods.firstOrNull {
+            it.name.startsWith("releasePointerDrag") && it.parameterCount == 1
+        }
+        assertNotNull("Opening fingers must end the held native stroke", method)
+        method!!.apply { isAccessible = true }.invoke(service, epoch)
+    }
+
+    @Test fun pointerChannelCanHoldMoveAndDropWithMappedGesturesDisabled() {
+        setHoldToDrag(true)
+        AirRuntime.gesturesEnabled = false
+        service.updatePointer(.5f, .5f, true); shadowOf(Looper.getMainLooper()).idle()
+        beginPinchDrag(); shadowOf(Looper.getMainLooper()).idle()
+        val down = shadow.gesturesDispatched.single()
+        assertTrue(down.description().getStroke(0).willContinue())
+        down.callback()!!.onCompleted(down.description())
+        service.updatePointer(.6f, .7f, true, true); shadowOf(Looper.getMainLooper()).idle()
+        val move = shadow.gesturesDispatched.last()
+        assertEquals(2, shadow.gesturesDispatched.size)
+        assertTrue(move.description().getStroke(0).willContinue())
+        val bounds = RectF()
+        move.description().getStroke(0).path.computeBounds(bounds, true)
+        assertTrue(bounds.width() > 0f && bounds.height() > 0f)
+        move.callback()!!.onCompleted(move.description())
+        endPinchDrag(); shadowOf(Looper.getMainLooper()).idle()
+        val up = shadow.gesturesDispatched.last()
+        assertEquals(3, shadow.gesturesDispatched.size)
+        assertFalse(up.description().getStroke(0).willContinue())
+        up.callback()!!.onCompleted(up.description())
+        assertEquals(1L, AirRuntime.state.value.actionDispatchTelemetry.completed)
+        assertFalse(service.nativeTouchInFlight)
+    }
+
+    @Test fun openingBeforeQueuedPickupPreventsLateFingerDown() {
+        setHoldToDrag(true)
+        beginPinchDrag()
+        endPinchDrag()
+        shadowOf(Looper.getMainLooper()).idle()
+        assertTrue(shadow.gesturesDispatched.isEmpty())
+    }
+
+    @Test fun pendingDropCannotBeErasedByLaterPointerAim() {
+        setHoldToDrag(true)
+        beginPinchDrag(); shadowOf(Looper.getMainLooper()).idle()
+        val down = shadow.gesturesDispatched.single()
+        service.updatePointer(.6f, .7f, true, true); shadowOf(Looper.getMainLooper()).idle()
+        endPinchDrag()
+        service.updatePointer(.9f, .9f, true, false); shadowOf(Looper.getMainLooper()).idle()
+        down.callback()!!.onCompleted(down.description())
+        val up = shadow.gesturesDispatched.last()
+        assertFalse(up.description().getStroke(0).willContinue())
+        val bounds = RectF()
+        up.description().getStroke(0).path.computeBounds(bounds, true)
+        val metrics = DisplayMetrics()
+        @Suppress("DEPRECATION")
+        (service.getSystemService(Context.WINDOW_SERVICE) as WindowManager).defaultDisplay.getRealMetrics(metrics)
+        assertEquals(Math.round(.6f * (metrics.widthPixels - 1)).toFloat(), bounds.right, 0f)
+        assertEquals(Math.round(.7f * (metrics.heightPixels - 1)).toFloat(), bounds.bottom, 0f)
+    }
+
+    @Test fun holdToDragRequiresOptInAndCurrentAuthority() {
+        setHoldToDrag(false)
+        beginPinchDrag(); shadowOf(Looper.getMainLooper()).idle()
+        assertTrue(shadow.gesturesDispatched.isEmpty())
+        setHoldToDrag(true)
+        val oldEpoch = AirRuntime.actionEpoch
+        AirRuntime.controlMode = ControlMode.PAUSED
+        AirRuntime.controlMode = ControlMode.ARMED
+        beginPinchDrag(oldEpoch); shadowOf(Looper.getMainLooper()).idle()
+        assertTrue(shadow.gesturesDispatched.isEmpty())
+    }
+
+    @Test fun disablingPinchInputCancelsHeldDragInsteadOfDropping() {
+        setHoldToDrag(true)
+        beginPinchDrag(); shadowOf(Looper.getMainLooper()).idle()
+        val down = shadow.gesturesDispatched.single()
+        AirRuntime.pointerClickingEnabled = false
+        endPinchDrag(); shadowOf(Looper.getMainLooper()).idle()
+        down.callback()!!.onCompleted(down.description())
+        assertEquals(0L, AirRuntime.state.value.actionDispatchTelemetry.completed)
     }
 }

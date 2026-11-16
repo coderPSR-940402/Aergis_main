@@ -1376,4 +1376,36 @@ class CalibrationEngineIntegrationTest {
         ).apply { isAccessible = true }
         method.invoke(engine, result, timestamp, timestamp + delayMs, rotationDegrees)
     }
+
+    @Test fun actualHeldPinchPicksUpMovesAndDropsWithoutExtraTap() {
+        val context = RuntimeEnvironment.getApplication() as Context
+        val prefs = context.getSharedPreferences("aergis_mappings", Context.MODE_PRIVATE)
+        prefs.edit().putBoolean("pointer_dragging_enabled", true).commit()
+        try {
+            withMappedBackService { shadow ->
+                AirRuntime.gesturesEnabled = false
+                val looper = org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper())
+                val open = hand()
+                val closed = open.toMutableList().apply { this[4] = NormalizedLandmark.create(.56f, .65f, 0f) }
+                repeat(4) { publish(open, 1000L + it * 100L); looper.idle() }
+                publish(closed, 1400L); looper.idle()
+                val down = shadow.gesturesDispatched.single()
+                assertTrue("Confirmation must keep the native finger down", down.description().getStroke(0).willContinue())
+                down.callback()!!.onCompleted(down.description())
+                val moved = closed.map { NormalizedLandmark.create(it.x() + .04f, it.y(), it.z()) }
+                publish(moved, 1500L); looper.idle()
+                val move = shadow.gesturesDispatched.last()
+                assertEquals(2, shadow.gesturesDispatched.size)
+                assertTrue(move.description().getStroke(0).willContinue())
+                move.callback()!!.onCompleted(move.description())
+                publish(open.map { NormalizedLandmark.create(it.x() + .04f, it.y(), it.z()) }, 1600L); looper.idle()
+                val up = shadow.gesturesDispatched.last()
+                assertEquals(3, shadow.gesturesDispatched.size)
+                assertFalse("Separation ends the same touch", up.description().getStroke(0).willContinue())
+                up.callback()!!.onCompleted(up.description())
+                assertEquals(1L, AirRuntime.state.value.actionDispatchTelemetry.completed)
+                assertTrue(shadow.globalActionsPerformed.isEmpty())
+            }
+        } finally { prefs.edit().remove("pointer_dragging_enabled").commit() }
+    }
 }
