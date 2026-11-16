@@ -73,4 +73,48 @@ class FrameBufferPoolTest {
         assertEquals(8, buffer(old).capacity()); assertEquals(42, buffer(old).get(0).toInt())
         (old as AutoCloseable).close(); (resized as AutoCloseable).close()
     }
+
+    @Test fun equalContentsAtDifferentResolutionsDoNotAliasActiveBuffers() {
+        verifyDistinctLeasesForEqualBuffers(exhausted = false)
+    }
+
+    @Test fun exhaustedBuffersAtDifferentResolutionsDoNotAliasActiveBuffers() {
+        verifyDistinctLeasesForEqualBuffers(exhausted = true)
+    }
+
+    private fun verifyDistinctLeasesForEqualBuffers(exhausted: Boolean) {
+        val pool = pool()
+        val small = acquire(pool, 8)!!
+        val large = acquire(pool, 16)!!
+        val smallBuffer = buffer(small)
+        val largeBuffer = buffer(large)
+        // ByteBuffer equality compares remaining bytes, not object identity or capacity.
+        if (exhausted) {
+            smallBuffer.position(smallBuffer.limit())
+            largeBuffer.position(largeBuffer.limit())
+        } else {
+            smallBuffer.put(ByteArray(8)).flip()
+            largeBuffer.put(ByteArray(8)).flip()
+        }
+        assertEquals("Reproduce equal buffers with different capacities", smallBuffer, largeBuffer)
+        (small as AutoCloseable).close()
+        (large as AutoCloseable).close()
+
+        val first = acquire(pool, 16)!!
+        val second = acquire(pool, 16)!!
+        val third = acquire(pool, 8)!!
+        try {
+            assertSame("Reuse the matching resolution", largeBuffer, buffer(first))
+            assertNotSame("Active camera pixels must never be leased twice", buffer(first), buffer(second))
+            assertSame("Keep the unmatched resolution available for reuse", smallBuffer, buffer(third))
+            buffer(first).put(0, 42)
+            buffer(second).put(0, 7)
+            assertEquals("Another lease must not overwrite active pixels", 42, buffer(first).get(0).toInt())
+            assertNull("The existing three-lease bound must hold", acquire(pool, 8))
+        } finally {
+            (first as AutoCloseable).close()
+            (second as AutoCloseable).close()
+            (third as AutoCloseable).close()
+        }
+    }
 }
