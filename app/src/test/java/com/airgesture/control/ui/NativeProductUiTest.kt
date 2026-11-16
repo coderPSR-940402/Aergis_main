@@ -166,7 +166,7 @@ class NativeProductUiTest {
         compose.onNodeWithText("REHEARSAL · ACTIONS DISARMED").assertIsDisplayed()
         compose.runOnIdle { AirRuntime.controlMode = ControlMode.ARMED }
         compose.onNodeWithText("Device actions are not disarmed. Disarm before rehearsing.").assertIsDisplayed()
-        compose.onNodeWithText("Disarm control").performClick()
+        compose.onNodeWithText("Disable controls").performClick()
         compose.runOnIdle { assertEquals(ControlMode.READY, AirRuntime.controlMode) }
     }
 
