@@ -4,14 +4,12 @@ import android.content.res.Configuration
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
@@ -41,19 +39,16 @@ internal fun ControlCommandCenter(
     }
     Column(
         Modifier.fillMaxWidth().testTag("control-cockpit").clip(AergisShapes.Stage)
-            .background(Brush.verticalGradient(listOf(
-                Color(0xFF14171F), AergisColors.Deep, Color(0xFF1A1C2C))))
-            .border(1.dp, AergisColors.Silver.copy(alpha = .34f), AergisShapes.Stage)
+            .background(AergisColors.Deep)
+            .border(1.dp, signal.copy(alpha = .5f), AergisShapes.Stage)
             .padding(if (compact) 12.dp else 18.dp),
         verticalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 12.dp)
     ) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween) {
-            ProductEyebrow(stringResource(R.string.ui_brand_subtitle), AergisColors.Silver)
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            ProductEyebrow(stringResource(R.string.product_session_label), AergisColors.Silver)
             AergisStatusChip(stringResource(if (running) R.string.ui_capture_on else R.string.ui_capture_off), signal)
         }
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            ProductEyebrow(stringResource(R.string.product_session_label), signal)
             Text(stringResource(statusLabel),
                 style = if (compact) MaterialTheme.typography.headlineMedium else MaterialTheme.typography.headlineLarge,
                 color = AergisColors.Text, modifier = Modifier.semantics { heading() })
@@ -71,20 +66,18 @@ internal fun ControlCommandCenter(
             if (showStop) CockpitStop(onStop, Modifier.fillMaxWidth())
         }
 
-        // The instrument is ornamental: never push important controls below it.
+        // A compact signature, below the operational controls. Never fake tracking telemetry.
         if (!compact) {
-            Box(Modifier.fillMaxWidth().height(130.dp).testTag("cockpit-art"), contentAlignment = Alignment.Center) {
-                CommandField(Modifier.matchParentSize())
-                Box(
-                    Modifier.size(128.dp).clip(CircleShape)
-                        .background(Brush.radialGradient(listOf(
-                            AergisColors.Stage.copy(alpha = .80f), AergisColors.StageShadow, AergisColors.Deep)))
-                        .border(1.dp, AergisColors.Purple.copy(alpha = .75f), CircleShape),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Box(Modifier.size(111.dp).border(1.dp, AergisColors.Yellow.copy(alpha = .52f), CircleShape))
-                    Box(Modifier.size(90.dp).border(1.dp, AergisColors.StageHint.copy(alpha = .24f), CircleShape))
-                    HandDiagram(RegisteredGesture.OPEN_PALM, Modifier.size(98.dp), AergisColors.Silver, signal)
+            Row(Modifier.fillMaxWidth().height(64.dp).testTag("cockpit-art"),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Box(Modifier.size(60.dp).background(AergisColors.StageShadow, AergisShapes.Control),
+                    contentAlignment = Alignment.Center) {
+                    HandDiagram(RegisteredGesture.OPEN_PALM, Modifier.size(52.dp), AergisColors.Silver, signal)
+                }
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    HorizontalDivider(color = signal.copy(alpha = .6f), thickness = 2.dp)
+                    ProductEyebrow(stringResource(R.string.ui_brand_subtitle), AergisColors.Muted)
                 }
             }
         }
@@ -95,7 +88,7 @@ internal fun ControlCommandCenter(
 private fun CockpitPrimary(label: Int, enabled: Boolean, onClick: () -> Unit, modifier: Modifier) {
     Button(
         onClick = onClick, enabled = enabled, modifier = modifier.heightIn(min = 56.dp),
-        shape = AergisShapes.Control,
+        shape = AergisShapes.Brand,
         colors = ButtonDefaults.buttonColors(
             containerColor = AergisColors.Yellow, contentColor = AergisColors.Deep,
             disabledContainerColor = AergisColors.StageShadow, disabledContentColor = AergisColors.StageHint

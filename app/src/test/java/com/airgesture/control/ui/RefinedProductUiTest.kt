@@ -47,10 +47,10 @@ class RefinedProductUiTest {
         }
         compose.onNodeWithTag("control-cockpit").assertExists()
         compose.onNodeWithTag("control-signal-strip").assertExists()
-        val primaryTop = compose.onNodeWithText("Start capture").fetchSemanticsNode().boundsInRoot.top
+        val primaryTop = compose.onNodeWithText("Start camera").fetchSemanticsNode().boundsInRoot.top
         val artTop = compose.onNodeWithTag("cockpit-art").fetchSemanticsNode().boundsInRoot.top
         org.junit.Assert.assertTrue("Start action must precede artwork", primaryTop < artTop)
-        compose.onNodeWithText("Start capture").performClick()
+        compose.onNodeWithText("Start camera").performClick()
         compose.runOnIdle { assertEquals(1, captures); assertEquals(0, arms) }
         screenshot("stopped-command", verifyNewSurfaces = true)
     }
@@ -95,9 +95,9 @@ class RefinedProductUiTest {
                     "Protected screen", R.string.disarm_control, true, { arms++ }, { captures++ })
             }
         }
-        compose.onNodeWithText("Disarm control").performClick()
+        compose.onNodeWithText("Disable controls").performClick()
         compose.runOnIdle { assertEquals(1, arms); assertEquals(0, captures) }
-        compose.onNodeWithText("Stop capture").performClick()
+        compose.onNodeWithText("Stop camera").performClick()
         compose.runOnIdle { assertEquals(1, captures); assertEquals(1, arms) }
     }
 
@@ -126,11 +126,11 @@ class RefinedProductUiTest {
                 ControlScreen(true, false, true, 5, null, { captures++ }, {}, { commands += it }, {}, {})
             }
         }
-        val disarm = compose.onNodeWithText("Disarm control").assertIsEnabled()
+        val disarm = compose.onNodeWithText("Disable controls").assertIsEnabled()
         disarm.performClick()
         disarm.performClick()
         compose.runOnIdle { assertEquals(listOf(false, false), commands); assertEquals(0, captures) }
-        compose.onNodeWithText("Start capture").assertDoesNotExist()
+        compose.onNodeWithText("Start camera").assertDoesNotExist()
     }
 
     @Test fun largeTextNarrowLayoutKeepsPrimaryAndInputDestinationsReachable() {
@@ -146,7 +146,7 @@ class RefinedProductUiTest {
                 }
             }
         }
-        compose.onNodeWithText("Arm control").performScrollTo().assertIsNotEnabled()
+        compose.onNodeWithText("Enable controls").performScrollTo().assertIsNotEnabled()
         compose.onNodeWithText("Direct motion").performScrollTo().performClick()
         compose.runOnIdle { assertEquals(AergisDestination.MOTION, route) }
         screenshot("large-text-inputs")
@@ -165,8 +165,8 @@ class RefinedProductUiTest {
             }
         }
         compose.onNodeWithTag("cockpit-art").assertDoesNotExist()
-        compose.onNodeWithText("Arm control").assertIsDisplayed().performClick()
-        compose.onNodeWithText("Stop capture").assertIsDisplayed().performClick()
+        compose.onNodeWithText("Enable controls").assertIsDisplayed().performClick()
+        compose.onNodeWithText("Stop camera").assertIsDisplayed().performClick()
         compose.runOnIdle { assertEquals(1, armed); assertEquals(1, stopped) }
     }
 
@@ -229,7 +229,7 @@ private fun captureProductScreen(view: android.view.View, name: String, verifyNe
         view.draw(android.graphics.Canvas(bitmap))
         if (verifyNewSurfaces) {
             // Preserve the distinctive dark Aergis background in the rendered product.
-            val canvasColor = android.graphics.Color.rgb(11, 13, 20)
+            val canvasColor = android.graphics.Color.rgb(11, 14, 12)
             assertEquals(canvasColor, bitmap.getPixel(4, bitmap.height / 2))
             // Color guard, not a substitute for the semantic layout and click tests.
             val deck = bitmap.getPixel(25, 100)

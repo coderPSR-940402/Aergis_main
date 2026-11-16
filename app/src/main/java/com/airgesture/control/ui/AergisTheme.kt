@@ -15,21 +15,22 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 internal object AergisColors {
-    val Background = Color(0xFF0B0D14)
-    val Surface = Color(0xFF171B26)
-    val Raised = Color(0xFF252B3A)
-    val Deep = Color(0xFF10121C)
-    val Outline = Color(0xFF383D4E)
-    val Text = Color(0xFFF1F2F8)
-    val Muted = Color(0xFFAFB5C7)
-    val Silver = Color(0xFFD9DEE9)
-    val Purple = Color(0xFFC0A8FF)
-    val Stage = Color(0xFF45277B)
-    val StageShadow = Color(0xFF211637)
-    val OnStage = Color(0xFFFFFCFF)
-    val StageHint = Color(0xFFE7DAFF)
-    val Yellow = Color(0xFFF6DF70)
-    val Cyan = Color(0xFF9ED7EC)
+    val Background = Color(0xFF0B0E0C)
+    val Surface = Color(0xFF151A16)
+    val Raised = Color(0xFF232B24)
+    val Deep = Color(0xFF101510)
+    val Outline = Color(0xFF39443A)
+    val Text = Color(0xFFF2F5ED)
+    val Muted = Color(0xFFB3BDB0)
+    val Silver = Color(0xFFDBE3D5)
+    // Legacy token names retained so every existing screen inherits the Vector palette.
+    val Purple = Color(0xFFCDFA76)
+    val Stage = Color(0xFF26391A)
+    val StageShadow = Color(0xFF192313)
+    val OnStage = Color(0xFFF7FFE9)
+    val StageHint = Color(0xFFDDE8D2)
+    val Yellow = Color(0xFFCDFA76)
+    val Cyan = Color(0xFFA7D8CD)
     val Success = Color(0xFF80E9BD)
     val Caution = Color(0xFFFFD48A)
     val Error = Color(0xFFFF9CAA)
@@ -45,10 +46,10 @@ internal object AergisSpace {
 }
 
 internal object AergisShapes {
-    val Card = RoundedCornerShape(18.dp)
-    val Stage = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp, bottomEnd = 28.dp, bottomStart = 8.dp)
-    val Control = RoundedCornerShape(12.dp)
-    val Chip = RoundedCornerShape(50)
+    val Card = RoundedCornerShape(12.dp)
+    val Stage = CutCornerShape(topEnd = 28.dp, bottomStart = 12.dp)
+    val Control = RoundedCornerShape(8.dp)
+    val Chip = RoundedCornerShape(6.dp)
     val Segment = RoundedCornerShape(12.dp)
     /** Aergis brand detail: used sparingly, for the primary command and brand marks only. */
     val Brand = CutCornerShape(topEnd = 16.dp, bottomStart = 16.dp)
@@ -64,7 +65,7 @@ internal object AergisType {
 }
 
 private val colors = darkColorScheme(
-    primary = AergisColors.Purple, onPrimary = AergisColors.Deep,
+    primary = AergisColors.Yellow, onPrimary = AergisColors.Deep,
     primaryContainer = AergisColors.Raised, onPrimaryContainer = AergisColors.Text,
     secondary = AergisColors.Purple, onSecondary = AergisColors.Deep,
     secondaryContainer = AergisColors.Raised, onSecondaryContainer = AergisColors.Text,

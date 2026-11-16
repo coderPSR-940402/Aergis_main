@@ -3,7 +3,6 @@ package com.airgesture.control.ui
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
@@ -77,11 +76,11 @@ internal fun AergisShell(
         Box(Modifier.fillMaxSize().padding(insets), contentAlignment = Alignment.TopCenter) {
             Column(Modifier.widthIn(max = 760.dp).fillMaxSize()) {
                 Row(
-                    Modifier.fillMaxWidth().background(Brush.horizontalGradient(listOf(AergisColors.Deep, AergisColors.StageShadow, AergisColors.Deep)))
-                        .padding(horizontal = 18.dp, vertical = 12.dp).heightIn(min = 60.dp),
+                    Modifier.fillMaxWidth().background(AergisColors.Background)
+                        .padding(horizontal = 18.dp, vertical = 8.dp).heightIn(min = 48.dp),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Box(Modifier.size(42.dp).background(AergisColors.Yellow, AergisShapes.Control),
+                    Box(Modifier.size(36.dp).background(AergisColors.Yellow, AergisShapes.Brand),
                         contentAlignment = Alignment.Center) {
                         AergisMark(Modifier.size(25.dp), AergisColors.Deep)
                     }
@@ -129,7 +128,7 @@ private fun NavigationDock(activeRoot: String?, navigate: (AergisDestination) ->
             val selected = activeRoot == destination.name
             val ink = if (selected) AergisColors.Deep else AergisColors.Silver
             Column(
-                Modifier.weight(1f).heightIn(min = 62.dp).clip(AergisShapes.Control)
+                Modifier.weight(1f).heightIn(min = 56.dp).clip(AergisShapes.Control)
                     .background(if (selected) AergisColors.Yellow else AergisColors.Surface)
                     .testTag("nav-" + destination.name)
                     .selectable(selected, role = Role.Tab, onClick = { navigate(destination) })
