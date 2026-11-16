@@ -214,41 +214,68 @@ class GestureCaptureService : Service(), LifecycleOwner {
 
     override fun onDestroy() {
         stopping = true
-        val engine = visionEngine
-        engine?.stop()
-        frameProcessor?.close()
-        frameProcessor = null
-        visionEngine = null
-        getSystemService(DisplayManager::class.java).unregisterDisplayListener(displayListener)
-        TestingTools.stop("Camera session stopped")
-        TestingTools.setMirror(false)
-        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_PAUSE)
-        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_STOP)
-        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
-        analysis?.let { useCase -> useCase.clearAnalyzer(); cameraProvider?.unbind(useCase) }
-        analysis = null
-        cameraProvider = null
-        analysisCameraInfo = null
-        // A capture already copying can finish; the closed processor recycles its late frame.
-        captureExecutor?.shutdown()
-        captureExecutor = null
-        // GPU creation, inference and native disposal all belong to the same executor.
-        // stop() already prevents an old frame from publishing into a restarted session.
-        executor?.let { exec ->
-            exec.execute { runCatching { engine?.close() } }
-            exec.shutdown()
+        try {
+            // Revoke output before any platform/native cleanup can fail or block.
+            AirRuntime.controlMode = ControlMode.OFF
+            AirRuntime.running = false
+            AirRuntime.cameraReady = false
+            AirRuntime.visionReady = false
+            AirRuntime.handsDetected = 0
+            AirRuntime.lastGesture = "None"
+            AirRuntime.setPointerState(AirRuntime.pointerX, AirRuntime.pointerY, tracking = false)
+            AirRuntime.gesturesEnabled = false
+
+            val engine = visionEngine
+            visionEngine = null
+            cleanupCapture("stop recognition") { engine?.stop() }
+            val processor = frameProcessor
+            frameProcessor = null
+            cleanupCapture("release pending frames") { processor?.close() }
+            cleanupCapture("display listener") {
+                getSystemService(DisplayManager::class.java).unregisterDisplayListener(displayListener)
+            }
+            cleanupCapture("recording") { TestingTools.stop("Camera session stopped") }
+            cleanupCapture("tracking mirror") { TestingTools.setMirror(false) }
+            cleanupCapture("pause lifecycle") { lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_PAUSE) }
+            cleanupCapture("stop lifecycle") { lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_STOP) }
+            cleanupCapture("destroy lifecycle") { lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY) }
+
+            val useCase = analysis
+            val provider = cameraProvider
+            analysis = null
+            cameraProvider = null
+            analysisCameraInfo = null
+            cleanupCapture("clear analyzer") { useCase?.clearAnalyzer() }
+            cleanupCapture("unbind camera") { useCase?.let { provider?.unbind(it) } }
+
+            // A capture already copying can finish; the closed processor releases its late frame.
+            val captureExec = captureExecutor
+            captureExecutor = null
+            cleanupCapture("capture worker shutdown") { captureExec?.shutdown() }
+
+            // Native creation, inference and disposal remain on the original worker.
+            // Never fall back to disposing a GPU model on the service/main thread.
+            val exec = executor
+            executor = null
+            if (exec != null) {
+                cleanupCapture("schedule native disposal") {
+                    exec.execute { cleanupCapture("native disposal") { engine?.close() } }
+                }
+                // A rejected disposal task must not skip shutdown or the remaining cleanup.
+                cleanupCapture("inference worker shutdown") { exec.shutdown() }
+            }
+            cleanupCapture("pointer overlay") { AirAccessibilityService.instance?.updatePointer(0f, 0f, false) }
+            cleanupCapture("diagnostics") { AergisDevLoop.stop() }
+        } finally {
+            super.onDestroy()
         }
-        executor = null
-        AirRuntime.cameraReady = false
-        AirRuntime.running = false
-        AirRuntime.controlMode = ControlMode.OFF
-        AirRuntime.handsDetected = 0
-        AirRuntime.lastGesture = "None"
-        AirRuntime.setPointerState(AirRuntime.pointerX, AirRuntime.pointerY, tracking = false)
-        AirRuntime.gesturesEnabled = false
-        AirAccessibilityService.instance?.updatePointer(0f, 0f, false)
-        AergisDevLoop.stop()
-        super.onDestroy()
+    }
+
+    private fun cleanupCapture(step: String, cleanup: () -> Unit) {
+        try { cleanup() }
+        catch (failure: Exception) {
+            Log.w("GestureCaptureService", "Capture cleanup failed: $step", failure)
+        }
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
