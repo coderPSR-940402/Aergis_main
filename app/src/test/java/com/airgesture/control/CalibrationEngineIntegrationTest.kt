@@ -1378,6 +1378,7 @@ class CalibrationEngineIntegrationTest {
     }
 
     @Test fun actualHeldPinchPicksUpMovesAndDropsWithoutExtraTap() {
+        AirRuntime.resetActionDispatchTelemetry()
         val context = RuntimeEnvironment.getApplication() as Context
         val prefs = context.getSharedPreferences("aergis_mappings", Context.MODE_PRIVATE)
         prefs.edit().putBoolean("pointer_dragging_enabled", true).commit()
