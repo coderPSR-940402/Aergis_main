@@ -652,7 +652,10 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             else AirRuntime.rawPointerSnapshot().let { AirRuntime.setRawPointerState(it.x, it.y, false) }
             val stabilized = if (dragging && pointerTouchTracking && trusted) {
                 AirRuntime.pointerInteraction = PointerInteractionPhase.DRAGGING
-                pinchInProgress = true
+                // A drag no longer uses the pickup anchor. Clearing it prevents
+                // the next open-hand frame from snapping back to the pickup point.
+                pinchPointer.reset()
+                pinchInProgress = pinchInProgress || service?.pinchDragActive == true || pinchDragRequested
                 candidate
             } else if (touchAllowed && processed.poseEvidence.accepted && targetTrusted) {
                 val interaction = pinchPointer.update(if (anchorProtected) refitAnchor!! else candidate,

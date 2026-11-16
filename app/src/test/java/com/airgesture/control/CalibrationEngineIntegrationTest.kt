@@ -1403,9 +1403,31 @@ class CalibrationEngineIntegrationTest {
                 assertEquals(3, shadow.gesturesDispatched.size)
                 assertFalse("Separation ends the same touch", up.description().getStroke(0).willContinue())
                 up.callback()!!.onCompleted(up.description())
+                val droppedX = AirRuntime.pointerX
+                publish(open.map { NormalizedLandmark.create(it.x() + .04f, it.y(), it.z()) }, 1700L); looper.idle()
+                assertTrue("Aiming after drop must not snap back to the pickup anchor",
+                    kotlin.math.abs(AirRuntime.pointerX - droppedX) < .01f)
                 assertEquals(1L, AirRuntime.state.value.actionDispatchTelemetry.completed)
                 assertTrue(shadow.globalActionsPerformed.isEmpty())
             }
         } finally { prefs.edit().remove("pointer_dragging_enabled").commit() }
+    }
+
+    @Test fun mappedGestureCanStillReleaseMappedDrag() {
+        withMappedBackService { shadow ->
+            val context = RuntimeEnvironment.getApplication() as Context
+            ActionMappingStore(context).setMapping(RegisteredGesture.VICTORY, AirAction.POINTER_DRAG)
+            val looper = org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper())
+            repeat(4) { publish(hand(), 1000L + it * 100L); looper.idle() }
+            val service = AirAccessibilityService.instance!!
+            service.dispatch(AirAction.POINTER_DRAG); looper.idle()
+            val down = shadow.gesturesDispatched.single()
+            assertTrue(service.precisionDragActive)
+            down.callback()!!.onCompleted(down.description())
+            confirmGesture(1400L); looper.idle()
+            assertFalse("Mapped drag must not suppress its own release gesture", service.precisionDragActive)
+            assertEquals(2, shadow.gesturesDispatched.size)
+            assertFalse(shadow.gesturesDispatched.last().description().getStroke(0).willContinue())
+        }
     }
 }
