@@ -14,8 +14,10 @@ internal class FrameBufferPool(private val direct: Boolean = true) {
         if (leased == 3) return null
         // Match the requested resolution rather than discarding a different-sized
         // buffer. Camera rebinds can alternate resolutions; retain both for reuse.
-        val reusable = free.firstOrNull { it.capacity() == size }
-        if (reusable != null) free.remove(reusable)
+        val reusableIndex = free.indexOfFirst { it.capacity() == size }
+        // ByteBuffer.equals compares remaining bytes. Remove this exact entry so
+        // an equal buffer at another resolution cannot leave active pixels cached.
+        val reusable = if (reusableIndex >= 0) free.removeAt(reusableIndex) else null
         val buffer = reusable
             ?: if (direct) ByteBuffer.allocateDirect(size) else ByteBuffer.allocate(size)
         buffer.clear()
