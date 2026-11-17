@@ -1431,4 +1431,91 @@ class CalibrationEngineIntegrationTest {
             assertFalse(shadow.gesturesDispatched.last().description().getStroke(0).willContinue())
         }
     }
+
+    /** A small textured fingertip moves against a fixed background; the palm can vanish. */
+    private fun publishTipImage(points: List<NormalizedLandmark>, timestamp: Long, dx: Int,
+        rawLabel: String = "Left", flat: Boolean = false, ageMs: Long = 0L) {
+        val w = 120
+        val h = 120
+        val texture = java.util.Random(317L).let { r -> IntArray(21 * 21) { r.nextInt(256) } }
+        val buffer = java.nio.ByteBuffer.allocate(w * h * 4)
+        for (y in 0 until h) for (x in 0 until w) {
+            val tx = x - (60 + dx) + 10
+            val ty = y - 78 + 10
+            val value = if (!flat && tx in 0..20 && ty in 0..20) texture[ty * 21 + tx] else 80
+            buffer.put(value.toByte()); buffer.put(value.toByte()); buffer.put(value.toByte()); buffer.put(255.toByte())
+        }
+        buffer.rewind()
+        val pixels = RgbaFrameData(buffer, w, h, w * 4, 4, 0, timestamp * 1_000_000L, "")
+        val field = GestureRecognitionEngine::class.java.getDeclaredField("currentPixels").apply { isAccessible = true }
+        field.set(engine, pixels)
+        try { publish(points, timestamp, rawHandedness = rawLabel, measuredAgeMs = ageMs) }
+        finally { field.set(engine, null) }
+    }
+
+    @Test fun partialInvalidTipHandsOffToImageTrackingBeforeModelDisappears() {
+        withMappedBackService { shadow ->
+            repeat(4) { publishTipImage(hand(), 1000L + it * 100L, 0) }
+            val broken = hand().toMutableList().apply { this[8] = NormalizedLandmark.create(Float.NaN, .65f, 0f) }
+            publishTipImage(broken, 1400L, 3)
+            assertEquals("A partial failed result must not erase the acquired fingertip", .525f,
+                AirRuntime.rawPointerSnapshot().x, .001f)
+            // Continue well beyond ownership/visibility grace without model landmarks.
+            repeat(30) { i ->
+                val dx = 3 + i % 12
+                publishTipImage(emptyList(), 1500L + i * 100L, dx)
+                assertEquals("Actual fingertip image motion must survive sustained model dropout",
+                    (60 + dx) / 120f, AirRuntime.rawPointerSnapshot().x, .001f)
+                assertEquals(PointerFeedback.COASTING, AirRuntime.pointerFeedback)
+                assertFalse("Image tracking must not invent hand/contact evidence", AirRuntime.pointerTracking)
+            }
+            assertTrue(shadow.gesturesDispatched.isEmpty())
+            assertTrue(shadow.globalActionsPerformed.isEmpty())
+        }
+    }
+
+    @Test fun establishedRightTipKeepsImageIdentityWhenOnlyTipAndUnknownHandLabelRemain() {
+        withMappedBackService { shadow ->
+            AirRuntime.handPreference = ControlHandPreference.RIGHT
+            repeat(4) { publishTipImage(hand(), 1000L + it * 100L, 0) }
+            val onlyTip = MutableList(21) { NormalizedLandmark.create(Float.NaN, Float.NaN, 0f) }
+                .apply { this[8] = NormalizedLandmark.create(.15f, .15f, 0f) }
+            repeat(12) { i ->
+                publishTipImage(onlyTip, 1400L + i * 100L, i + 1, rawLabel = "Unknown")
+                assertEquals("Use the established visible tip, not a refitted partial-hand guess",
+                    (61 + i) / 120f, AirRuntime.rawPointerSnapshot().x, .001f)
+            }
+            assertTrue(shadow.gesturesDispatched.isEmpty())
+            assertTrue(shadow.globalActionsPerformed.isEmpty())
+        }
+    }
+
+    @Test fun imageOnlyTipCannotSurviveOcclusionOrBorrowStaleFrameAuthority() {
+        repeat(4) { publishTipImage(hand(), 1000L + it * 100L, 0) }
+        publishTipImage(emptyList(), 1400L, 3)
+        val before = AirRuntime.pointerSnapshot()
+        publishTipImage(emptyList(), 1500L, 6, flat = true)
+        assertEquals(before.x, AirRuntime.pointerX, .0001f)
+        assertEquals(before.y, AirRuntime.pointerY, .0001f)
+        publishTipImage(emptyList(), 1600L, 9)
+        assertEquals("A lost image track needs model reacquisition", before.x, AirRuntime.pointerX, .0001f)
+        publishTipImage(hand(), 1700L, 0)
+        val reseeded = AirRuntime.pointerSnapshot()
+        publishTipImage(emptyList(), 1800L, 8, ageMs = 601L)
+        assertEquals("A stale exposure cannot move even an otherwise recognizable fingertip",
+            reseeded.x, AirRuntime.pointerX, .0001f)
+        AirRuntime.controlMode = ControlMode.PAUSED
+        publishTipImage(emptyList(), 1900L, 10)
+        assertFalse(AirRuntime.pointerTracking)
+    }
+
+    @Test fun modelTipPositionRemainsIndependentOfAllOtherLandmarks() {
+        publish(hand(), 1000L)
+        val onlyTip = MutableList(21) { NormalizedLandmark.create(Float.NaN, Float.NaN, 0f) }
+            .apply { this[8] = NormalizedLandmark.create(.58f, .65f, 0f) }
+        publish(onlyTip, 1100L)
+        assertTrue("A valid landmark 8 can move the pointer without palm/wrist/finger joints", AirRuntime.pointerTracking)
+        assertEquals(.58f, AirRuntime.rawPointerSnapshot().x, .0001f)
+        assertEquals(PointerInteractionPhase.IDLE, AirRuntime.pointerInteraction)
+    }
 }

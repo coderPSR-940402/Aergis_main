@@ -119,4 +119,37 @@ class FingertipPatchTrackerTest {
         t.seed(120,120,50,50) { _,_ -> 100f }
         assertNull(t.track(120,120,::texture))
     }
+
+    @Test fun largerCameraFramesPermitOrdinaryFingertipTravelBetweenSlowResults() {
+        val w = 640; val h = 480
+        val pixels = java.util.Random(317L).let { r -> FloatArray(w * h) { r.nextInt(256).toFloat() } }
+        fun sample(x: Int, y: Int) = pixels[y.coerceIn(0, h - 1) * w + x.coerceIn(0, w - 1)]
+        val tracker = FingertipPatchTracker()
+        tracker.seed(w, h, 100, 200, ::sample)
+        val point = tracker.track(w, h) { x, y -> sample(x - 40, y - 30) }
+        assertNotNull("Search distance must scale with the camera image, not stop at 24 pixels", point)
+        assertEquals(140f / w, point!!.x, .0001f)
+        assertEquals(230f / h, point.y, .0001f)
+    }
+
+    @Test fun isolatedFingertipKeepsMovingWhenTheRestOfTheHandDisappears() {
+        val texture = java.util.Random(317L).let { r -> FloatArray(21 * 21) { r.nextInt(256).toFloat() } }
+        fun scene(x: Int, y: Int, dx: Int, palmVisible: Boolean): Float {
+            val px = x - 60 - dx + 10; val py = y - 40 + 10
+            return when {
+                px in 0..20 && py in 0..20 -> texture[py * 21 + px]
+                palmVisible && x in 40..80 && y in 60..110 -> 160f
+                else -> 80f
+            }
+        }
+        val tracker = FingertipPatchTracker()
+        tracker.seed(120, 120, 60, 40) { x, y -> scene(x, y, 0, true) }
+        repeat(60) { i ->
+            val dx = 1 + i % 12
+            val point = tracker.track(120, 120) { x, y -> scene(x, y, dx, false) }
+            assertNotNull("A missing palm must not stop the established fingertip image track", point)
+            assertEquals((60 + dx) / 120f, point!!.x, .0001f)
+            assertEquals(40f / 120f, point.y, .0001f)
+        }
+    }
 }
