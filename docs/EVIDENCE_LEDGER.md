@@ -1,5 +1,29 @@
 # Aergis Evidence Ledger and Decision Log
 
+## 2026-11-17 — noisy fine-aim responsiveness repair
+
+Resolved main / CI build reference: `dfc053303497755e4dd38add447f79fe7e5c77ca`.
+Continuation base: PR #109 head `7a3202c4a5d89b82f27c01692b4a3e17f153b486`.
+The owner reports poor Classic smoothing and renewed pointer smoothness/accuracy
+regression. Exact installed APK identity is not confirmed by that report.
+
+A production-filter JVM regression reproduces slow fine aiming when per-frame
+noise defeats the existing 85%-directional path test. At 30/60 FPS and 0.03 screen
+units/s with 0.002-amplitude noise, baseline target-error RMS is 0.01294/0.01318
+screen units. A bounded time-based slope significance check reduces these synthetic
+errors to 0.00111/0.00118, while retaining independent-axis stationary smoothing,
+causal bounded output, timestamp rejection and the original jump guard.
+Rejected samples never train the trend. Existing opt-in drag behavior is preserved.
+
+Test-first local evidence: 9 focused Kotlin/JUnit tests ran against the exact
+baseline filter; 2 regressions failed (noisy fine aim and uneven-cadence reversal).
+Both pass after the repair, alongside the original cadence tests. The local
+harness substitutes only Point/BuildConfig value declarations to run the real
+filter without Android; full app tests, lint and APK checks remain CI requirements.
+These are synthetic measurements, not camera/display latency or device acceptance.
+No functional-baseline promotion is claimed.
+
+
 
 ## 2026-11-15 — pointer TAP contact attribution repair
 
