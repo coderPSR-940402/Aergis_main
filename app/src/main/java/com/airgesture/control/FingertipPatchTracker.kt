@@ -12,10 +12,11 @@ internal class FingertipPatchTracker {
     private var height = 0
     private var tipOffsetX = 0
     private var tipOffsetY = 0
-    private val scores = FloatArray(49*49)
-    private val xs = IntArray(49*49)
-    private val ys = IntArray(49*49)
-    private val searchPixels = FloatArray(65*65)
+    val hasReference: Boolean get() = template != null
+    private val scores = FloatArray((2 * MAX_SEARCH_RADIUS + 1) * (2 * MAX_SEARCH_RADIUS + 1))
+    private val xs = IntArray(scores.size)
+    private val ys = IntArray(scores.size)
+    private val searchPixels = FloatArray((2 * MAX_SEARCH_RADIUS + 17) * (2 * MAX_SEARCH_RADIUS + 17))
 
     /** Seed from model image coordinates before any rotation or screen mapping. */
     fun seedNormalized(w: Int, h: Int, nx: Float, ny: Float, luminance: (Int, Int) -> Float) {
@@ -45,8 +46,11 @@ internal class FingertipPatchTracker {
         var best = -1f; var bx = x; var by = y
         var count = 0
         val referenceEnergy = energy(reference)
-        val minX = maxOf(8,x-24); val maxX = minOf(w-9,x+24)
-        val minY = maxOf(8,y-24); val maxY = minOf(h-9,y+24)
+        // Keep the small-image contract while permitting normal fingertip travel
+        // between slower inference results on the actual camera stream.
+        val radius = maxOf(24, minOf(MAX_SEARCH_RADIUS, w / 10, h / 10))
+        val minX = maxOf(8,x-radius); val maxX = minOf(w-9,x+radius)
+        val minY = maxOf(8,y-radius); val maxY = minOf(h-9,y+radius)
         val tileWidth = maxX-minX+17
         var pixel = 0
         // Overlapping candidate patches share pixels. Read RGBA/luminance once per
@@ -84,4 +88,6 @@ internal class FingertipPatchTracker {
     }
     private fun energy(p: FloatArray): Float = p.sumOf { (it*it).toDouble() }.toFloat()
     fun reset() { template=null }
+
+    private companion object { const val MAX_SEARCH_RADIUS = 64 }
 }

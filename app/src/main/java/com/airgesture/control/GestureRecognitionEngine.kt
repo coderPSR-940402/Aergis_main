@@ -524,7 +524,8 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         val filterMode = TestingTools.state.value.filterMode
         val selectedHandedness = pointerHandIndex?.let { handednessList.getOrNull(it) } ?: "Unknown"
         val ownerChanged = (commandOwnerId != null && lastPointerOwnerId != null && commandOwnerId != lastPointerOwnerId) ||
-            (commandOwnerId == null && selectedHand != null && lastPointerHandedness != null && selectedHandedness != lastPointerHandedness)
+            (commandOwnerId == null && selectedHand != null && lastPointerHandedness != null &&
+                selectedHandedness != lastPointerHandedness && !fingertipPatch.hasReference)
         val filterChanged = filterMode != lastFilterMode
         if (ownerChanged || filterChanged) {
             fingertipPatch.reset()
@@ -582,6 +583,23 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 if (selectedHand != null) poseEvidenceEvaluator.evaluatePointer(reusablePointsList,
                     frameAspectRatio, requireIndexTip = refitAnchor == null) else null)
         diagnosticTrace?.put("pointerTouchAllowed", pointerTouchTracking && AirRuntime.pointerClickingEnabled)
+        // A previously acquired fingertip has its own image identity. A missing
+        // palm, wrist, contact joint or handedness label cannot veto cursor motion.
+        // Keep the original protected-pinch path when its required joints remain valid.
+        val partialHand = handSelection == null || selectedHand == null ||
+            !poseEvidenceEvaluator.evaluatePointer(reusablePointsList, frameAspectRatio,
+                requireIndexTip = refitAnchor == null).accepted
+        if (pointerActive && landmarks.size <= 1 && partialHand &&
+            !mappingChanged && !ownerChanged && !filterChanged) {
+            val imageTip = trackVisibleFingertip()
+            if (imageTip != null) {
+                handlePointerGap(observedAtMs, pointerActive, true, "PARTIAL_HAND",
+                    PointerFeedback.COASTING, trackedFingertip = imageTip, sampledAtMs = timestamp)
+                AirRuntime.visionError = null
+                AirRuntime.visionReady = true
+                return
+            }
+        }
         val motionWasActive = directMotion.active
         val motionCenter = reusablePointsList.getOrNull(0)?.let { Point3D(1f - it.x, it.y, it.z) }
         val motionScale = if (reusablePointsList.size > 17)
@@ -605,7 +623,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 allowIndexRefit = touchAllowed && refitAnchor != null) ?: run {
                 handlePointerGap(observedAtMs, pointerActive, landmarks.size <= 1,
                     "NON_FINITE_OR_MISSING_TIP", PointerFeedback.INVALID_TIP,
-                    palmFallback = palmMotionOnly())
+                    palmFallback = palmMotionOnly(), sampledAtMs = timestamp)
                 return
             }
             AirRuntime.recordPoseEvidence(processed.poseEvidence)
@@ -644,8 +662,9 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             })
             if (AirRuntime.actionEpoch != pointerEpoch) { resetTrackingState(); return }
             if (!tipUsable && !anchorProtected) {
-                handlePointerGap(observedAtMs, pointerActive, false, "INVALID_TIP", PointerFeedback.INVALID_TIP,
-                    palmFallback = palmMotionOnly())
+                val imageTip = if (landmarks.size <= 1) trackVisibleFingertip() else null
+                handlePointerGap(observedAtMs, pointerActive, imageTip != null, "INVALID_TIP", PointerFeedback.INVALID_TIP,
+                    palmFallback = palmMotionOnly(), trackedFingertip = imageTip, sampledAtMs = timestamp)
                 return
             }
             if (tipUsable) AirRuntime.setRawPointerState(rawTip.x, rawTip.y, trusted)
@@ -850,7 +869,8 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                     !pointerActive -> PointerFeedback.DISABLED
                     landmarks.size > 1 -> PointerFeedback.AMBIGUOUS
                     else -> PointerFeedback.NO_HAND
-                }, palmFallback = if (reason == "MISSING_TIP") palmMotionOnly() else null)
+                }, palmFallback = if (reason == "MISSING_TIP") palmMotionOnly() else null,
+                sampledAtMs = timestamp)
         }
 
         val registeredGesture = RegisteredGesture.fromSignal(gestureName)
@@ -943,13 +963,20 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
     }
 
     /** Retention changes cursor visibility only. Missing evidence immediately cancels all actions. */
+    private fun trackVisibleFingertip(): FingertipPatchTracker.Point? {
+        val pixels = currentPixels ?: return null
+        if (patchEpoch != AirRuntime.actionEpoch) return null
+        return fingertipPatch.track(pixels.width, pixels.height) { x, y -> luminance(pixels, x, y) }
+    }
+
     private fun handlePointerGap(now: Long, pointerActive: Boolean, coastAllowed: Boolean,
-        reason: String, feedback: PointerFeedback, palmFallback: Point3D? = null) {
+        reason: String, feedback: PointerFeedback, palmFallback: Point3D? = null,
+        trackedFingertip: FingertipPatchTracker.Point? = null, sampledAtMs: Long? = null) {
         AirRuntime.setCalibrationGesture(null)
         val pixels = currentPixels
-        val fallback = if (reason == "RAW_LANDMARK_DROPOUT" && pointerActive && coastAllowed &&
+        val fallback = if (reason in IMAGE_TRACKING_GAPS && pointerActive && coastAllowed &&
             pixels != null && patchEpoch == AirRuntime.actionEpoch)
-            fingertipPatch.track(pixels.width, pixels.height) { x, y -> luminance(pixels, x, y) } else null
+            trackedFingertip ?: trackVisibleFingertip() else null
         if (fallback == null) fingertipPatch.reset()
         val palmMotion = palmFallback.takeIf { fallback == null && pointerActive && coastAllowed }
         resetPointerTouch()
@@ -961,13 +988,22 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             staticConfirmation.reset()
         if (fallback != null && pixels != null) {
             val upright = CameraCoordinateTransform.toUpright(fallback.x, fallback.y, 0f, pixels.rotationDegrees)
-            val mapped = pointerMapper.map(upright.x, upright.y, pointerMapper.snapshot())
+            val profile = pointerMapper.snapshot()
+            val mappedTip = pointerMapper.map(upright.x, upright.y, profile)
+            val sampleTime = sampledAtMs ?: lastSubmittedTimestampMs
+            val filtered = interpreter.filterPointerPosition(upright.x, upright.y, sampleTime)
+            val current = filtered?.let { pointerMapper.map(it.x, it.y, profile) } ?: mappedTip
+            val comparison = lineageComparison.update(mappedTip, current, sampleTime)
+            val mapped = comparison.selected(TestingTools.state.value.filterMode)
             AirRuntime.setRawPointerState(upright.x, upright.y, false)
             reacquireFrom = mapped
+            pointerVisibility.record(mapped, now)
             AirRuntime.setPointerState(mapped.x, mapped.y, false)
             AirRuntime.pointerFeedback = PointerFeedback.COASTING
             AirAccessibilityService.instance?.updatePointer(mapped.x, mapped.y, true, false)
+            PipelineMetrics.shared.recordCursorUpdate(SystemClock.uptimeMillis())
             diagnosticTrace?.put("pointerRejection", "PATCH_MOTION_ONLY")?.put("cursorVisible", true)
+                ?.put("fingertipSource", "IMAGE")?.put("coasting", false)
             AirRuntime.clearPoseEvidence()
             return
         }
@@ -1086,6 +1122,8 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         /** Real camera-frame age / spacing beyond which a result is too old to move the cursor. */
         private const val POINTER_MAX_AGE_MS = FrameAdmissionPolicy.POINTER_MAX_AGE_MS
         private const val POINTER_MAX_GAP_MS = 500L
+        private val IMAGE_TRACKING_GAPS = setOf("RAW_LANDMARK_DROPOUT", "MISSING_TIP",
+            "NON_FINITE_OR_MISSING_TIP", "INVALID_TIP", "HAND_SELECTION_REJECTED", "PARTIAL_HAND")
         private const val INDEX_MCP = KinematicValidator.INDEX_MCP
         private const val INDEX_TIP = KinematicValidator.INDEX_TIP
         private const val PINKY_MCP = KinematicValidator.PINKY_MCP

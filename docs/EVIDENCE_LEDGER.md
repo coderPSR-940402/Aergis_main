@@ -1,5 +1,31 @@
 # Aergis Evidence Ledger and Decision Log
 
+## 2026-11-17 — fingertip-only image tracking continuation
+
+Resolved CI build reference: `dfc053303497755e4dd38add447f79fe7e5c77ca`.
+Continuation base: PR #109 head `86af718e31bc623f566a1696c056f6dbb20c84e2`
+(CI 479 passed). The owner requests acquisition from a recognized hand followed
+by independent index-tip cursor tracking when every other joint leaves view.
+
+The existing appearance tracker was entered only for empty model results;
+partial/invalid results could erase its template before empty results arrived.
+Partial geometry and uncertain handedness now allow an already-established,
+confident image match to drive cursor position independently. Valid protected
+pinch anchors keep their existing path. Image observations share the position
+filters but never become hand/contact/classifier/calibration evidence.
+Missing/ambiguous texture, stale exposure, context changes and disarming still
+revoke tracking. The immutable template has no arbitrary age expiry. Its bounded
+search now scales with camera dimensions, preserving exact pixel matching.
+
+Test-first evidence: pure Kotlin tracker suite fails baseline on normal 40-pixel
+travel in a 640x480 frame; corrected tracker passes all 14 tests, including a
+moving isolated fingertip after the palm disappears. CI 480 runs engine/service
+regressions for partial-invalid -> image-only continuation, Unknown handedness
+under fixed preference, occlusion/stale input and landmark-8-only model motion.
+Full Android verification of the production changes remains a CI requirement.
+These are synthetic image/model replays, not physical-device acceptance.
+
+
 ## 2026-11-17 — noisy fine-aim responsiveness repair
 
 Resolved main / CI build reference: `dfc053303497755e4dd38add447f79fe7e5c77ca`.
