@@ -14,20 +14,27 @@ internal class LatestFrameProcessor<T : AutoCloseable>(
     private var closed = false
 
     fun offer(frame: T) {
-        val schedule = synchronized(lock) {
+        val replaced: T?
+        val schedule: Boolean
+        synchronized(lock) {
             if (closed) {
-                frame.close()
-                return
+                replaced = frame
+                schedule = false
+            } else {
+                replaced = pending
+                pending = frame
+                schedule = !scheduled
+                scheduled = true
             }
-            pending?.close()
-            pending = frame
-            if (scheduled) false else { scheduled = true; true }
         }
+        // Detach first. Release/report callbacks must not hold the queue lock or
+        // prevent the newest frame from replacing one that is no longer needed.
+        release(replaced)
         if (schedule) {
             try { executor.execute(::drain) }
             catch (failure: RuntimeException) {
                 close()
-                onFailure(failure)
+                reportFailure(failure)
             }
         }
     }
@@ -44,20 +51,26 @@ internal class LatestFrameProcessor<T : AutoCloseable>(
                 next
             }
             try { consume(frame) }
-            catch (failure: Exception) {
-                // Diagnostic reporting must not strand a queued camera frame if
-                // the reporter itself fails. The frame is still closed below.
-                try { onFailure(failure) } catch (_: Exception) { /* keep draining */ }
-            }
-            finally { frame.close() }
+            catch (failure: Exception) { reportFailure(failure) }
+            finally { release(frame) }
         }
     }
 
+    private fun release(frame: T?) {
+        try { frame?.close() }
+        catch (failure: Exception) { reportFailure(failure) }
+    }
+
+    private fun reportFailure(failure: Throwable) {
+        // A diagnostic failure cannot disable capture or strand owned pixels.
+        try { onFailure(failure) } catch (_: Exception) { /* keep draining */ }
+    }
+
     override fun close() {
-        synchronized(lock) {
+        val frame = synchronized(lock) {
             closed = true
-            pending?.close()
-            pending = null
+            pending.also { pending = null }
         }
+        release(frame)
     }
 }
