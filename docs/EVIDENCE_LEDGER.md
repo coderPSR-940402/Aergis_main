@@ -11,8 +11,9 @@ The existing appearance tracker was entered only for empty model results;
 partial/invalid results could erase its template before empty results arrived.
 Partial geometry and uncertain handedness now allow an already-established,
 confident image match to drive cursor position independently. Valid protected
-pinch anchors keep their existing path. Image observations share the position
-filters but never become hand/contact/classifier/calibration evidence.
+pinch anchors keep their existing path. Image observations use the selected screen-space position filter, preserving
+CURRENT's direct image response at clipped screen edges; they never become
+hand/contact/classifier/calibration evidence.
 Missing/ambiguous texture, stale exposure, context changes and disarming still
 revoke tracking. The immutable template has no arbitrary age expiry. Its bounded
 search now scales with camera dimensions, preserving exact pixel matching.
@@ -22,7 +23,16 @@ travel in a 640x480 frame; corrected tracker passes all 14 tests, including a
 moving isolated fingertip after the palm disappears. CI 480 runs engine/service
 regressions for partial-invalid -> image-only continuation, Unknown handedness
 under fixed preference, occlusion/stale input and landmark-8-only model motion.
-Full Android verification of the production changes remains a CI requirement.
+CI 480 executed 772 tests and reproduced four failures: partial-invalid handoff,
+Unknown hand label under fixed preference, image-loss snapback, and scaled search.
+Landmark-8-only model movement already passes and is retained. Display regression
+coverage also checks selected-pointer travel and the real overlay receipt, not
+only raw tracking coordinates. Independent read-only review completed; filter
+frame-age parity was restored for image positions. CI 481 verified all new cases but found four existing border/immediate-motion
+regressions from filtering image coordinates before screen mapping. Remove that
+extra legacy smoothing stage and retain direct CURRENT image response; screen-space
+Precision/VC49/Classic candidates remain available. No existing assertions were weakened.
+Full Android verification of the final changes remains a CI requirement.
 These are synthetic image/model replays, not physical-device acceptance.
 
 

@@ -594,7 +594,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             val imageTip = trackVisibleFingertip()
             if (imageTip != null) {
                 handlePointerGap(observedAtMs, pointerActive, true, "PARTIAL_HAND",
-                    PointerFeedback.COASTING, trackedFingertip = imageTip, sampledAtMs = timestamp)
+                    PointerFeedback.COASTING, trackedFingertip = imageTip, sampledAtMs = timestamp, sampleAgeMs = freshness.ageMs)
                 AirRuntime.visionError = null
                 AirRuntime.visionReady = true
                 return
@@ -623,7 +623,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 allowIndexRefit = touchAllowed && refitAnchor != null) ?: run {
                 handlePointerGap(observedAtMs, pointerActive, landmarks.size <= 1,
                     "NON_FINITE_OR_MISSING_TIP", PointerFeedback.INVALID_TIP,
-                    palmFallback = palmMotionOnly(), sampledAtMs = timestamp)
+                    palmFallback = palmMotionOnly(), sampledAtMs = timestamp, sampleAgeMs = freshness.ageMs)
                 return
             }
             AirRuntime.recordPoseEvidence(processed.poseEvidence)
@@ -664,7 +664,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             if (!tipUsable && !anchorProtected) {
                 val imageTip = if (landmarks.size <= 1) trackVisibleFingertip() else null
                 handlePointerGap(observedAtMs, pointerActive, imageTip != null, "INVALID_TIP", PointerFeedback.INVALID_TIP,
-                    palmFallback = palmMotionOnly(), trackedFingertip = imageTip, sampledAtMs = timestamp)
+                    palmFallback = palmMotionOnly(), trackedFingertip = imageTip, sampledAtMs = timestamp, sampleAgeMs = freshness.ageMs)
                 return
             }
             if (tipUsable) AirRuntime.setRawPointerState(rawTip.x, rawTip.y, trusted)
@@ -870,7 +870,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                     landmarks.size > 1 -> PointerFeedback.AMBIGUOUS
                     else -> PointerFeedback.NO_HAND
                 }, palmFallback = if (reason == "MISSING_TIP") palmMotionOnly() else null,
-                sampledAtMs = timestamp)
+                sampledAtMs = timestamp, sampleAgeMs = freshness.ageMs)
         }
 
         val registeredGesture = RegisteredGesture.fromSignal(gestureName)
@@ -971,7 +971,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
 
     private fun handlePointerGap(now: Long, pointerActive: Boolean, coastAllowed: Boolean,
         reason: String, feedback: PointerFeedback, palmFallback: Point3D? = null,
-        trackedFingertip: FingertipPatchTracker.Point? = null, sampledAtMs: Long? = null) {
+        trackedFingertip: FingertipPatchTracker.Point? = null, sampledAtMs: Long? = null, sampleAgeMs: Long = 0L) {
         AirRuntime.setCalibrationGesture(null)
         val pixels = currentPixels
         val fallback = if (reason in IMAGE_TRACKING_GAPS && pointerActive && coastAllowed &&
@@ -991,9 +991,10 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             val profile = pointerMapper.snapshot()
             val mappedTip = pointerMapper.map(upright.x, upright.y, profile)
             val sampleTime = sampledAtMs ?: lastSubmittedTimestampMs
-            val filtered = interpreter.filterPointerPosition(upright.x, upright.y, sampleTime)
-            val current = filtered?.let { pointerMapper.map(it.x, it.y, profile) } ?: mappedTip
-            val comparison = lineageComparison.update(mappedTip, current, sampleTime)
+            // Image matches already locate the measured tip. Preserve CURRENT's
+            // direct image response; filtering before mapping would stick at clipped
+            // screen edges. Screen-space candidates retain their normal filtering.
+            val comparison = lineageComparison.update(mappedTip, mappedTip, sampleTime, resultAgeMs = sampleAgeMs)
             val mapped = comparison.selected(TestingTools.state.value.filterMode)
             AirRuntime.setRawPointerState(upright.x, upright.y, false)
             reacquireFrom = mapped

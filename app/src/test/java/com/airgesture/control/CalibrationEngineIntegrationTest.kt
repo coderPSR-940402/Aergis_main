@@ -1455,7 +1455,9 @@ class CalibrationEngineIntegrationTest {
 
     @Test fun partialInvalidTipHandsOffToImageTrackingBeforeModelDisappears() {
         withMappedBackService { shadow ->
-            repeat(4) { publishTipImage(hand(), 1000L + it * 100L, 0) }
+            val looper = org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper())
+            repeat(4) { publishTipImage(hand(), 1000L + it * 100L, 0); looper.idle() }
+            val positions = mutableListOf<Float>()
             val broken = hand().toMutableList().apply { this[8] = NormalizedLandmark.create(Float.NaN, .65f, 0f) }
             publishTipImage(broken, 1400L, 3)
             assertEquals("A partial failed result must not erase the acquired fingertip", .525f,
@@ -1464,11 +1466,18 @@ class CalibrationEngineIntegrationTest {
             repeat(30) { i ->
                 val dx = 3 + i % 12
                 publishTipImage(emptyList(), 1500L + i * 100L, dx)
+                looper.idle()
+                positions += AirRuntime.pointerX
+                assertTrue("Image-only movement must reach the real visible pointer overlay",
+                    AirAccessibilityService.instance!!.isVisibleTapTargetReady(AirRuntime.actionEpoch,
+                        AirRuntime.pointerX, AirRuntime.pointerY))
                 assertEquals("Actual fingertip image motion must survive sustained model dropout",
                     (60 + dx) / 120f, AirRuntime.rawPointerSnapshot().x, .001f)
                 assertEquals(PointerFeedback.COASTING, AirRuntime.pointerFeedback)
                 assertFalse("Image tracking must not invent hand/contact evidence", AirRuntime.pointerTracking)
             }
+            assertTrue("Selected/display pointer must follow the image trajectory rather than freeze",
+                positions.max() - positions.min() > .05f)
             assertTrue(shadow.gesturesDispatched.isEmpty())
             assertTrue(shadow.globalActionsPerformed.isEmpty())
         }
@@ -1477,16 +1486,20 @@ class CalibrationEngineIntegrationTest {
     @Test fun establishedRightTipKeepsImageIdentityWhenOnlyTipAndUnknownHandLabelRemain() {
         withMappedBackService { shadow ->
             AirRuntime.handPreference = ControlHandPreference.RIGHT
-            repeat(4) { publishTipImage(hand(), 1000L + it * 100L, 0) }
+            val looper = org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper())
+            repeat(4) { publishTipImage(hand(), 1000L + it * 100L, 0); looper.idle() }
+            val acquiredX = AirRuntime.pointerX
             val onlyTip = MutableList(21) { NormalizedLandmark.create(Float.NaN, Float.NaN, 0f) }
                 .apply { this[8] = NormalizedLandmark.create(.15f, .15f, 0f) }
             repeat(12) { i ->
                 publishTipImage(onlyTip, 1400L + i * 100L, i + 1, rawLabel = "Unknown")
+                looper.idle()
                 assertEquals("Use the established visible tip, not a refitted partial-hand guess",
                     (61 + i) / 120f, AirRuntime.rawPointerSnapshot().x, .001f)
             }
             assertTrue(shadow.gesturesDispatched.isEmpty())
             assertTrue(shadow.globalActionsPerformed.isEmpty())
+            assertTrue("The displayed pointer must move with the known fingertip", AirRuntime.pointerX < acquiredX - .06f)
         }
     }
 

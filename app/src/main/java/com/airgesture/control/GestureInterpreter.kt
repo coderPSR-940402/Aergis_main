@@ -84,7 +84,8 @@ class GestureInterpreter(
             return null
         }
         val stabilized = if (refitting && lastStablePointer != null) lastStablePointer!! else {
-            filterPointerPosition(rawIndexTip.x, rawIndexTip.y, timestampMs) ?: return null
+            val smoothedPoint = smoother.filter(rawIndexTip.x, rawIndexTip.y, timestampMs)
+            pointerFilter.filter(smoothedPoint.x, smoothedPoint.y, timestampMs).also { lastStablePointer = it }
         }
         val dNorm = validator.calculateNormalizedFingerDistance(landmarks, aspectRatio).coerceIn(0f, 1.5f)
         if (!poseEvidence.accepted || !actionsAllowed) {
@@ -117,13 +118,6 @@ class GestureInterpreter(
         } else swipeEngine.processFrame(Point3D(stabilized.x, stabilized.y, rawIndexTip.z), timestampMs)
         return ProcessedGestureResult(stabilized.x, stabilized.y, clickState, swipeState, dNorm,
             poseEvidence, approaching, pressed)
-    }
-
-    /** Cursor position is independent of hand pose, pinch and classifier evidence. */
-    internal fun filterPointerPosition(x: Float, y: Float, timestampMs: Long): Point3D? {
-        if (x !in 0f..1f || y !in 0f..1f) return null
-        val smoothed = smoother.filter(x, y, timestampMs)
-        return pointerFilter.filter(smoothed.x, smoothed.y, timestampMs).also { lastStablePointer = it }
     }
 
     fun reset() {
