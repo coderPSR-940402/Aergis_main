@@ -5,6 +5,7 @@ import org.junit.Test
 import kotlin.math.abs
 import kotlin.math.sin
 import kotlin.math.sqrt
+import kotlin.math.pow
 
 /** Synthetic position-error regressions; these do not measure camera or display latency. */
 class PrecisionPointerNoisyAimTest {
@@ -88,6 +89,29 @@ class PrecisionPointerNoisyAimTest {
             }
             assertTrue("$fps fps random stationary jitter ratio ${sqrt(outputEnergy / inputEnergy)}",
                 sqrt(outputEnergy / inputEnergy) < .45)
+        }
+    }
+
+    @Test fun correlatedStationaryCameraNoiseDoesNotOpenFineAimGain() {
+        // Keep noise correlation time constant as camera cadence changes.
+        for (fps in listOf(15, 30, 60)) for (correlationAt60Fps in listOf(.6f, .8f)) {
+            val correlation = correlationAt60Fps.pow(60f / fps)
+            val filter = PrecisionPointerFilter()
+            val random = java.util.Random(17L)
+            var noise = 0f
+            var inputEnergy = 0.0
+            var outputEnergy = 0.0
+            for (i in 0..fps * 60) {
+                noise = correlation * noise + sqrt(1f - correlation * correlation) *
+                    (random.nextFloat() * 2f - 1f) * .006f
+                val point = filter.update(.5f + noise, .5f, 1000L + i * 1000L / fps)
+                if (i > fps * 2) {
+                    inputEnergy += noise.toDouble() * noise
+                    outputEnergy += (point.x - .5).let { it * it }
+                }
+            }
+            val ratio = sqrt(outputEnergy / inputEnergy)
+            assertTrue("$fps fps, correlation $correlation: stationary RMS ratio $ratio", ratio < .45)
         }
     }
 }

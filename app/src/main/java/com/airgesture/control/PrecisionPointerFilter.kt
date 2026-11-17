@@ -87,7 +87,7 @@ internal class PrecisionPointerFilter {
         var cutoffX = .35f + 20f * (abs(velocityX) - .06f).coerceAtLeast(0f)
         var cutoffY = .35f + 20f * (abs(velocityY) - .06f).coerceAtLeast(0f)
         recent.addLast(Sample(measured, timestampMs))
-        while (recent.size > 32 || (recent.size > 4 && timestampMs - recent.first().timestampMs > 450L)) recent.removeFirst()
+        while (recent.size > 64 || (recent.size > 4 && timestampMs - recent.first().timestampMs > 900L)) recent.removeFirst()
         if (recent.size >= 3) {
             var pathX = 0f
             var pathY = 0f
@@ -117,7 +117,7 @@ internal class PrecisionPointerFilter {
         return result
     }
 
-    /** Three-sigma slope evidence, bounded to recent accepted measurements only. */
+    /** Conservative correlation-adjusted slope evidence from accepted measurements only. */
     private fun hasDirectedTrend(xAxis: Boolean, timestampMs: Long): Boolean {
         val n = recent.size
         val spanMs = timestampMs - recent.first().timestampMs
@@ -143,15 +143,28 @@ internal class PrecisionPointerFilter {
         val slope = covariance / timeEnergy
         if (abs(slope) * spanMs / 1000.0 < .003) return false
         var residualEnergy = 0.0
+        var lagProduct = 0.0
+        var lagEnergy = 0.0
+        var previousResidual: Double? = null
         for (sample in recent) {
             val time = (sample.timestampMs - timestampMs) / 1000.0 - meanTime
             val position = (if (xAxis) sample.point.x.toDouble() else sample.point.y.toDouble()) - meanPosition
             val residual = position - slope * time
             residualEnergy += residual * residual
+            previousResidual?.let {
+                lagProduct += it * residual
+                lagEnergy += it * it
+            }
+            previousResidual = residual
         }
-        // A slope must dominate its residual uncertainty, rather than opening
-        // smoothing on any nonzero fitted drift. Nothing here extrapolates position.
-        return slope * slope * timeEnergy * (n - 2) >= 9.0 * maxOf(residualEnergy, 1e-12)
+        // Adjacent camera measurements need not be independent. Positive residual
+        // correlation reduces effective evidence instead of being counted as more
+        // confidence at higher frame rates. This is a conservative motion heuristic,
+        // not a calibrated probability or permission to extrapolate the pointer.
+        val correlation = if (lagEnergy > 1e-12) (lagProduct / lagEnergy).coerceIn(0.0, .95) else 0.0
+        val effectiveSamples = n * (1.0 - correlation) / (1.0 + correlation)
+        return effectiveSamples > 2.0 &&
+            slope * slope * timeEnergy * (effectiveSamples - 2.0) >= 25.0 * maxOf(residualEnergy, 1e-12)
     }
 
     fun reset() {
