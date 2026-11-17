@@ -103,7 +103,7 @@ internal fun AergisSlider(label: String, value: Float, range: ClosedFloatingPoin
     Column {
         Text(label, style = MaterialTheme.typography.bodyMedium, color = AergisColors.Muted)
         Slider(value = value.coerceIn(range), onValueChange = onChanged, valueRange = range,
-            modifier = Modifier.semantics { stateDescription = label })
+            modifier = Modifier.semantics { contentDescription = label })
     }
 }
 
@@ -188,3 +188,4 @@ internal fun AergisMotionTrace(color: Color, modifier: Modifier = Modifier) {
         drawCircle(color, 3.dp.toPx(), end)
     }
 }
+
