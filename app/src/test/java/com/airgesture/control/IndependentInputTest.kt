@@ -35,4 +35,10 @@ class IndependentInputTest {
     @Test fun pointerOriginCannotAuthorizeSystemCommands() {
         assertFalse(InputChannelPolicy.enabled(ActionOrigin.POINTER, AirAction.HOME, true, true, true))
     }
+
+    @Test fun pointerDragRequiresBothPointerAndPinchSwitchesButNotMappedCommands() {
+        for (pointer in listOf(false, true)) for (click in listOf(false, true)) for (commands in listOf(false, true))
+            assertEquals(pointer && click,
+                InputChannelPolicy.enabled(ActionOrigin.POINTER, AirAction.POINTER_DRAG, pointer, click, commands))
+    }
 }

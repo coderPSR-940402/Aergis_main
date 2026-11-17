@@ -344,4 +344,8 @@
     <string name="feedback_failed">Action failed</string>
     <string name="capture_notification_pause">Pause controls</string>
     <string name="capture_notification_stop">Stop capture</string>
+    <string name="pointer_dragging">Hold to drag</string>
+    <string name="pointer_dragging_help">Keep thumb and middle fingertips together to hold and move an item. Separate them to drop. Turn off for ordinary pinch taps.</string>
+    <string name="pointer_classic_smooth">Classic smooth</string>
+    <string name="pointer_classic_smooth_help">Try the pointer smoothing from the older app. Turn off to return to Precision.</string>
 </resources>

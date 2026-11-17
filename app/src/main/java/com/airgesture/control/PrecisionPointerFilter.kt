@@ -87,7 +87,7 @@ internal class PrecisionPointerFilter {
         var cutoffX = .35f + 20f * (abs(velocityX) - .06f).coerceAtLeast(0f)
         var cutoffY = .35f + 20f * (abs(velocityY) - .06f).coerceAtLeast(0f)
         recent.addLast(Sample(measured, timestampMs))
-        while (recent.size > 16 || (recent.size > 4 && timestampMs - recent.first().timestampMs > 200L)) recent.removeFirst()
+        while (recent.size > 64 || (recent.size > 4 && timestampMs - recent.first().timestampMs > 900L)) recent.removeFirst()
         if (recent.size >= 3) {
             var pathX = 0f
             var pathY = 0f
@@ -102,6 +102,11 @@ internal class PrecisionPointerFilter {
             // Travel on one axis must not open the gain for noise on the other.
             if (displacementX >= .003f && displacementX >= pathX * .85f) cutoffX = maxOf(cutoffX, 3.5f)
             if (displacementY >= .003f && displacementY >= pathY * .85f) cutoffY = maxOf(cutoffY, 3.5f)
+            // Camera jitter may reverse individual steps during deliberate fine aim.
+            // A significant time-based trend can establish travel without requiring
+            // nearly every sample to move in the same direction. Each axis owns its gain.
+            if (hasDirectedTrend(xAxis = true, timestampMs)) cutoffX = maxOf(cutoffX, 3.5f)
+            if (hasDirectedTrend(xAxis = false, timestampMs)) cutoffY = maxOf(cutoffY, 3.5f)
         }
         val result = PointerCoordinateMapper.Point(
             previous.x + alpha(dt, cutoffX) * (measured.x - previous.x),
@@ -110,6 +115,56 @@ internal class PrecisionPointerFilter {
         measurement = measured; output = result; measurementTrusted = true
         lastAcceptedTimestamp = timestampMs
         return result
+    }
+
+    /** Conservative correlation-adjusted slope evidence from accepted measurements only. */
+    private fun hasDirectedTrend(xAxis: Boolean, timestampMs: Long): Boolean {
+        val n = recent.size
+        val spanMs = timestampMs - recent.first().timestampMs
+        if (n < 6 || spanMs < 200L) return false
+        // Relative times avoid loss of precision after long device uptimes.
+        var meanTime = 0.0
+        var meanPosition = 0.0
+        for (sample in recent) {
+            meanTime += (sample.timestampMs - timestampMs) / 1000.0
+            meanPosition += if (xAxis) sample.point.x.toDouble() else sample.point.y.toDouble()
+        }
+        meanTime /= n
+        meanPosition /= n
+        var timeEnergy = 0.0
+        var covariance = 0.0
+        for (sample in recent) {
+            val time = (sample.timestampMs - timestampMs) / 1000.0 - meanTime
+            val position = (if (xAxis) sample.point.x.toDouble() else sample.point.y.toDouble()) - meanPosition
+            timeEnergy += time * time
+            covariance += time * position
+        }
+        if (timeEnergy <= 0.0) return false
+        val slope = covariance / timeEnergy
+        if (abs(slope) * spanMs / 1000.0 < .003) return false
+        var residualEnergy = 0.0
+        var lagProduct = 0.0
+        var lagEnergy = 0.0
+        var previousResidual: Double? = null
+        for (sample in recent) {
+            val time = (sample.timestampMs - timestampMs) / 1000.0 - meanTime
+            val position = (if (xAxis) sample.point.x.toDouble() else sample.point.y.toDouble()) - meanPosition
+            val residual = position - slope * time
+            residualEnergy += residual * residual
+            previousResidual?.let {
+                lagProduct += it * residual
+                lagEnergy += it * it
+            }
+            previousResidual = residual
+        }
+        // Adjacent camera measurements need not be independent. Positive residual
+        // correlation reduces effective evidence instead of being counted as more
+        // confidence at higher frame rates. This is a conservative motion heuristic,
+        // not a calibrated probability or permission to extrapolate the pointer.
+        val correlation = if (lagEnergy > 1e-12) (lagProduct / lagEnergy).coerceIn(0.0, .95) else 0.0
+        val effectiveSamples = n * (1.0 - correlation) / (1.0 + correlation)
+        return effectiveSamples > 2.0 &&
+            slope * slope * timeEnergy * (effectiveSamples - 2.0) >= 25.0 * maxOf(residualEnergy, 1e-12)
     }
 
     fun reset() {

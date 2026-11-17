@@ -111,7 +111,7 @@ internal object DiagnosticReport {
                     }
                     text(c, segment, 36f, y + 19f, 12f, true); y += 28f
                     val metrics = comparisons!!.getJSONObject(segment)
-                    for (mode in listOf("current", "vc49", "precision")) {
+                    for (mode in listOf("current", "vc49", "precision", "classic")) {
                         if (!metrics.has(mode)) continue
                         val m = metrics.getJSONObject(mode)
                         val error = String.format(Locale.US, "%.5f", m.optDouble("meanDistanceToMeasurement"))

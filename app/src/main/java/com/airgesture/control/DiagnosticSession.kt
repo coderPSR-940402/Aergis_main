@@ -105,10 +105,11 @@ internal class DiagnosticSession private constructor(val directory: File, privat
         }
         val measured = point("mappedTip"); val current = point("current"); val vc49 = point("vc49")
         val precision = point("precision")
+        val classic = point("classic")
         if (measured != null && current != null && vc49 != null) {
             val segment = frame.optString("testSegment", "UNLABELLED")
             val context = listOf("testSegment", "filterMode", "commandOwnerId", "calibration", "actionEpoch", "rotation")
-                .map { key -> frame.opt(key)?.takeUnless { it == JSONObject.NULL }?.toString() } + (precision != null).toString()
+                .map { key -> frame.opt(key)?.takeUnless { it == JSONObject.NULL }?.toString() } + (precision != null).toString() + (classic != null).toString()
             val gap = comparisonTimestamp?.let { timestamp - it }
             if (comparisonRun == null || context != comparisonContext || frame.optBoolean("ownerChanged") ||
                 gap == null || gap !in 1L..150L) {
@@ -119,7 +120,7 @@ internal class DiagnosticSession private constructor(val directory: File, privat
             comparisonContext = context
             comparisonTimestamp = timestamp
             val metrics = lineage.getOrPut(comparisonRun!!) { linkedMapOf() }
-            for ((mode, value) in listOf("current" to current, "vc49" to vc49, "precision" to precision)) {
+            for ((mode, value) in listOf("current" to current, "vc49" to vc49, "precision" to precision, "classic" to classic)) {
                 if (value != null) metrics.getOrPut(mode) { PointerLineageMetrics() }.sample(measured, value, segment == "STATIONARY")
             }
         } else {

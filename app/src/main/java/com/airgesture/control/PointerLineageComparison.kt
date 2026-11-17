@@ -3,7 +3,7 @@ package com.airgesture.control
 import kotlin.math.hypot
 import kotlin.math.sqrt
 
-internal enum class PointerFilterMode { PRECISION, CURRENT, VC49 }
+internal enum class PointerFilterMode { PRECISION, CURRENT, VC49, CLASSIC }
 
 internal data class PointerLineageSample(
     val mappedTip: PointerCoordinateMapper.Point,
@@ -13,12 +13,14 @@ internal data class PointerLineageSample(
     val precisionTrusted: Boolean = true,
     val precisionRejection: PrecisionRejection = PrecisionRejection.NONE,
     val precisionJumpDistance: Float = 0f,
-    val precisionJumpLimit: Float = 0f
+    val precisionJumpLimit: Float = 0f,
+    val classic: PointerCoordinateMapper.Point = current
 ) {
     fun selected(mode: PointerFilterMode) = when (mode) {
         PointerFilterMode.PRECISION -> precision
         PointerFilterMode.CURRENT -> current
         PointerFilterMode.VC49 -> vc49
+        PointerFilterMode.CLASSIC -> classic
     }
 }
 
@@ -26,19 +28,21 @@ internal data class PointerLineageSample(
 internal class PointerLineageComparison {
     var latest: PointerLineageSample? = null
         private set
+    private val classic = ClassicPointerMotionFilter()
     private val recovered = Vc49PointerMotionFilter()
     private val precision = PrecisionPointerFilter()
 
     fun update(mappedTip: PointerCoordinateMapper.Point, current: PointerCoordinateMapper.Point,
-        timestampMs: Long): PointerLineageSample {
+        timestampMs: Long, resultAgeMs: Long = 0L): PointerLineageSample {
         val point = recovered.update(mappedTip.x, mappedTip.y, timestampMs, 1f)
+        val smooth = classic.update(mappedTip.x, mappedTip.y, timestampMs, 1f, resultAgeMs)
         val precise = precision.update(mappedTip.x, mappedTip.y, timestampMs)
         return PointerLineageSample(mappedTip, current, PointerCoordinateMapper.Point(point.first, point.second),
             precise, precision.measurementTrusted, precision.lastRejection,
-            precision.lastJumpDistance, precision.lastJumpLimit).also { latest = it }
+            precision.lastJumpDistance, precision.lastJumpLimit, PointerCoordinateMapper.Point(smooth.first, smooth.second)).also { latest = it }
     }
 
-    fun reset() { latest = null; recovered.reset(); precision.reset() }
+    fun reset() { latest = null; recovered.reset(); precision.reset(); classic.reset() }
 }
 
 /** O(1) statistics. Stationary labels must be supplied by a test segment, not guessed from jitter. */

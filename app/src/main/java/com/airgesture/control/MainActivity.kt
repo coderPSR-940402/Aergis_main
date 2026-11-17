@@ -60,6 +60,7 @@ class MainActivity : ComponentActivity() {
     private var requestedDestination by mutableStateOf<AergisDestination?>(null)
     private var pointerEnabled by mutableStateOf(true)
     private var gesturesEnabled by mutableStateOf(true)
+    private var pointerDraggingEnabled by mutableStateOf(false)
     private var pointerClickingEnabled by mutableStateOf(true)
     private var handPreference by mutableStateOf(ControlHandPreference.EITHER)
     private var sessionStartError by mutableStateOf<String?>(null)
@@ -186,6 +187,7 @@ class MainActivity : ComponentActivity() {
         pointerEnabled = mappings.pointerEnabled()
         gesturesEnabled = mappings.gesturesEnabled()
         pointerClickingEnabled = mappings.pointerClickingEnabled()
+        pointerDraggingEnabled = mappings.pointerDraggingEnabled()
         AirRuntime.pointerClickingEnabled = pointerClickingEnabled
         handPreference = mappings.handPreference()
         refreshCalibrationSettings()
@@ -640,6 +642,7 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     private fun PrecisionScreen(navigate: (AergisDestination) -> Unit) {
+        val testing by TestingTools.state.collectAsStateWithLifecycle()
         ProductPage(R.string.product_precision) {
             Text(stringResource(R.string.product_pointer_explainer), color = AergisColors.Muted)
             AergisPanel {
@@ -654,6 +657,18 @@ class MainActivity : ComponentActivity() {
                     pointerClickingEnabled = it
                     ActionMappingStore(this@MainActivity).setPointerClickingEnabled(it)
                     AirRuntime.pointerClickingEnabled = it
+                    AirAccessibilityService.instance?.cancelPointerTouch()
+                }
+                HorizontalProductDivider()
+                AergisSettingRow(stringResource(R.string.pointer_dragging), stringResource(R.string.pointer_dragging_help), pointerDraggingEnabled) {
+                    pointerDraggingEnabled = it
+                    ActionMappingStore(this@MainActivity).setPointerDraggingEnabled(it)
+                    AirAccessibilityService.instance?.cancelPointerTouch()
+                }
+                HorizontalProductDivider()
+                AergisSettingRow(stringResource(R.string.pointer_classic_smooth), stringResource(R.string.pointer_classic_smooth_help),
+                    testing.filterMode == PointerFilterMode.CLASSIC) {
+                    TestingTools.setFilterMode(if (it) PointerFilterMode.CLASSIC else PointerFilterMode.PRECISION)
                     AirAccessibilityService.instance?.cancelPointerTouch()
                 }
             }

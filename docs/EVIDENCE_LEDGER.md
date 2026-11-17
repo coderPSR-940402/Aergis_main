@@ -1,5 +1,70 @@
 # Aergis Evidence Ledger and Decision Log
 
+## 2026-11-17 — fingertip-only image tracking continuation
+
+Resolved CI build reference: `dfc053303497755e4dd38add447f79fe7e5c77ca`.
+Continuation base: PR #109 head `86af718e31bc623f566a1696c056f6dbb20c84e2`
+(CI 479 passed). The owner requests acquisition from a recognized hand followed
+by independent index-tip cursor tracking when every other joint leaves view.
+
+The existing appearance tracker was entered only for empty model results;
+partial/invalid results could erase its template before empty results arrived.
+Partial geometry and uncertain handedness now allow an already-established,
+confident image match to drive cursor position independently. Valid protected
+pinch anchors keep their existing path. Image observations use the selected screen-space position filter, preserving
+CURRENT's direct image response at clipped screen edges; they never become
+hand/contact/classifier/calibration evidence.
+Missing/ambiguous texture, stale exposure, context changes and disarming still
+revoke tracking. The immutable template has no arbitrary age expiry. Its bounded
+search now scales with camera dimensions, preserving exact pixel matching.
+
+Test-first evidence: pure Kotlin tracker suite fails baseline on normal 40-pixel
+travel in a 640x480 frame; corrected tracker passes all 14 tests, including a
+moving isolated fingertip after the palm disappears. CI 480 runs engine/service
+regressions for partial-invalid -> image-only continuation, Unknown handedness
+under fixed preference, occlusion/stale input and landmark-8-only model motion.
+CI 480 executed 772 tests and reproduced four failures: partial-invalid handoff,
+Unknown hand label under fixed preference, image-loss snapback, and scaled search.
+Landmark-8-only model movement already passes and is retained. Display regression
+coverage also checks selected-pointer travel and the real overlay receipt, not
+only raw tracking coordinates. Independent read-only review completed; filter
+frame-age parity was restored for image positions. CI 481 verified all new cases but found four existing border/immediate-motion
+regressions from filtering image coordinates before screen mapping. Remove that
+extra legacy smoothing stage and retain direct CURRENT image response; screen-space
+Precision/VC49/Classic candidates remain available. No existing assertions were weakened.
+Full Android verification of the final changes remains a CI requirement.
+These are synthetic image/model replays, not physical-device acceptance.
+
+
+## 2026-11-17 — noisy fine-aim responsiveness repair
+
+Resolved main / CI build reference: `dfc053303497755e4dd38add447f79fe7e5c77ca`.
+Continuation base: PR #109 head `7a3202c4a5d89b82f27c01692b4a3e17f153b486`.
+The owner reports poor Classic smoothing and renewed pointer smoothness/accuracy
+regression. Exact installed APK identity is not confirmed by that report.
+
+A production-filter JVM regression reproduces slow fine aiming when per-frame
+noise defeats the existing 85%-directional path test. At 30/60 FPS and 0.03 screen
+units/s with 0.002-amplitude noise, baseline target-error RMS is 0.01294/0.01318
+screen units. A bounded time-based, correlation-adjusted slope check reduces these synthetic
+errors to 0.00111/0.00118, while retaining independent-axis stationary smoothing,
+causal bounded output, timestamp rejection and the original jump guard.
+Rejected samples never train the trend. Existing opt-in drag behavior is preserved.
+
+Test-first local evidence: 9 focused Kotlin/JUnit tests ran against the exact
+baseline filter; 2 regressions failed (noisy fine aim and uneven-cadence reversal).
+Both pass after the repair, alongside the original cadence tests. Independent
+review additionally found correlated stationary noise opening the first candidate's
+gain. An extended, bounded history and conservative effective-sample check now
+account for positive residual correlation; regressions hold physical noise
+correlation time constant across camera cadences. Random and correlated stationary
+noise, orthogonal jitter and uneven noisy reversals are tested separately. The local
+harness substitutes only Point/BuildConfig value declarations to run the real
+filter without Android; full app tests, lint and APK checks remain CI requirements.
+These are synthetic measurements, not camera/display latency or device acceptance.
+No functional-baseline promotion is claimed.
+
+
 
 ## 2026-11-15 — pointer TAP contact attribution repair
 

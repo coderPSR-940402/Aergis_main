@@ -1376,4 +1376,159 @@ class CalibrationEngineIntegrationTest {
         ).apply { isAccessible = true }
         method.invoke(engine, result, timestamp, timestamp + delayMs, rotationDegrees)
     }
+
+    @Test fun actualHeldPinchPicksUpMovesAndDropsWithoutExtraTap() {
+        AirRuntime.resetActionDispatchTelemetry()
+        val context = RuntimeEnvironment.getApplication() as Context
+        val prefs = context.getSharedPreferences("aergis_mappings", Context.MODE_PRIVATE)
+        prefs.edit().putBoolean("pointer_dragging_enabled", true).commit()
+        try {
+            withMappedBackService { shadow ->
+                AirRuntime.gesturesEnabled = false
+                val looper = org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper())
+                val open = hand()
+                val closed = open.toMutableList().apply { this[4] = NormalizedLandmark.create(.56f, .65f, 0f) }
+                repeat(4) { publish(open, 1000L + it * 100L); looper.idle() }
+                publish(closed, 1400L); looper.idle()
+                val down = shadow.gesturesDispatched.single()
+                assertTrue("Confirmation must keep the native finger down", down.description().getStroke(0).willContinue())
+                down.callback()!!.onCompleted(down.description())
+                val moved = closed.map { NormalizedLandmark.create(it.x() + .04f, it.y(), it.z()) }
+                publish(moved, 1500L); looper.idle()
+                val move = shadow.gesturesDispatched.last()
+                assertEquals(2, shadow.gesturesDispatched.size)
+                assertTrue(move.description().getStroke(0).willContinue())
+                move.callback()!!.onCompleted(move.description())
+                publish(open.map { NormalizedLandmark.create(it.x() + .04f, it.y(), it.z()) }, 1600L); looper.idle()
+                val up = shadow.gesturesDispatched.last()
+                assertEquals(3, shadow.gesturesDispatched.size)
+                assertFalse("Separation ends the same touch", up.description().getStroke(0).willContinue())
+                up.callback()!!.onCompleted(up.description())
+                val droppedX = AirRuntime.pointerX
+                publish(open.map { NormalizedLandmark.create(it.x() + .04f, it.y(), it.z()) }, 1700L); looper.idle()
+                assertTrue("Aiming after drop must not snap back to the pickup anchor",
+                    kotlin.math.abs(AirRuntime.pointerX - droppedX) < .01f)
+                assertEquals(1L, AirRuntime.state.value.actionDispatchTelemetry.completed)
+                assertTrue(shadow.globalActionsPerformed.isEmpty())
+            }
+        } finally { prefs.edit().remove("pointer_dragging_enabled").commit() }
+    }
+
+    @Test fun mappedGestureCanStillReleaseMappedDrag() {
+        withMappedBackService { shadow ->
+            val context = RuntimeEnvironment.getApplication() as Context
+            ActionMappingStore(context).setMapping(RegisteredGesture.VICTORY, AirAction.POINTER_DRAG)
+            val looper = org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper())
+            repeat(4) { publish(hand(), 1000L + it * 100L); looper.idle() }
+            val service = AirAccessibilityService.instance!!
+            service.dispatch(AirAction.POINTER_DRAG); looper.idle()
+            val down = shadow.gesturesDispatched.single()
+            assertTrue(service.precisionDragActive)
+            down.callback()!!.onCompleted(down.description())
+            confirmGesture(1400L); looper.idle()
+            assertFalse("Mapped drag must not suppress its own release gesture", service.precisionDragActive)
+            assertEquals(2, shadow.gesturesDispatched.size)
+            assertFalse(shadow.gesturesDispatched.last().description().getStroke(0).willContinue())
+        }
+    }
+
+    /** A small textured fingertip moves against a fixed background; the palm can vanish. */
+    private fun publishTipImage(points: List<NormalizedLandmark>, timestamp: Long, dx: Int,
+        rawLabel: String = "Left", flat: Boolean = false, ageMs: Long = 0L) {
+        val w = 120
+        val h = 120
+        val texture = java.util.Random(317L).let { r -> IntArray(21 * 21) { r.nextInt(256) } }
+        val buffer = java.nio.ByteBuffer.allocate(w * h * 4)
+        for (y in 0 until h) for (x in 0 until w) {
+            val tx = x - (60 + dx) + 10
+            val ty = y - 78 + 10
+            val value = if (!flat && tx in 0..20 && ty in 0..20) texture[ty * 21 + tx] else 80
+            buffer.put(value.toByte()); buffer.put(value.toByte()); buffer.put(value.toByte()); buffer.put(255.toByte())
+        }
+        buffer.rewind()
+        val pixels = RgbaFrameData(buffer, w, h, w * 4, 4, 0, timestamp * 1_000_000L, "")
+        val field = GestureRecognitionEngine::class.java.getDeclaredField("currentPixels").apply { isAccessible = true }
+        field.set(engine, pixels)
+        try { publish(points, timestamp, rawHandedness = rawLabel, measuredAgeMs = ageMs) }
+        finally { field.set(engine, null) }
+    }
+
+    @Test fun partialInvalidTipHandsOffToImageTrackingBeforeModelDisappears() {
+        withMappedBackService { shadow ->
+            val looper = org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper())
+            repeat(4) { publishTipImage(hand(), 1000L + it * 100L, 0); looper.idle() }
+            val positions = mutableListOf<Float>()
+            val broken = hand().toMutableList().apply { this[8] = NormalizedLandmark.create(Float.NaN, .65f, 0f) }
+            publishTipImage(broken, 1400L, 3)
+            assertEquals("A partial failed result must not erase the acquired fingertip", .525f,
+                AirRuntime.rawPointerSnapshot().x, .001f)
+            // Continue well beyond ownership/visibility grace without model landmarks.
+            repeat(30) { i ->
+                val dx = 3 + i % 12
+                publishTipImage(emptyList(), 1500L + i * 100L, dx)
+                looper.idle()
+                positions += AirRuntime.pointerX
+                assertTrue("Image-only movement must reach the real visible pointer overlay",
+                    AirAccessibilityService.instance!!.isVisibleTapTargetReady(AirRuntime.actionEpoch,
+                        AirRuntime.pointerX, AirRuntime.pointerY))
+                assertEquals("Actual fingertip image motion must survive sustained model dropout",
+                    (60 + dx) / 120f, AirRuntime.rawPointerSnapshot().x, .001f)
+                assertEquals(PointerFeedback.COASTING, AirRuntime.pointerFeedback)
+                assertFalse("Image tracking must not invent hand/contact evidence", AirRuntime.pointerTracking)
+            }
+            assertTrue("Selected/display pointer must follow the image trajectory rather than freeze",
+                positions.max() - positions.min() > .05f)
+            assertTrue(shadow.gesturesDispatched.isEmpty())
+            assertTrue(shadow.globalActionsPerformed.isEmpty())
+        }
+    }
+
+    @Test fun establishedRightTipKeepsImageIdentityWhenOnlyTipAndUnknownHandLabelRemain() {
+        withMappedBackService { shadow ->
+            AirRuntime.handPreference = ControlHandPreference.RIGHT
+            val looper = org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper())
+            repeat(4) { publishTipImage(hand(), 1000L + it * 100L, 0); looper.idle() }
+            val acquiredX = AirRuntime.pointerX
+            val onlyTip = MutableList(21) { NormalizedLandmark.create(Float.NaN, Float.NaN, 0f) }
+                .apply { this[8] = NormalizedLandmark.create(.15f, .15f, 0f) }
+            repeat(12) { i ->
+                publishTipImage(onlyTip, 1400L + i * 100L, i + 1, rawLabel = "Unknown")
+                looper.idle()
+                assertEquals("Use the established visible tip, not a refitted partial-hand guess",
+                    (61 + i) / 120f, AirRuntime.rawPointerSnapshot().x, .001f)
+            }
+            assertTrue(shadow.gesturesDispatched.isEmpty())
+            assertTrue(shadow.globalActionsPerformed.isEmpty())
+            assertTrue("The displayed pointer must move with the known fingertip", AirRuntime.pointerX < acquiredX - .06f)
+        }
+    }
+
+    @Test fun imageOnlyTipCannotSurviveOcclusionOrBorrowStaleFrameAuthority() {
+        repeat(4) { publishTipImage(hand(), 1000L + it * 100L, 0) }
+        publishTipImage(emptyList(), 1400L, 3)
+        val before = AirRuntime.pointerSnapshot()
+        publishTipImage(emptyList(), 1500L, 6, flat = true)
+        assertEquals(before.x, AirRuntime.pointerX, .0001f)
+        assertEquals(before.y, AirRuntime.pointerY, .0001f)
+        publishTipImage(emptyList(), 1600L, 9)
+        assertEquals("A lost image track needs model reacquisition", before.x, AirRuntime.pointerX, .0001f)
+        publishTipImage(hand(), 1700L, 0)
+        val reseeded = AirRuntime.pointerSnapshot()
+        publishTipImage(emptyList(), 1800L, 8, ageMs = 601L)
+        assertEquals("A stale exposure cannot move even an otherwise recognizable fingertip",
+            reseeded.x, AirRuntime.pointerX, .0001f)
+        AirRuntime.controlMode = ControlMode.PAUSED
+        publishTipImage(emptyList(), 1900L, 10)
+        assertFalse(AirRuntime.pointerTracking)
+    }
+
+    @Test fun modelTipPositionRemainsIndependentOfAllOtherLandmarks() {
+        publish(hand(), 1000L)
+        val onlyTip = MutableList(21) { NormalizedLandmark.create(Float.NaN, Float.NaN, 0f) }
+            .apply { this[8] = NormalizedLandmark.create(.58f, .65f, 0f) }
+        publish(onlyTip, 1100L)
+        assertTrue("A valid landmark 8 can move the pointer without palm/wrist/finger joints", AirRuntime.pointerTracking)
+        assertEquals(.58f, AirRuntime.rawPointerSnapshot().x, .0001f)
+        assertEquals(PointerInteractionPhase.IDLE, AirRuntime.pointerInteraction)
+    }
 }

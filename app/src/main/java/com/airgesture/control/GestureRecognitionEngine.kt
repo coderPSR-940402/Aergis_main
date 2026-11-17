@@ -41,6 +41,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
     private val interpreter = GestureInterpreter(mappings)
     // A delayed confirmed tap belongs to the frozen screen-space contact location,
     // not the cursor position on the subsequent release or reacquisition frame.
+    private var pinchDragRequested = false
     private var pendingTapTarget: PointerCoordinateMapper.Point? = null
     private var pendingTapContact: PointerTapContactEvidence? = null
     private val pinchPointer = PointerPinchController()
@@ -523,7 +524,8 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         val filterMode = TestingTools.state.value.filterMode
         val selectedHandedness = pointerHandIndex?.let { handednessList.getOrNull(it) } ?: "Unknown"
         val ownerChanged = (commandOwnerId != null && lastPointerOwnerId != null && commandOwnerId != lastPointerOwnerId) ||
-            (commandOwnerId == null && selectedHand != null && lastPointerHandedness != null && selectedHandedness != lastPointerHandedness)
+            (commandOwnerId == null && selectedHand != null && lastPointerHandedness != null &&
+                selectedHandedness != lastPointerHandedness && !fingertipPatch.hasReference)
         val filterChanged = filterMode != lastFilterMode
         if (ownerChanged || filterChanged) {
             fingertipPatch.reset()
@@ -581,6 +583,23 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 if (selectedHand != null) poseEvidenceEvaluator.evaluatePointer(reusablePointsList,
                     frameAspectRatio, requireIndexTip = refitAnchor == null) else null)
         diagnosticTrace?.put("pointerTouchAllowed", pointerTouchTracking && AirRuntime.pointerClickingEnabled)
+        // A previously acquired fingertip has its own image identity. A missing
+        // palm, wrist, contact joint or handedness label cannot veto cursor motion.
+        // Keep the original protected-pinch path when its required joints remain valid.
+        val partialHand = handSelection == null || selectedHand == null ||
+            !poseEvidenceEvaluator.evaluatePointer(reusablePointsList, frameAspectRatio,
+                requireIndexTip = refitAnchor == null).accepted
+        if (pointerActive && landmarks.size <= 1 && partialHand &&
+            !mappingChanged && !ownerChanged && !filterChanged) {
+            val imageTip = trackVisibleFingertip()
+            if (imageTip != null) {
+                handlePointerGap(observedAtMs, pointerActive, true, "PARTIAL_HAND",
+                    PointerFeedback.COASTING, trackedFingertip = imageTip, sampledAtMs = timestamp, sampleAgeMs = freshness.ageMs)
+                AirRuntime.visionError = null
+                AirRuntime.visionReady = true
+                return
+            }
+        }
         val motionWasActive = directMotion.active
         val motionCenter = reusablePointsList.getOrNull(0)?.let { Point3D(1f - it.x, it.y, it.z) }
         val motionScale = if (reusablePointsList.size > 17)
@@ -591,8 +610,11 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             expectedEpoch = pointerEpoch, sourceDeadlineMs = commandDeadlineMs)
         var pinchInProgress = motionWasActive
         if (pointerActive && indexTip != null) {
-            val dragging = AirAccessibilityService.instance?.precisionDragActive == true
-            val touchAllowed = pointerTouchTracking && AirRuntime.pointerClickingEnabled && !motionWasActive && !dragging && reacquireFrom == null
+            val dragMode = mappings.pointerDraggingEnabled()
+            val service = AirAccessibilityService.instance
+            val dragging = service?.precisionDragActive == true
+            val mappedDragging = dragging && service?.pinchDragActive != true
+            val touchAllowed = pointerTouchTracking && AirRuntime.pointerClickingEnabled && !motionWasActive && !mappedDragging && reacquireFrom == null
             // toUpright rotates x/y but preserves MediaPipe's sensor-width z.
             // Upright height equals sensor width for quarter-turn buffers.
             val depthScale = if (rotationDegrees == 90 || rotationDegrees == 270) 1f else frameAspectRatio
@@ -601,7 +623,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 allowIndexRefit = touchAllowed && refitAnchor != null) ?: run {
                 handlePointerGap(observedAtMs, pointerActive, landmarks.size <= 1,
                     "NON_FINITE_OR_MISSING_TIP", PointerFeedback.INVALID_TIP,
-                    palmFallback = palmMotionOnly())
+                    palmFallback = palmMotionOnly(), sampledAtMs = timestamp, sampleAgeMs = freshness.ageMs)
                 return
             }
             AirRuntime.recordPoseEvidence(processed.poseEvidence)
@@ -609,7 +631,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             val tipUsable = rawTip.x in 0f..1f && rawTip.y in 0f..1f
             val mappedTip = pointerMapper.map(rawTip.x, rawTip.y, frameCalibration)
             val currentPoint = pointerMapper.map(processed.smoothedX, processed.smoothedY, frameCalibration)
-            val comparison = if (tipUsable) lineageComparison.update(mappedTip, currentPoint, timestamp)
+            val comparison = if (tipUsable) lineageComparison.update(mappedTip, currentPoint, timestamp, resultAgeMs = freshness.ageMs)
                 else lineageComparison.latest ?: run {
                     handlePointerGap(observedAtMs, pointerActive, false, "INVALID_TIP", PointerFeedback.INVALID_TIP,
                     palmFallback = palmMotionOnly())
@@ -626,7 +648,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                     reacquireFrom = if (fraction == 1f) null else it
                 }
             } else targetCandidate
-            val trusted = tipUsable && (filterMode != PointerFilterMode.PRECISION || comparison.precisionTrusted)
+            val trusted = tipUsable && (filterMode !in setOf(PointerFilterMode.PRECISION, PointerFilterMode.CLASSIC) || comparison.precisionTrusted)
             val anchorProtected = !trusted && refitAnchor != null && touchAllowed && processed.poseEvidence.accepted &&
                 (processed.isPinchApproaching || processed.isPinchPressed)
             val targetTrusted = trusted || anchorProtected
@@ -640,14 +662,19 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             })
             if (AirRuntime.actionEpoch != pointerEpoch) { resetTrackingState(); return }
             if (!tipUsable && !anchorProtected) {
-                handlePointerGap(observedAtMs, pointerActive, false, "INVALID_TIP", PointerFeedback.INVALID_TIP,
-                    palmFallback = palmMotionOnly())
+                val imageTip = if (landmarks.size <= 1) trackVisibleFingertip() else null
+                handlePointerGap(observedAtMs, pointerActive, imageTip != null, "INVALID_TIP", PointerFeedback.INVALID_TIP,
+                    palmFallback = palmMotionOnly(), trackedFingertip = imageTip, sampledAtMs = timestamp, sampleAgeMs = freshness.ageMs)
                 return
             }
             if (tipUsable) AirRuntime.setRawPointerState(rawTip.x, rawTip.y, trusted)
             else AirRuntime.rawPointerSnapshot().let { AirRuntime.setRawPointerState(it.x, it.y, false) }
             val stabilized = if (dragging && pointerTouchTracking && trusted) {
                 AirRuntime.pointerInteraction = PointerInteractionPhase.DRAGGING
+                // A drag no longer uses the pickup anchor. Clearing it prevents
+                // the next open-hand frame from snapping back to the pickup point.
+                pinchPointer.reset()
+                pinchInProgress = pinchInProgress || service?.pinchDragActive == true || pinchDragRequested
                 candidate
             } else if (touchAllowed && processed.poseEvidence.accepted && targetTrusted) {
                 val interaction = pinchPointer.update(if (anchorProtected) refitAnchor!! else candidate,
@@ -675,7 +702,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 ?.put("currentFilteredUpright", point(PointerCoordinateMapper.Point(processed.smoothedX, processed.smoothedY)))
                 ?.put("comparison", org.json.JSONObject().put("mappedTip", point(mappedTip))
                     .put("current", point(comparison.current)).put("vc49", point(comparison.vc49))
-                    .put("precision", point(comparison.precision)))
+                    .put("precision", point(comparison.precision)).put("classic", point(comparison.classic)))
                 ?.put("precisionTrusted", comparison.precisionTrusted)?.put("geometryAspectRatio", frameAspectRatio)
                 ?.put("pointerInteraction", AirRuntime.pointerInteraction.name)
                 ?.put("thumbMiddleDistance", DiagnosticFrameData.number(processed.normalizedDistance))
@@ -716,8 +743,14 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             }
             AirRuntime.pointerFeedback = if (targetTrusted) PointerFeedback.TRACKING else PointerFeedback.COASTING
             AirRuntime.setPointerState(stabilized.x, stabilized.y, targetTrusted)
-            // Recognition initiates one bounded tap. Release only rearms. The same
-            // frame's pinch evidence excludes the classifier before its dispatch gate.
+            // Contact owns its command channel until separation. In drag mode
+            // release is a discrete edge, never an aim sample or a second tap.
+            if (dragMode && pinchDragRequested && !processed.isPinchPressed) {
+                service?.releasePointerDrag(pointerEpoch)
+                pinchDragRequested = false
+            }
+            if (dragMode && (pinchDragRequested || processed.isPinchApproaching || processed.isPinchPressed))
+                pinchInProgress = true
             val tapService = AirAccessibilityService.instance
             if (processed.isClickEngaged) {
                 pendingTapTarget = stabilized
@@ -735,16 +768,19 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                 // cannot turn a delayed tap into an unrelated target activation.
                 tapService?.isVisibleTapTargetReady(pointerEpoch, pendingTarget.x, pendingTarget.y) == true &&
                 tapService.isVisibleTapTargetReady(pointerEpoch, stabilized.x, stabilized.y)
-            if (touchAllowed && interpreter.takePendingTap(timestamp, appliedTargetReady)) {
+            if (touchAllowed && interpreter.takePendingTap(timestamp, appliedTargetReady && (!dragMode || processed.isPinchPressed))) {
                 pendingTapTarget = null
                 val contactEvidence = pendingTapContact
                 pendingTapContact = null
                 // The visible hotspot, not just the raw camera estimate, is the
                 // coordinate source snapshotted by the accessibility dispatcher.
-                tapService?.dispatchPointerTap(pointerEpoch, pointerTapDeadlineMs, contactEvidence)
+                if (dragMode) {
+                    pinchDragRequested = true
+                    tapService?.dispatchPointerDrag(pointerEpoch, pointerTapDeadlineMs, contactEvidence)
+                } else tapService?.dispatchPointerTap(pointerEpoch, pointerTapDeadlineMs, contactEvidence)
             }
 
-            // Pointer travel and held contact never dispatch scrolling or drag.
+            // Held movement continues the existing stroke through the applied hotspot.
             AirAccessibilityService.instance?.updatePointer(
                 stabilized.x,
                 stabilized.y,
@@ -833,7 +869,8 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
                     !pointerActive -> PointerFeedback.DISABLED
                     landmarks.size > 1 -> PointerFeedback.AMBIGUOUS
                     else -> PointerFeedback.NO_HAND
-                }, palmFallback = if (reason == "MISSING_TIP") palmMotionOnly() else null)
+                }, palmFallback = if (reason == "MISSING_TIP") palmMotionOnly() else null,
+                sampledAtMs = timestamp, sampleAgeMs = freshness.ageMs)
         }
 
         val registeredGesture = RegisteredGesture.fromSignal(gestureName)
@@ -926,13 +963,20 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
     }
 
     /** Retention changes cursor visibility only. Missing evidence immediately cancels all actions. */
+    private fun trackVisibleFingertip(): FingertipPatchTracker.Point? {
+        val pixels = currentPixels ?: return null
+        if (patchEpoch != AirRuntime.actionEpoch) return null
+        return fingertipPatch.track(pixels.width, pixels.height) { x, y -> luminance(pixels, x, y) }
+    }
+
     private fun handlePointerGap(now: Long, pointerActive: Boolean, coastAllowed: Boolean,
-        reason: String, feedback: PointerFeedback, palmFallback: Point3D? = null) {
+        reason: String, feedback: PointerFeedback, palmFallback: Point3D? = null,
+        trackedFingertip: FingertipPatchTracker.Point? = null, sampledAtMs: Long? = null, sampleAgeMs: Long = 0L) {
         AirRuntime.setCalibrationGesture(null)
         val pixels = currentPixels
-        val fallback = if (reason == "RAW_LANDMARK_DROPOUT" && pointerActive && coastAllowed &&
+        val fallback = if (reason in IMAGE_TRACKING_GAPS && pointerActive && coastAllowed &&
             pixels != null && patchEpoch == AirRuntime.actionEpoch)
-            fingertipPatch.track(pixels.width, pixels.height) { x, y -> luminance(pixels, x, y) } else null
+            trackedFingertip ?: trackVisibleFingertip() else null
         if (fallback == null) fingertipPatch.reset()
         val palmMotion = palmFallback.takeIf { fallback == null && pointerActive && coastAllowed }
         resetPointerTouch()
@@ -944,13 +988,23 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             staticConfirmation.reset()
         if (fallback != null && pixels != null) {
             val upright = CameraCoordinateTransform.toUpright(fallback.x, fallback.y, 0f, pixels.rotationDegrees)
-            val mapped = pointerMapper.map(upright.x, upright.y, pointerMapper.snapshot())
+            val profile = pointerMapper.snapshot()
+            val mappedTip = pointerMapper.map(upright.x, upright.y, profile)
+            val sampleTime = sampledAtMs ?: lastSubmittedTimestampMs
+            // Image matches already locate the measured tip. Preserve CURRENT's
+            // direct image response; filtering before mapping would stick at clipped
+            // screen edges. Screen-space candidates retain their normal filtering.
+            val comparison = lineageComparison.update(mappedTip, mappedTip, sampleTime, resultAgeMs = sampleAgeMs)
+            val mapped = comparison.selected(TestingTools.state.value.filterMode)
             AirRuntime.setRawPointerState(upright.x, upright.y, false)
             reacquireFrom = mapped
+            pointerVisibility.record(mapped, now)
             AirRuntime.setPointerState(mapped.x, mapped.y, false)
             AirRuntime.pointerFeedback = PointerFeedback.COASTING
             AirAccessibilityService.instance?.updatePointer(mapped.x, mapped.y, true, false)
+            PipelineMetrics.shared.recordCursorUpdate(SystemClock.uptimeMillis())
             diagnosticTrace?.put("pointerRejection", "PATCH_MOTION_ONLY")?.put("cursorVisible", true)
+                ?.put("fingertipSource", "IMAGE")?.put("coasting", false)
             AirRuntime.clearPoseEvidence()
             return
         }
@@ -1031,6 +1085,7 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
     }
 
     private fun resetPointerTouch() {
+        pinchDragRequested = false
         pendingTapTarget = null
         clearPendingTapContact()
         pinchPointer.reset()
@@ -1068,6 +1123,8 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         /** Real camera-frame age / spacing beyond which a result is too old to move the cursor. */
         private const val POINTER_MAX_AGE_MS = FrameAdmissionPolicy.POINTER_MAX_AGE_MS
         private const val POINTER_MAX_GAP_MS = 500L
+        private val IMAGE_TRACKING_GAPS = setOf("RAW_LANDMARK_DROPOUT", "MISSING_TIP",
+            "NON_FINITE_OR_MISSING_TIP", "INVALID_TIP", "HAND_SELECTION_REJECTED", "PARTIAL_HAND")
         private const val INDEX_MCP = KinematicValidator.INDEX_MCP
         private const val INDEX_TIP = KinematicValidator.INDEX_TIP
         private const val PINKY_MCP = KinematicValidator.PINKY_MCP
