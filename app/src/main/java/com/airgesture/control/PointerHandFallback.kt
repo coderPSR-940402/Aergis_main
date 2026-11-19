@@ -7,12 +7,16 @@ internal data class PointerHandCandidate(val index: Int, val handedness: String,
 internal object PointerHandFallback {
     // Without reliable palm ownership, pointer feedback requires exactly one eligible tip.
     // This selection never establishes ownership for gesture commands.
-    fun selectIndex(candidates: List<PointerHandCandidate>, preference: ControlHandPreference): Int? =
-        candidates.filter { candidate ->
+    fun selectIndex(candidates: List<PointerHandCandidate>, preference: ControlHandPreference): Int? {
+        var selected: Int? = null
+        for (candidate in candidates) {
             val tip = candidate.tip
-            tip != null && tip.x.isFinite() && tip.y.isFinite() &&
-                (preference == ControlHandPreference.EITHER ||
-                    candidate.handedness.equals(preference.name, ignoreCase = true))
-        }.singleOrNull()?.index
+            if (tip == null || !tip.x.isFinite() || !tip.y.isFinite()) continue
+            if (preference != ControlHandPreference.EITHER &&
+                !candidate.handedness.equals(preference.name, ignoreCase = true)) continue
+            if (selected != null) return null
+            selected = candidate.index
+        }
+        return selected
+    }
 }
-

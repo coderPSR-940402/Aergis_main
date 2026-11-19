@@ -118,8 +118,16 @@ class GestureCaptureService : Service(), LifecycleOwner {
             runCatching {
                 val provider = future.get()
                 cameraProvider = provider
-                val selector = CameraSelector.DEFAULT_FRONT_CAMERA
-                val cameraInfo = selector.filter(provider.availableCameraInfos).first()
+                val availableCameras = provider.availableCameraInfos
+                val selector = when {
+                    CameraSelector.DEFAULT_FRONT_CAMERA.filter(availableCameras).isNotEmpty() ->
+                        CameraSelector.DEFAULT_FRONT_CAMERA
+                    CameraSelector.DEFAULT_BACK_CAMERA.filter(availableCameras).isNotEmpty() ->
+                        CameraSelector.DEFAULT_BACK_CAMERA
+                    else -> throw IllegalStateException("No front or back camera is available")
+                }
+                val cameraInfo = selector.filter(availableCameras).firstOrNull()
+                    ?: throw IllegalStateException("Selected camera is no longer available")
                 analysisCameraInfo = cameraInfo
                 val info = runCatching { Camera2CameraInfo.from(cameraInfo) }.getOrNull()
                 // The legacy 960x540 target negotiated 1088x1088 on the A54.

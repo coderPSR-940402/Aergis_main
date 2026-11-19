@@ -42,13 +42,17 @@ internal class HandOwnershipTracker(
             owner = null; velocityX = 0f; velocityY = 0f
         }
         lastPreference = preference
-        val candidates = observations.filter { observation ->
+        var eligibleCount = 0
+        var onlyCandidate: HandObservation? = null
+        for (observation in observations) {
             // Preference selects a new owner. Once acquired, palm continuity owns
             // the track; a transient classifier label must not discard that hand.
-            owner != null || preference == ControlHandPreference.EITHER ||
-                observation.handedness.equals(preference.name, ignoreCase = true)
+            if (owner == null && preference != ControlHandPreference.EITHER &&
+                !observation.handedness.equals(preference.name, ignoreCase = true)) continue
+            eligibleCount++
+            onlyCandidate = observation
         }
-        if (candidates.isEmpty()) {
+        if (eligibleCount == 0) {
             // Missing detections retain only bounded motion identity, never a selection.
             lastTimestampMs = timestampMs
             return null
@@ -57,25 +61,31 @@ internal class HandOwnershipTracker(
         val previous = owner
         val selected = if (previous == null) {
             // With no track history there is no evidence to distinguish two hands.
-            candidates.singleOrNull()
+            if (eligibleCount == 1) onlyCandidate else null
         } else {
-            val scores = candidates.map { candidate ->
-                candidate to continuityScore(previous, candidate, timestampMs)
-            }.filter { (_, score) -> score.isFinite() }
-                .sortedBy { (_, score) -> score }
-            val best = scores.firstOrNull()
-            val runnerUp = scores.getOrNull(1)
-            if (runnerUp != null && best != null && runnerUp.second - best.second < ambiguityMargin) {
+            var best: HandObservation? = null
+            var bestScore = Float.POSITIVE_INFINITY
+            var runnerUpScore = Float.POSITIVE_INFINITY
+            for (candidate in observations) {
+                if (owner == null && preference != ControlHandPreference.EITHER &&
+                    !candidate.handedness.equals(preference.name, ignoreCase = true)) continue
+                val score = continuityScore(previous, candidate, timestampMs)
+                if (!score.isFinite()) continue
+                if (score < bestScore) {
+                    runnerUpScore = bestScore
+                    bestScore = score
+                    best = candidate
+                } else if (score < runnerUpScore) {
+                    runnerUpScore = score
+                }
+            }
+            if (best != null && runnerUpScore.isFinite() && runnerUpScore - bestScore < ambiguityMargin) {
                 // No action evidence on ambiguous frames, but do not let the next
                 // frame acquire a different hand merely because two hands crossed.
                 lastTimestampMs = timestampMs
                 return null
             }
-            if (best == null) {
-                null
-            } else {
-                best.first
-            }
+            best
         }
 
         if (selected == null) {

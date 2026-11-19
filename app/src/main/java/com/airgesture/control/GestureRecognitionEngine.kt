@@ -88,6 +88,8 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
     // Reusable buffers to avoid heap allocations per frame
     private val reusablePointsList = ArrayList<Point3D>(21)
     private val handednessList = ArrayList<String>(2)
+    private val reusableHandObservations = ArrayList<HandObservation>(2)
+    private val reusablePointerCandidates = ArrayList<PointerHandCandidate>(2)
 
     init {
         AirRuntime.visionReady = false
@@ -435,17 +437,18 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
             AirRuntime.state.value.foregroundContext.safety
         )
         val handSelection = selectPointerHand(landmarks, handednessList, timestamp, rotationDegrees)
-        val pointerHandIndex = handSelection?.index ?: PointerHandFallback.selectIndex(
-            landmarks.mapIndexed { index, hand ->
+        val pointerHandIndex = handSelection?.index ?: run {
+            reusablePointerCandidates.clear()
+            landmarks.forEachIndexed { index, hand ->
                 val tip = hand.getOrNull(INDEX_TIP)
-                PointerHandCandidate(
+                reusablePointerCandidates.add(PointerHandCandidate(
                     index,
                     handednessList.getOrNull(index) ?: "Unknown",
                     tip?.let { Point3D(it.x(), it.y(), it.z()) }
-                )
-            },
-            AirRuntime.handPreference
-        )
+                ))
+            }
+            PointerHandFallback.selectIndex(reusablePointerCandidates, AirRuntime.handPreference)
+        }
         val selectedHand = pointerHandIndex?.let(landmarks::getOrNull)
         val gesture = OwnedGestureEvidenceSelector.select(
             result.gestures(),
@@ -935,31 +938,32 @@ class GestureRecognitionEngine(private val context: Context) : AutoCloseable {
         timestampMs: Long,
         rotationDegrees: Int
     ): HandOwnershipTracker.Selection? {
-        val observations = landmarks.mapIndexedNotNull { index, hand ->
-            if (hand.size <= PINKY_MCP) return@mapIndexedNotNull null
+        reusableHandObservations.clear()
+        landmarks.forEachIndexed { index, hand ->
+            if (hand.size <= PINKY_MCP) return@forEachIndexed
             // Palm anchors do not include fingertips that move/refit during contact.
             // A close or clipped hand can lose its wrist while both palm-width
             // anchors remain reliable. Keep identity independent of unused joints;
             // per-gesture and pinch evidence still apply their own visibility gates.
-            val palm = intArrayOf(INDEX_MCP, PINKY_MCP).map { joint ->
-                val raw = hand[joint]
-                CameraCoordinateTransform.toUpright(raw.x(), raw.y(), raw.z(), rotationDegrees)
-            }
-            val centerX = palm.sumOf { it.x.toDouble() }.toFloat() / palm.size
-            val centerY = palm.sumOf { it.y.toDouble() }.toFloat() / palm.size
-            val palmSize = palm[0].distance2DTo(palm[1], frameAspectRatio)
+            val indexMcp = hand[INDEX_MCP]
+            val pinkyMcp = hand[PINKY_MCP]
+            val first = CameraCoordinateTransform.toUpright(indexMcp.x(), indexMcp.y(), indexMcp.z(), rotationDegrees)
+            val second = CameraCoordinateTransform.toUpright(pinkyMcp.x(), pinkyMcp.y(), pinkyMcp.z(), rotationDegrees)
+            val centerX = (first.x + second.x) * 0.5f
+            val centerY = (first.y + second.y) * 0.5f
+            val palmSize = first.distance2DTo(second, frameAspectRatio)
             if (!centerX.isFinite() || !centerY.isFinite() || !palmSize.isFinite() || palmSize <= 0f) {
-                return@mapIndexedNotNull null
+                return@forEachIndexed
             }
-            HandObservation(
+            reusableHandObservations.add(HandObservation(
                 index = index,
                 handedness = physicalHandedness.getOrNull(index) ?: "Unknown",
                 centerX = centerX,
                 centerY = centerY,
                 palmSize = palmSize
-            )
+            ))
         }
-        return handOwnership.select(observations, AirRuntime.handPreference, timestampMs)
+        return handOwnership.select(reusableHandObservations, AirRuntime.handPreference, timestampMs)
     }
 
     /** Retention changes cursor visibility only. Missing evidence immediately cancels all actions. */
