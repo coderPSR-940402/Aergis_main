@@ -86,6 +86,14 @@ A successful CI run produces:
 
 The APK artifact name is tied to the commit SHA, making the build traceable to its source revision.
 
+### Offline model preparation
+
+Before going offline, run `./gradlew :app:prepareGestureModel :app:prepareFaceModel`
+or copy the two verified `.task` files from a trusted build of the same revision
+into `app/src/main/assets/`. The model tasks check both the size and SHA-256
+against the pins in `app/build.gradle.kts`. An offline build requires both
+verified model files and a previously populated Gradle cache and Android SDK.
+
 ## Development workflow
 
 1. Resolve the current `baseline-successful-apk` reference.

@@ -1,4 +1,4 @@
-import java.net.URL
+import java.net.URI
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
@@ -79,54 +79,87 @@ android {
     }
 }
 
-val gestureModelUrl = "https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task"
-val gestureModelSha256 = "97952348cf6a6a4915c2ea1496b4b37ebabc50cbbf80571435643c455f2b0482"
-val gestureModelFile = layout.projectDirectory.file("src/main/assets/gesture_recognizer.task").asFile
-
-fun validGestureModel(file: File): Boolean {
-    if (!file.isFile || file.length() != 8_373_440L) return false
+fun validModel(file: File, size: Long, sha256: String): Boolean {
+    if (!file.isFile || file.length() != size) return false
     val digest = MessageDigest.getInstance("SHA-256")
     file.inputStream().use { input ->
-        val buffer = ByteArray(1024 * 1024)
+        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
         while (true) {
             val read = input.read(buffer)
             if (read < 0) break
             digest.update(buffer, 0, read)
         }
     }
-    return digest.digest().joinToString("") { "%02x".format(it.toInt() and 0xff) } == gestureModelSha256
+    return digest.digest().joinToString("") { "%02x".format(it.toInt() and 0xff) } == sha256
 }
 
-tasks.register("prepareGestureModel") {
-    outputs.file(gestureModelFile)
-    outputs.upToDateWhen { validGestureModel(gestureModelFile) }
-    doLast {
-        if (!validGestureModel(gestureModelFile)) {
-            gestureModelFile.parentFile.mkdirs()
-            val temporary = File.createTempFile("gesture-model-", ".partial", gestureModelFile.parentFile)
-            logger.lifecycle("Downloading and verifying the pinned MediaPipe gesture model")
-            try {
-                val connection = URL(gestureModelUrl).openConnection().apply {
-                    connectTimeout = 30_000
-                    readTimeout = 120_000
-                }
-                connection.getInputStream().use { input ->
-                    temporary.outputStream().use { output -> input.copyTo(output) }
-                }
-                check(validGestureModel(temporary)) { "Downloaded gesture model failed size/SHA-256 verification" }
-                Files.move(temporary.toPath(), gestureModelFile.toPath(),
-                    StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
-            } catch (e: Exception) {
-                throw GradleException("Could not prepare gesture model: ${e.message}", e)
-            } finally {
-                temporary.delete()
-            }
+fun downloadModel(url: String, destination: File, size: Long) {
+    val connection = URI.create(url).toURL().openConnection().apply {
+        connectTimeout = 30_000
+        readTimeout = 120_000
+    }
+    connection.getInputStream().use { input ->
+        val advertisedSize = connection.contentLengthLong
+        check(advertisedSize < 0 || advertisedSize == size) {
+            "Expected $size model bytes, server advertised $advertisedSize"
         }
-        check(validGestureModel(gestureModelFile)) { "Gesture model verification failed; refusing to build" }
+        destination.outputStream().use { output ->
+            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+            var remaining = size
+            while (remaining > 0) {
+                val read = input.read(buffer, 0, minOf(remaining, buffer.size.toLong()).toInt())
+                check(read >= 0) { "Model download ended before $size bytes" }
+                output.write(buffer, 0, read)
+                remaining -= read
+            }
+            check(input.read() < 0) { "Model download exceeded $size bytes" }
+        }
     }
 }
 
-tasks.named("preBuild").configure { dependsOn("prepareGestureModel") }
+fun registerPinnedModel(taskName: String, label: String, url: String, asset: String, size: Long, sha256: String) {
+    val destination = layout.projectDirectory.file("src/main/assets/$asset").asFile
+    val offline = gradle.startParameter.isOffline
+    val preparation = tasks.register(taskName) {
+        outputs.file(destination)
+        outputs.upToDateWhen { validModel(destination, size, sha256) }
+        doLast {
+            if (!validModel(destination, size, sha256)) {
+                check(!offline) { "Missing or invalid pinned $label model at $destination. Restore the verified asset or build online." }
+                destination.parentFile.mkdirs()
+                val temporary = File.createTempFile("$asset-", ".partial", destination.parentFile)
+                logger.lifecycle("Downloading and verifying the pinned MediaPipe $label model")
+                try {
+                    downloadModel(url, temporary, size)
+                    check(validModel(temporary, size, sha256)) { "Model failed size/SHA-256 verification" }
+                    Files.move(temporary.toPath(), destination.toPath(),
+                        StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+                } catch (e: Exception) {
+                    throw GradleException("Could not prepare $label model: ${e.message}", e)
+                } finally {
+                    temporary.delete()
+                }
+            }
+            check(validModel(destination, size, sha256)) { "$label model verification failed; refusing to build" }
+        }
+    }
+    tasks.named("preBuild").configure { dependsOn(preparation) }
+}
+
+registerPinnedModel(
+    "prepareGestureModel", "gesture",
+    "https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task",
+    "gesture_recognizer.task", 8_373_440L,
+    "97952348cf6a6a4915c2ea1496b4b37ebabc50cbbf80571435643c455f2b0482",
+)
+
+// Opt-in gaze lab uses a separate pinned model.
+registerPinnedModel(
+    "prepareFaceModel", "face",
+    "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+    "face_landmarker.task", 3_758_596L,
+    "64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff",
+)
 
 dependencies {
     implementation(platform("androidx.compose:compose-bom:2026.06.01"))
@@ -152,28 +185,3 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.robolectric:robolectric:4.17")
 }
-
-// Opt-in gaze lab uses a separate pinned model; no runtime download or network permission.
-val faceModelFile = layout.projectDirectory.file("src/main/assets/face_landmarker.task").asFile
-fun validFaceModel(file: File): Boolean = file.isFile && file.length() == 3_758_596L &&
-    MessageDigest.getInstance("SHA-256").digest(file.readBytes()).joinToString("") { "%02x".format(it.toInt() and 255) } ==
-        "64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff"
-tasks.register("prepareFaceModel") {
-    outputs.file(faceModelFile)
-    outputs.upToDateWhen { validFaceModel(faceModelFile) }
-    doLast {
-        if (!validFaceModel(faceModelFile)) {
-            faceModelFile.parentFile.mkdirs()
-            val temporary = File.createTempFile("face-model-", ".partial", faceModelFile.parentFile)
-            try {
-                URL("https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task")
-                    .openConnection().apply { connectTimeout = 30_000; readTimeout = 120_000 }
-                    .getInputStream().use { input -> temporary.outputStream().use { input.copyTo(it) } }
-                check(validFaceModel(temporary)) { "Face model size/SHA-256 verification failed" }
-                Files.move(temporary.toPath(), faceModelFile.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
-            } finally { temporary.delete() }
-        }
-        check(validFaceModel(faceModelFile))
-    }
-}
-tasks.named("preBuild").configure { dependsOn("prepareFaceModel") }
