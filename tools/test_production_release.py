@@ -1,4 +1,6 @@
 import unittest
+from unittest.mock import patch
+import production_release as release
 from production_release import production_version, validate_request, verify_certificate
 
 class ProductionReleaseTests(unittest.TestCase):
@@ -19,7 +21,16 @@ class ProductionReleaseTests(unittest.TestCase):
                                  ('Signer #1 certificate SHA-256 digest: '+production+'\nSigner #2 certificate SHA-256 digest: '+production,production)]:
             with self.assertRaises(ValueError): verify_certificate(report, expected, preview)
 
-if __name__ == '__main__': unittest.main()
+    def test_only_pre_gaze_rollbacks_use_the_gesture_only_contract(self):
+        source = 'a' * 40
+        with patch.object(release.subprocess, 'run'), patch.object(release, 'checked_output') as show:
+            show.return_value = 'val model = "face_landmarker.task"'
+            self.assertEqual('gesture-and-face', release.source_model_contract(source, 'release'))
+            self.assertEqual('gesture-and-face', release.source_model_contract(source, 'rollback'))
+            show.return_value = 'val model = "gesture_recognizer.task"'
+            self.assertEqual('legacy-gesture-only', release.source_model_contract(source, 'rollback'))
+            with self.assertRaises(ValueError):
+                release.source_model_contract(source, 'release')
 
 class IsolatedSigningTests(unittest.TestCase):
     def test_signing_failure_removes_key_and_never_places_passwords_in_arguments(self):
@@ -29,8 +40,6 @@ class IsolatedSigningTests(unittest.TestCase):
         from pathlib import Path
         import subprocess
         import tempfile
-        from unittest.mock import patch
-        import production_release as release
         env = dict(SOURCE_SHA='a'*40, RELEASE_MODE='release', DATA_COMPATIBLE='false',
                    GITHUB_RUN_NUMBER='1', GITHUB_SHA='c'*40, GITHUB_RUN_ID='123', GITHUB_RUN_ATTEMPT='1',
                    GITHUB_REPOSITORY='owner/repo', PRODUCTION_CERT_SHA256='b'*64,
@@ -44,7 +53,7 @@ class IsolatedSigningTests(unittest.TestCase):
                 os.chdir(directory)
                 Path('ci').mkdir(); Path('ci/preview-certificate.sha256').write_text('d'*64)
                 Path('candidate').mkdir()
-                manifest = release.request(); manifest['version_name'] = '1.0'
+                manifest = dict(release.request(), version_name='1.0', model_contract='gesture-and-face')
                 Path('candidate/release-request.json').write_text(json.dumps(manifest))
                 def command(args, **kwargs):
                     if 'sign' in args:
@@ -55,9 +64,16 @@ class IsolatedSigningTests(unittest.TestCase):
                         self.assertNotIn('fixture-key-pass',args)
                         return subprocess.CompletedProcess(args,1)
                     return subprocess.CompletedProcess(args,0)
-                with patch.object(release,'checked_output',return_value='badging'), patch.object(release,'verify_metadata'), patch.object(release,'verify_model'), patch.object(release.subprocess,'run',side_effect=command):
+                with patch.object(release, 'source_model_contract', return_value='gesture-and-face'), \
+                        patch.object(release, 'checked_output', return_value='badging'), \
+                        patch.object(release, 'verify_metadata'), patch.object(release, 'verify_models'), \
+                        patch.object(release.subprocess, 'run', side_effect=command):
                     with self.assertRaises(ValueError): release.sign()
                 self.assertEqual([],list(Path(directory).glob('aergis-sign-*')))
                 self.assertEqual([],list(Path('production').glob('*')))
             finally:
                 os.chdir(cwd)
+
+
+if __name__ == '__main__':
+    unittest.main()

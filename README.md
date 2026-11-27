@@ -7,8 +7,8 @@ Aergis is an Android air-gesture control application. The repository is the acti
 | Property | Current value |
 |---|---|
 | Package | `com.airgesture.control` |
-| Version | *update with each build* |
-| Version code | *update with each build* |
+| Version name | Declared in `app/build.gradle.kts` |
+| Preview version code | `1000 + GITHUB_RUN_NUMBER` in CI, `1000` locally |
 | Minimum SDK | `26` |
 | Compile / target SDK | `36` |
 | Java | `17` |
@@ -38,10 +38,11 @@ That reference is advanced automatically only after the CI workflow has successf
 2. run Android lint;
 3. assembled the debug APK;
 4. assembled the minified release APK;
-5. verified the debug APK package and version;
-6. verified the release APK exists;
-7. generated APK SHA-256 checksums; and
-8. completed the baseline-reference update.
+5. verified the debug APK package, version, bundled models, and preview signing certificate;
+6. verified the minified release APK package, version, and bundled models;
+7. exercised isolated production signing with an ephemeral key;
+8. generated APK SHA-256 checksums and uploaded the build artifacts; and
+9. completed the baseline-reference update.
 
 Failed or cancelled builds cannot advance this CI build reference.
 
@@ -72,9 +73,14 @@ The project includes:
 
 The CI environment uses Java 17, Android SDK 36, and the checked-in Gradle 9.8.0 wrapper. Run `./gradlew` for reproducible local builds; AGP 9 uses built-in Kotlin support and the project keeps the Compose compiler plugin aligned with Kotlin 2.4.21. AndroidX, CameraX, Lifecycle, Core KTX, and Compose dependencies remain on their upgraded stable lines.
 
-The workflow is defined in:
+Run the Android and host checks from the repository root with Java 17, Android SDK 36 and build-tools 36.0.0, and Python 3.11 or newer.
 
-`.github/workflows/ci.yml`
+```sh
+python3 -m unittest discover -s tools -p 'test_*.py'
+./gradlew test :app:lint :app:assembleDebug :app:assembleRelease
+```
+
+The full workflow is in [Aergis CI](.github/workflows/ci.yml).
 
 A successful CI run produces:
 

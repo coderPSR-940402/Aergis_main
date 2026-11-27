@@ -20,6 +20,15 @@ import java.util.concurrent.TimeUnit
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class GestureCaptureLifecycleTest {
+    @Test fun stoppingCaptureClearsThePreviousSessionError() {
+        shadowOf(RuntimeEnvironment.getApplication()).denyPermissions(Manifest.permission.CAMERA)
+        val controller = Robolectric.buildService(GestureCaptureService::class.java).create()
+        AirRuntime.visionError = "Camera bind failed"
+        controller.destroy()
+        assertFalse(AirRuntime.running)
+        assertNull(AirRuntime.visionError)
+    }
+
     @Test fun stopQueuesNativeDisposalAfterInferenceWithoutInterruptingIt() {
         shadowOf(RuntimeEnvironment.getApplication()).denyPermissions(Manifest.permission.CAMERA)
         val controller = Robolectric.buildService(GestureCaptureService::class.java).create()

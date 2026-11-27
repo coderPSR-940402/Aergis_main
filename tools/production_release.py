@@ -9,7 +9,7 @@ from pathlib import Path
 import re
 import subprocess
 import tempfile
-from verify_apk import verify_metadata, verify_model
+from verify_apk import verify_metadata, verify_model, verify_models
 
 
 def production_version(run_number):
@@ -37,6 +37,18 @@ def checked_output(args):
     return subprocess.run(args, check=True, capture_output=True, text=True).stdout
 
 
+def source_model_contract(source, mode):
+    # Read the workflow checkout's trusted Git history, never candidate-supplied files.
+    git = ['git', '-C', str(Path(__file__).resolve().parent.parent)]
+    subprocess.run([*git, 'merge-base', '--is-ancestor', source, 'HEAD'], check=True)
+    gradle = checked_output([*git, 'show', f'{source}:app/build.gradle.kts'])
+    if 'face_landmarker.task' in gradle:
+        return 'gesture-and-face'
+    if mode == 'rollback':
+        return 'legacy-gesture-only'
+    raise ValueError('Gesture-only sources require an explicitly reviewed rollback')
+
+
 def request():
     source = os.environ['SOURCE_SHA']
     mode = os.environ['RELEASE_MODE']
@@ -51,7 +63,7 @@ def request():
 def prepare():
     metadata = request()
     # Only already-integrated history can be built; PR merge refs/fork commits fail closed.
-    subprocess.run(['git', 'merge-base', '--is-ancestor', metadata['source_commit'], 'HEAD'], check=True)
+    metadata['model_contract'] = source_model_contract(metadata['source_commit'], metadata['kind'])
     subprocess.run(['git', 'worktree', 'add', '--detach', 'source', metadata['source_commit']], check=True)
     gradle = Path('source/app/build.gradle.kts').read_text()
     versions = re.findall(r'^\s*versionName = "([^"\n]+)"$', gradle, re.M)
@@ -69,6 +81,10 @@ def sign():
     for key, expected in expected_request.items():
         if metadata.get(key) != expected:
             raise ValueError('Candidate provenance does not match this workflow request')
+    contract = source_model_contract(expected_request['source_commit'], expected_request['kind'])
+    if metadata.get('model_contract') != contract:
+        raise ValueError('Candidate model contract does not match the requested source')
+    verify_candidate_models = verify_models if contract == 'gesture-and-face' else verify_model
     expected_cert = os.environ['PRODUCTION_CERT_SHA256'].lower().replace(':', '')
     preview = Path('ci/preview-certificate.sha256').read_text().strip()
     # Reject invalid/public pins before loading any key.
@@ -77,7 +93,7 @@ def sign():
     tools = Path(os.environ['ANDROID_HOME']) / 'build-tools/36.0.0'
     badging = checked_output([str(tools/'aapt'), 'dump', 'badging', str(apk)])
     verify_metadata(badging, metadata['version_code'], metadata['version_name'])
-    verify_model(apk)
+    verify_candidate_models(apk)
     subprocess.run([str(tools/'zipalign'), '-c', '4', str(apk)], check=True)
     output = Path('production'); output.mkdir(exist_ok=True)
     signed = output/'Aergis-production.apk'
@@ -97,7 +113,7 @@ def sign():
     report = checked_output([str(tools/'apksigner'), 'verify', '--verbose', '--print-certs', '--min-sdk-version', '26', str(signed)])
     verify_certificate(report, expected_cert, preview)
     verify_metadata(checked_output([str(tools/'aapt'), 'dump', 'badging', str(signed)]), metadata['version_code'], metadata['version_name'])
-    verify_model(signed)
+    verify_candidate_models(signed)
     with signed.open('rb') as apk_stream:
         digest = hashlib.file_digest(apk_stream, 'sha256').hexdigest()
     metadata.update(package='com.airgesture.control', certificate_sha256=expected_cert,

@@ -116,10 +116,10 @@ internal object TestingTools {
     fun onFrame(context: Context, image: RgbaFrameData, result: GestureRecognizerResult?, timestamp: Long,
         inferenceMs: Long, trace: JSONObject?, error: String?, pipelineAgeMs: Long = -1L) {
         val diagnosticStarted = SystemClock.uptimeMillis()
-        val frameSession = synchronized(lock) { session }
-        val recording = frameSession != null
+        val (frameSession, imageDue) = synchronized(lock) {
+            session to (session != null && (lastImage == Long.MIN_VALUE || timestamp - lastImage >= 500))
+        }
         val previewDue = state.value.mirror && (lastPreview == Long.MIN_VALUE || timestamp - lastPreview >= 125)
-        val imageDue = recording && (lastImage == Long.MIN_VALUE || timestamp - lastImage >= 500)
         var bitmap: Bitmap? = null
         var imageError: String? = null
         if (previewDue || imageDue) {
@@ -128,7 +128,6 @@ internal object TestingTools {
                     image.pixelStride, image.rotationDegrees, if (imageDue) 960 else 480)
             }.getOrElse {
                 imageError = it.message ?: it.javaClass.simpleName
-                if (imageDue) imageFailures.incrementAndGet()
                 null
             }
             if (previewDue) {
@@ -150,9 +149,8 @@ internal object TestingTools {
                         trace?.optJSONObject("timing")?.optString("timeSource") == FrameTimeSource.CAMERA_ELAPSED_REALTIME.name)
                 }
             }
-            if (imageDue) lastImage = timestamp
         }
-        if (!recording) return
+        if (frameSession == null) return
         val frame = DiagnosticFrameData.encode(context, image, result, timestamp, inferenceMs, trace, error)
         frame.put("diagnosticOverheadMs", SystemClock.uptimeMillis() - diagnosticStarted)
             .put("cameraSampleRequested", imageDue).put("imageError", imageError ?: JSONObject.NULL)
@@ -160,6 +158,10 @@ internal object TestingTools {
         synchronized(lock) {
             val current = session ?: return
             if (current !== frameSession || timestamp < startedAt) return
+            if (imageDue) {
+                lastImage = timestamp
+                if (imageError != null) imageFailures.incrementAndGet()
+            }
             if (timestamp - startedAt >= MAX_DURATION_MS || accepted >= MAX_FRAMES) {
                 stop("Recording limit reached")
                 return

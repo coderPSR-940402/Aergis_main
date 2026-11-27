@@ -28,9 +28,13 @@ def point(value):
     if not isinstance(value, dict):
         return None
     x, y = value.get("x"), value.get("y")
-    if type(x) in (int, float) and type(y) in (int, float) and math.isfinite(x) and math.isfinite(y) and 0 <= x <= 1 and 0 <= y <= 1:
+    if type(x) in (int, float) and type(y) in (int, float) and 0 <= x <= 1 and 0 <= y <= 1:
         return float(x), float(y)
     return None
+
+
+def valid_milliseconds(value):
+    return type(value) in (int, float) and 0 <= value <= 2**63 - 1
 
 
 def distance(a, b):
@@ -77,7 +81,8 @@ def metrics(rows, mode, segment):
         for i in range(1, len(rows)):
             if distance(rows[i]["raw"], rows[i-1]["raw"]) < .045:
                 continue
-            for r in rows[i:]:
+            for index in range(i, len(rows)):
+                r = rows[index]
                 if r["time"] - rows[i]["time"] > 500:
                     break
                 if distance(r[mode], rows[i]["raw"]) < .02:
@@ -102,16 +107,14 @@ def operational_summary(frames, events):
     """Summarize observations independently of optional pointer comparisons."""
     frames = [f for f in frames if isinstance(f, dict)]
     events = [e for e in events if isinstance(e, dict)]
-    def nonnegative(value):
-        return type(value) in (int, float) and math.isfinite(value) and value >= 0
-    times = [f['timestampMs'] for f in frames if nonnegative(f.get('timestampMs'))]
+    times = [f['timestampMs'] for f in frames if valid_milliseconds(f.get('timestampMs'))]
     timings = collections.defaultdict(list)
     for frame in frames:
         timing = frame.get('timing')
         if isinstance(timing, dict):
             for key in ('frameAgeAtStartMs', 'captureToAnalysisMs', 'preprocessMs',
                         'inferenceMs', 'publishMs', 'frameToPointerMs'):
-                if nonnegative(timing.get(key)):
+                if valid_milliseconds(timing.get(key)):
                     timings[key].append(timing[key])
     def counts(records, field):
         return dict(collections.Counter(r[field] for r in records
@@ -155,7 +158,7 @@ def analyze(frames, events, metadata):
     previous_context = None
     previous_time = None
     run = None
-    context_fields = ("testSegment", "filterMode", "commandOwnerId", "calibration", "actionEpoch", "rotation")
+    context_fields = ("filterMode", "commandOwnerId", "calibration", "actionEpoch", "rotation")
     reasons = collections.Counter()
     visibility_interruptions = 0
     previous_visible = None
@@ -163,7 +166,9 @@ def analyze(frames, events, metadata):
     previous_identity = None
     identity_fields = ("filterMode", "commandOwnerId", "calibration", "rotation")
     missing_since_last = False
-    reacquisition = {"current": [], "vc49": [], "precision": []}
+    optional_modes = ("precision", "classic")
+    modes = ("current", "vc49", *optional_modes)
+    reacquisition = {mode: [] for mode in modes}
     invalid = 0
     for frame in frames:
         if not isinstance(frame, dict):
@@ -172,12 +177,16 @@ def analyze(frames, events, metadata):
             previous_candidates = None
             run = None
             continue
-        reasons[frame.get("pointerRejection", frame.get("reason", "UNKNOWN"))] += 1
+        reason = frame.get("pointerRejection", frame.get("reason"))
+        reasons[reason if isinstance(reason, str) else "UNKNOWN"] += 1
         visible = frame.get("cursorVisible")
         if visible is not None:
             visibility_interruptions += previous_visible is True and visible is False
             previous_visible = visible
-        context = tuple(frame.get(key) for key in context_fields)
+        segment = frame.get("testSegment")
+        if not isinstance(segment, str):
+            segment = "UNLABELLED"
+        context = (segment, *(frame.get(key) for key in context_fields))
         identity = tuple(frame.get(key) for key in identity_fields)
         if frame.get("ownerChanged", False) or (previous_identity is not None and any(
                 frame.get(key) is not None and frame.get(key) != previous_identity[i]
@@ -186,15 +195,13 @@ def analyze(frames, events, metadata):
         comparison = frame.get("comparison")
         comparison = comparison if isinstance(comparison, dict) else {}
         timestamp = frame.get("timestampMs")
-        valid_time = type(timestamp) in (int, float) and math.isfinite(timestamp) and timestamp >= 0
         raw, current, vc49 = (point(comparison.get(key)) for key in ("mappedTip", "current", "vc49"))
-        precision = point(comparison.get("precision"))
-        context += (precision is not None,)
+        optional = {mode: point(comparison.get(mode)) for mode in optional_modes}
+        context += tuple(value is not None for value in optional.values())
         changed = context != previous_context or frame.get("ownerChanged", False)
         candidates = {"current": current, "vc49": vc49}
-        if precision is not None:
-            candidates["precision"] = precision
-        if not valid_time or None in (raw, current, vc49):
+        candidates.update((mode, value) for mode, value in optional.items() if value is not None)
+        if not valid_milliseconds(timestamp) or None in (raw, current, vc49):
             invalid += 1
             missing_since_last = True
             run = None
@@ -204,7 +211,6 @@ def analyze(frames, events, metadata):
             for mode, value in candidates.items():
                 if mode in previous_candidates:
                     reacquisition[mode].append(distance(value, previous_candidates[mode]))
-        segment = frame.get("testSegment", "UNLABELLED")
         if run is None or changed or previous_time is None or not 0 < timestamp - previous_time <= 150:
             run_counts[segment] += 1
             run = segment if run_counts[segment] == 1 else f"{segment}#{run_counts[segment]}"
@@ -224,7 +230,7 @@ def analyze(frames, events, metadata):
         "pointerVisibilityInterruptions": visibility_interruptions, "rejections": dict(reasons),
         "overlayEvents": len(overlay), "overlayHiddenEvents": sum(not e.get("visible", False) for e in overlay),
         "reacquisitionMaxDiscontinuity": {k: max(v) if v else None for k, v in reacquisition.items()},
-        "segments": {s: {mode: metrics(rows, mode, labels[s]) for mode in ("current", "vc49", "precision") if mode in rows[0]} for s, rows in groups.items()},
+        "segments": {s: {mode: metrics(rows, mode, labels[s]) for mode in modes if mode in rows[0]} for s, rows in groups.items()},
         "limits": ["Normalized screen units. Raw landmarks are measurements, not ground truth.",
                    "Estimated lag is relative to measured tips, not end-to-end camera/display latency.",
                    "FAST first arrival measures entry within 0.02 of a measured step target, not sustained settling.",
