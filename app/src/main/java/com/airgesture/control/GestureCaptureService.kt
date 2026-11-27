@@ -228,6 +228,7 @@ class GestureCaptureService : Service(), LifecycleOwner {
             val engine = visionEngine
             visionEngine = null
             cleanupCapture("stop recognition") { engine?.stop() }
+            AirRuntime.visionError = null
             val processor = frameProcessor
             frameProcessor = null
             cleanupCapture("release pending frames") { processor?.close() }

@@ -4,9 +4,15 @@ The committed preview keystore is public and must never sign production APKs.
 The production workflow is manual, runs from `main`, and creates an **unpublished
 draft release**. Tests, lint and unsigned minified assembly run in a job without
 signing credentials. A separate protected job signs and verifies the package,
-version, model, signer fingerprint and APK checksum. It does not run Gradle or
+version, model assets, signer fingerprint and APK checksum. It does not run Gradle or
 source-revision scripts. Previous drafts/artifacts are not deleted. This workflow
 never advances the functional or CI baseline.
+
+The signing job reads the requested commit's build declaration from Git history
+and independently verifies its expected models before and after signing. Current
+sources require both the gesture and face models. Sources from before Gaze Lab
+use the gesture-only contract when selected for an explicitly reviewed rollback.
+The release manifest records the model contract.
 
 ## One-time private signing setup
 
@@ -75,7 +81,8 @@ never uninstalls the preview app or clears its settings to bypass Android checks
 Normal CI also runs the signing CLI against a disposable SDK-built fixture APK
 and a newly generated ephemeral test certificate. It checks real signing,
 signature verification, metadata/checksums, wrong private signer, public preview
-pin, provenance rejection and temporary-key cleanup. Fixtures live outside the
+pin, provenance rejection, a missing face model, a mismatched model contract and
+temporary-key cleanup. Fixtures live outside the
 workspace artifact paths and are deleted; they are never releases or install
 candidates. This does not configure production credentials, exercise the manual
 production workflow end to end, install an APK, or verify device/data rollback.

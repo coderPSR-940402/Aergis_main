@@ -41,18 +41,27 @@ def smoke(sdk, model):
         fingerprint = hashlib.sha256(certificate.read_bytes()).hexdigest()
         assets = root/'assets'; assets.mkdir()
         shutil.copyfile(model, assets/'gesture_recognizer.task')
+        shutil.copyfile(model.with_name('face_landmarker.task'), assets/'face_landmarker.task')
         manifest = root/'AndroidManifest.xml'
         manifest.write_text('''<manifest xmlns:android="http://schemas.android.com/apk/res/android"
  package="com.airgesture.control" android:versionCode="2000000001" android:versionName="1.0-signing-smoke">
  <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="36"/>
  <application android:hasCode="false" android:label="Ephemeral signing test"/>
 </manifest>''')
-        unaligned = root/'unaligned.apk'
-        checked([tools/'aapt2', 'link', '-o', unaligned, '--manifest', manifest,
-                 '-I', sdk/'platforms/android-36/android.jar', '-A', assets], env)
-        aligned = root/'fixture.apk'
-        checked([tools/'zipalign', '-f', '4', unaligned, aligned], env)
-        source = env.get('GITHUB_SHA', 'a'*40)
+        def build_fixture(name):
+            unaligned = root/f'{name}-unaligned.apk'
+            aligned = root/f'{name}.apk'
+            checked([tools/'aapt2', 'link', '-o', unaligned, '--manifest', manifest,
+                     '-I', sdk/'platforms/android-36/android.jar', '-A', assets], env)
+            checked([tools/'zipalign', '-f', '4', unaligned, aligned], env)
+            return aligned
+
+        aligned = build_fixture('current')
+        (assets/'face_landmarker.task').unlink()
+        gesture_only = build_fixture('gesture-only')
+        source = env.get('GITHUB_SHA') or checked(
+            ['git', '-C', repo, 'rev-parse', 'HEAD'], env
+        ).stdout.strip()
         env.update(SOURCE_SHA=source, RELEASE_MODE='release', DATA_COMPATIBLE='false',
                    GITHUB_SHA=source, GITHUB_RUN_NUMBER='1', GITHUB_RUN_ID='signing-smoke',
                    GITHUB_RUN_ATTEMPT='1', GITHUB_REPOSITORY='fixture/signing-smoke',
@@ -62,14 +71,15 @@ def smoke(sdk, model):
                    PRODUCTION_KEY_PASSWORD=env['AERGIS_SMOKE_PASSWORD'],
                    PRODUCTION_KEY_ALIAS='fixture', PRODUCTION_CERT_SHA256=fingerprint)
         request = dict(source_commit=source, kind='release', data_compatibility_reviewed=False,
+                       model_contract='gesture-and-face',
                        version_code=2_000_000_001, version_name='1.0-signing-smoke', workflow_commit=source,
                        run_id='signing-smoke', run_attempt='1')
-        def invoke(name, pin=fingerprint, corrupt_source=False):
+        def invoke(name, pin=fingerprint, corrupt_source=False, candidate=aligned, contract='gesture-and-face'):
             directory = root/name; directory.mkdir()
             (directory/'ci').mkdir(); (directory/'candidate').mkdir()
             shutil.copyfile(repo/'ci/preview-certificate.sha256', directory/'ci/preview-certificate.sha256')
-            shutil.copyfile(aligned, directory/'candidate/app-release-unsigned.apk')
-            data = dict(request)
+            shutil.copyfile(candidate, directory/'candidate/app-release-unsigned.apk')
+            data = dict(request, model_contract=contract)
             if corrupt_source:
                 data['source_commit'] = ('0' if source[0] != '0' else '1') + source[1:]
             (directory/'candidate/release-request.json').write_text(json.dumps(data))
@@ -99,6 +109,10 @@ def smoke(sdk, model):
                                    ('wrong-source', fingerprint, True)]:
             directory, failure = invoke(name, pin, corrupt)
             if failure.returncode == 0 or (directory/'production/release-manifest.json').exists():
+                raise AssertionError(f'{name} fixture was incorrectly accepted')
+        for name, contract in [('missing-face-model', 'gesture-and-face'), ('wrong-contract', 'legacy-gesture-only')]:
+            directory, failure = invoke(name, candidate=gesture_only, contract=contract)
+            if failure.returncode == 0 or (directory/'production/Aergis-production.apk').exists():
                 raise AssertionError(f'{name} fixture was incorrectly accepted')
         print('Ephemeral SDK signing verified: success, checksum, wrong signer, public preview, provenance and key cleanup')
 
